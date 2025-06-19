@@ -1,8 +1,10 @@
 # venvoy
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
-![Python Versions](https://img.shields.io/pypi/pyversions/venvoy)
-![Docker Build](https://img.shields.io/docker/image-size/zaphodbeeblebrox3rd/venvoy/latest)
+![Python Versions](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
+![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)
+![AI Ready](https://img.shields.io/badge/AI-Ready-brightgreen.svg)
+![Cross Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)
 
 A multi-OS, multi-architecture, immutable, portable, and shareable AI-ready Python environment
 
