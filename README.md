@@ -39,27 +39,56 @@ venvoy might be the right solution for you!
 
 ## 📋 Prerequisites
 
-- Python 3.9 or higher
+The prerequisites will be handled for you automatically if they are missing:
 - Docker (will be installed automatically if missing)
 - AI Editor: Cursor (recommended) or VSCode (will prompt for installation)
+- Python 3.9 or higher only required for alternative/development installations
 
 ## 🛠️ Installation
 
-### From PyPI (when available)
+### 🚀 **One-Liner Installation (Recommended)**
+
+**(Recommended)Linux/macOS/WSL:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/install.sh | bash
+```
+
+**Windows PowerShell:**
+If you're not using WSL, you are in unfamiliar territory, and just want to get started.
+```powershell
+iwr -useb https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/install.ps1 | iex
+```
+
+**Requirements:** Only Docker is needed! No Python installation required on host.
+
+### 🔧 **How Bootstrap Installation Works**
+
+The bootstrap installer:
+1. **Detects your platform** (Linux/macOS/Windows)
+2. **Checks for Docker** (installs if missing on Linux)
+3. **Creates a containerized venvoy** that runs entirely in Docker
+4. **Adds venvoy to PATH** so you can run `venvoy` commands
+5. **First run builds bootstrap image** with Python + venvoy inside
+
+**Result:** You get a fully functional `venvoy` command without installing Python!
+
+### 📦 **Alternative Methods**
+
+**From PyPI (requires Python):**
 ```bash
 pip install venvoy
 ```
 
-### From Source
+**From Source (requires Python):**
 ```bash
-git clone https://github.com/yourusername/venvoy.git
+git clone https://github.com/zaphodbeeblebros3rd/venvoy.git
 cd venvoy
 pip install -e .
 ```
 
-### Development Installation
+**Development Installation:**
 ```bash
-git clone https://github.com/yourusername/venvoy.git
+git clone https://github.com/zaphodbeeblebrox3rd/venvoy.git
 cd venvoy
 make install-dev
 ```
@@ -137,6 +166,42 @@ venvoy package-managers
 
 # List all environments
 venvoy list
+```
+
+## 📁 Auto-Save Environment Tracking
+
+venvoy automatically tracks and saves your environment changes:
+
+### 🏠 **venvoy-projects Directory**
+- **Location**: `~/venvoy-projects/[environment-name]/`
+- **Auto-created**: Created automatically for each environment
+- **Contents**: `environment.yml` and `.last_updated` timestamp
+
+### 📝 **Automatic environment.yml Generation**
+- **Real-time monitoring**: Detects package installations/removals as they happen
+- **Smart categorization**: Separates conda and pip packages automatically
+- **Exit save**: Final save when container stops
+- **Conda-compatible**: Standard `environment.yml` format for easy sharing
+
+### 🔄 **When Auto-Save Triggers**
+1. **Package Installation**: `pip install`, `mamba install`, `uv pip install`
+2. **Package Removal**: `pip uninstall`, `mamba remove`
+3. **Package Updates**: Version changes detected automatically
+4. **Container Exit**: Final state captured when session ends
+
+### 📋 **Example Auto-Generated environment.yml**
+```yaml
+name: my-project
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - numpy=1.24.3
+  - pandas=2.0.2
+  - matplotlib=3.7.1
+  - pip:
+    - fastapi==0.100.0
+    - uvicorn==0.22.0
 ```
 
 ## 📦 Package Manager Performance
@@ -312,5 +377,5 @@ This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENS
 - [Documentation](https://venvoy.readthedocs.io)
 - [PyPI Package](https://pypi.org/project/venvoy/)
 - [Docker Hub](https://hub.docker.com/r/zaphodbeeblebrox3rd/venvoy)
-- [Issues](https://github.com/yourusername/venvoy/issues)
-- [Discussions](https://github.com/yourusername/venvoy/discussions)
+- [Issues](https://github.com/zaphodbeeblebrox3rd/venvoy/issues)
+- [Discussions](https://github.com/zaphodbeeblebrox3rd/venvoy/discussions)

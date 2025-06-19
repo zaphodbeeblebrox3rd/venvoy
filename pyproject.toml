@@ -49,9 +49,9 @@ dev = [
 venvoy = "venvoy.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/venvoy"
-Repository = "https://github.com/yourusername/venvoy"
-Issues = "https://github.com/yourusername/venvoy/issues"
+Homepage = "https://github.com/zaphodbeeblebrox3rd/venvoy"
+Repository = "https://github.com/zaphodbeeblebrox3rd/venvoy"
+Issues = "https://github.com/zaphodbeeblebrox3rd/venvoy/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

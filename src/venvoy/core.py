@@ -33,9 +33,13 @@ class VenvoyEnvironment:
         self.env_dir = self.config_dir / "environments" / name
         self.config_file = self.env_dir / "config.yaml"
         
+        # Create venvoy-projects directory for auto-saved environments
+        self.projects_dir = Path.home() / "venvoy-projects" / name
+        
         # Ensure directories exist
         self.config_dir.mkdir(exist_ok=True)
         (self.config_dir / "environments").mkdir(exist_ok=True)
+        self.projects_dir.mkdir(parents=True, exist_ok=True)
     
     def initialize(self, force: bool = False, editor_type: str = "none", editor_available: bool = False):
         """Initialize a new venvoy environment"""
@@ -75,6 +79,13 @@ class VenvoyEnvironment:
         
         # Create vendor directory for wheels
         (self.env_dir / "vendor").mkdir(exist_ok=True)
+        
+        # Copy package monitor script to environment directory
+        monitor_script = Path(__file__).parent / "templates" / "package_monitor.py"
+        target_script = self.env_dir / "package_monitor.py"
+        if monitor_script.exists():
+            import shutil
+            shutil.copy2(monitor_script, target_script)
     
     def _create_dockerfile(self):
         """Create Dockerfile for the environment"""
@@ -131,6 +142,10 @@ WORKDIR /workspace
 COPY requirements*.txt ./
 COPY vendor/ ./vendor/
 
+# Copy package monitor script
+COPY package_monitor.py /usr/local/bin/package_monitor.py
+RUN chmod +x /usr/local/bin/package_monitor.py
+
 # Install common AI/ML packages using mamba for better dependency resolution
 RUN mamba install -n venvoy -c conda-forge \\
     numpy \\
@@ -174,8 +189,10 @@ RUN echo 'conda activate venvoy' >> ~/.bashrc && \\
     echo 'echo "🐍 Python $(python --version) with AI/ML packages"' >> ~/.bashrc && \\
     echo 'echo "📦 Package managers: mamba (fast conda), uv (ultra-fast pip), pip"' >> ~/.bashrc && \\
     echo 'echo "📊 Pre-installed: numpy, pandas, matplotlib, jupyter, and more"' >> ~/.bashrc && \\
+    echo 'echo "🔍 Auto-saving environment.yml on package changes"' >> ~/.bashrc && \\
     echo 'echo "📂 Workspace: $(pwd)"' >> ~/.bashrc && \\
-    echo 'echo "💡 Home directory mounted at: /home/venvoy/host-home"' >> ~/.bashrc
+    echo 'echo "💡 Home directory mounted at: /home/venvoy/host-home"' >> ~/.bashrc && \\
+    echo 'python3 /usr/local/bin/package_monitor.py --daemon 2>/dev/null &' >> ~/.bashrc
 
 # Default command
 CMD ["/bin/bash"]
@@ -342,7 +359,7 @@ CMD ["/bin/bash"]
         self.docker_manager.push_image(tag)
     
     def run(self, command: Optional[str] = None, additional_mounts: List[str] = None):
-        """Run the environment container"""
+        """Run the environment container with auto-save monitoring"""
         image_tag = f"venvoy/{self.name}:{self.python_version}"
         
         # Check editor configuration
@@ -354,6 +371,15 @@ CMD ["/bin/bash"]
             home_path: {'bind': '/home/venvoy/host-home', 'mode': 'rw'},
             str(Path.cwd()): {'bind': '/workspace', 'mode': 'rw'}
         }
+        
+        # Start monitoring thread for auto-save
+        import threading
+        monitor_thread = threading.Thread(
+            target=self._monitor_package_changes, 
+            args=(f"{self.name}-runtime",),
+            daemon=True
+        )
+        monitor_thread.start()
         
         # Add additional mounts
         if additional_mounts:
@@ -388,6 +414,11 @@ CMD ["/bin/bash"]
                     volumes=volumes,
                     detach=False
                 )
+                
+                # Auto-save environment when container exits
+                print("💾 Container stopped - saving final environment state...")
+                self.auto_save_environment()
+                
         except RuntimeError as e:
             print(f"Failed to run container: {e}")
             print("Make sure the environment is built. Run 'venvoy init' if needed.")
@@ -455,6 +486,97 @@ CMD ["/bin/bash"]
                 tar.add(tmp.name, arcname=f"{self.name}/export-info.json")
         
         return str(output_file)
+    
+    def auto_save_environment(self):
+        """Auto-save environment.yml to venvoy-projects directory"""
+        try:
+            # Get current packages from container
+            packages = self._get_installed_packages()
+            
+            # Create conda-style environment.yml
+            env_data = {
+                'name': self.name,
+                'channels': ['conda-forge', 'defaults'],
+                'dependencies': []
+            }
+            
+            # Separate conda and pip packages
+            conda_packages = []
+            pip_packages = []
+            
+            for pkg in packages:
+                # Try to determine if it's available via conda-forge
+                # For simplicity, we'll put common scientific packages in conda section
+                scientific_packages = {
+                    'numpy', 'pandas', 'matplotlib', 'scipy', 'scikit-learn',
+                    'jupyter', 'ipython', 'seaborn', 'plotly', 'bokeh',
+                    'tensorflow', 'pytorch', 'torch', 'transformers'
+                }
+                
+                if pkg['name'].lower() in scientific_packages:
+                    conda_packages.append(f"{pkg['name']}={pkg['version']}")
+                else:
+                    pip_packages.append(f"{pkg['name']}=={pkg['version']}")
+            
+            # Add conda packages
+            env_data['dependencies'].extend(conda_packages)
+            
+            # Add pip section if there are pip packages
+            if pip_packages:
+                env_data['dependencies'].append({
+                    'pip': pip_packages
+                })
+            
+            # Save to venvoy-projects directory
+            env_file = self.projects_dir / "environment.yml"
+            with open(env_file, 'w') as f:
+                yaml.safe_dump(env_data, f, default_flow_style=False, sort_keys=False)
+            
+            # Also save a timestamp file
+            timestamp_file = self.projects_dir / ".last_updated"
+            with open(timestamp_file, 'w') as f:
+                f.write(datetime.now().isoformat())
+            
+            print(f"📝 Auto-saved environment to: {env_file}")
+            
+        except Exception as e:
+            print(f"Warning: Failed to auto-save environment: {e}")
+    
+    def _monitor_package_changes(self, container_name: str):
+        """Monitor for package changes and auto-save environment.yml"""
+        import time
+        
+        print("🔍 Starting package change monitor...")
+        
+        while True:
+            try:
+                # Check if signal file exists in container
+                result = subprocess.run([
+                    'docker', 'exec', container_name,
+                    'test', '-f', '/tmp/venvoy_package_changed'
+                ], capture_output=True)
+                
+                if result.returncode == 0:
+                    # Signal file exists - packages changed
+                    print("📦 Package change detected!")
+                    
+                    # Auto-save environment
+                    self.auto_save_environment()
+                    
+                    # Remove signal file
+                    subprocess.run([
+                        'docker', 'exec', container_name,
+                        'rm', '-f', '/tmp/venvoy_package_changed'
+                    ], capture_output=True)
+                
+                time.sleep(2)  # Check every 2 seconds
+                
+            except subprocess.CalledProcessError:
+                # Container might have stopped
+                break
+            except Exception as e:
+                print(f"Monitor error: {e}")
+                time.sleep(5)
     
     def list_environments(self) -> List[Dict[str, Any]]:
         """List all venvoy environments"""
