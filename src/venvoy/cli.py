@@ -56,8 +56,17 @@ def init(python_version: str, name: str, force: bool):
         docker_manager = DockerManager()
         docker_manager.ensure_docker_installed()
         
-        progress.update(task, description="Checking AI editor installation...")
-        editor_type, editor_available = docker_manager.ensure_editor_installed()
+        progress.update(task, description="Detecting available editors...")
+        # Just detect editors, don't prompt for installation
+        vscode_available = docker_manager.platform._check_vscode_available()
+        cursor_available = docker_manager.platform._check_cursor_available()
+        
+        if cursor_available:
+            editor_type, editor_available = "cursor", True
+        elif vscode_available:
+            editor_type, editor_available = "vscode", True
+        else:
+            editor_type, editor_available = "none", False
         
         progress.update(task, description="Creating environment...")
         env = VenvoyEnvironment(name=name, python_version=python_version)
@@ -625,6 +634,84 @@ def uninstall(force: bool, keep_projects: bool, keep_images: bool):
     console.print("      docker volume ls | grep venvoy", style="dim")
     console.print("")
     console.print("💡 To reinstall venvoy later, run the installer again", style="yellow")
+
+
+@main.command()
+def setup():
+    """Initial setup and configuration of venvoy (run once after installation)"""
+    console.print(Panel.fit("⚙️  Venvoy Initial Setup", style="bold green"))
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Setting up venvoy...", total=None)
+        
+        # Detect platform and check prerequisites
+        progress.update(task, description="Detecting platform and checking prerequisites...")
+        detector = PlatformDetector()
+        platform_info = detector.detect()
+        
+        progress.update(task, description="Checking Docker installation...")
+        docker_manager = DockerManager()
+        docker_manager.ensure_docker_installed()
+        
+        progress.update(task, description="Checking AI editor installation...")
+        editor_type, editor_available = docker_manager.ensure_editor_installed()
+        
+        progress.remove_task(task)
+    
+    console.print("✅ Venvoy setup completed!")
+    
+    if editor_available:
+        if editor_type == "cursor":
+            console.print("🧠 Cursor detected and configured")
+        elif editor_type == "vscode":
+            console.print("🔧 VSCode detected and configured")
+    else:
+        console.print("🐚 No AI editor detected - venvoy will use interactive shell mode")
+    
+    console.print("\n📋 Next steps:")
+    console.print("   1. Run: venvoy init --python-version <version> --name <environment-name>")
+    console.print("   2. Start coding with AI-powered environments!")
+
+
+@main.command()
+@click.option(
+    "--name", 
+    default="venvoy-env", 
+    help="Name of the environment to restore"
+)
+def restore(name: str):
+    """Interactively restore environment from a previous export"""
+    console.print(Panel.fit("🔄 Environment Restoration", style="bold green"))
+    
+    env = VenvoyEnvironment(name=name)
+    
+    # Check if environment exists
+    if not env.config_file.exists():
+        console.print(f"❌ Environment '{name}' not found. Run 'venvoy init --name {name}' first.")
+        return
+    
+    # Get list of exports
+    exports = env.list_environment_exports()
+    
+    if not exports:
+        console.print("📭 No environment exports found for this environment.")
+        console.print("💡 Environment exports are created automatically when you install packages.")
+        return
+    
+    # Present interactive selection
+    selected_export = env.select_environment_export()
+    
+    if selected_export:
+        console.print(f"🔄 Restoring environment from: {selected_export.name}")
+        env.restore_from_environment_export(selected_export)
+        console.print("✅ Environment restored successfully!")
+        console.print("💡 Run 'venvoy run' to start working with the restored environment")
+    else:
+        console.print("🚫 Restoration cancelled")
 
 
 if __name__ == "__main__":

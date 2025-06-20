@@ -61,11 +61,14 @@ class VenvoyEnvironment:
         print(f"📦 Setting up Python {self.python_version} environment...")
         self._ensure_image_available(image_name)
         
-        # Check for existing environment exports and offer to restore
-        selected_export = self.select_environment_export()
+        # Check for existing environment exports but don't prompt during init
+        exports = self.list_environment_exports()
+        selected_export = None
         
-        if selected_export:
-            # Restore from selected export
+        if exports:
+            # Use the most recent export automatically
+            selected_export = exports[0]['file']  # First one is most recent
+            print(f"🔄 Found {len(exports)} previous exports, using most recent: {selected_export.name}")
             self.restore_from_environment_export(selected_export)
         else:
             # Create new environment

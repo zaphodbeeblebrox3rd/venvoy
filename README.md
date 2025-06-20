@@ -15,6 +15,7 @@ Developers, Hobbyists, Researchers, and IT Professionals - have you had these he
 - Worked on a data science project on an old RHEL 7 server and then tried to resume work on the project on a newer RHEL 8/9/10 machine?
 - Ran a statistical analysis for scientific research that needed to be independently validated by other researchers, and ran into a lot of headaches?
 - Started on a project with a very specific python environment on an x86_64 machine and then tried to begin collaborating with someone with an ARM architecture?
+- Woke up from a long nap to see that your build of a python environment from requirements.txt or environment.yml file was STILL RUNNING?
 
 venvoy might be the right solution for you!
 
@@ -169,6 +170,12 @@ The uninstaller will:
 
 ## 🎯 Quick Start
 
+### 0. Initial Setup (First time only)
+```bash
+# Run initial setup to configure AI editors (optional)
+venvoy setup
+```
+
 ### 1. Initialize a New Environment
 ```bash
 # Create a Python 3.11 environment (default)
@@ -181,11 +188,7 @@ venvoy init --python-version 3.12 --name my-project
 venvoy init --force
 ```
 
-**Environment Restoration**: If you have previous environment exports, venvoy will automatically detect them and offer a scrollable list to restore from. This allows you to:
-- 🔄 **Restore previous states** - Select from any timestamped environment export
-- 📊 **View package counts** - See conda and pip package counts for each export
-- 📅 **Browse history** - Scroll through chronologically sorted environment states
-- 🆕 **Create new** - Skip restoration and create a fresh environment
+> **💡 Note**: If you see an "environment already exists" error, use `--force` to reinitialize or `--name` to create a new environment with a different name.
 
 **AI Editor Integration**: During initialization, venvoy will detect available AI-powered editors (Cursor and VSCode). You'll be prompted to choose your preferred editor or can opt for an enhanced interactive shell with AI-ready environment setup.
 
@@ -204,7 +207,16 @@ venvoy run --command "python script.py"
 venvoy run --mount /host/data:/container/data
 ```
 
-### 3. Manage Packages
+### 3. Restore Previous Environment (Optional)
+```bash
+# Interactively restore from a previous environment export
+venvoy restore --name my-project
+
+# View environment history
+venvoy history --name my-project
+```
+
+### 4. Manage Packages
 Add packages to your `requirements.txt` or `requirements-dev.txt` files in the environment directory, then rebuild:
 
 ```bash
@@ -215,7 +227,7 @@ venvoy init --force
 venvoy freeze --include-dev
 ```
 
-### 4. Export for Sharing
+### 5. Export for Sharing
 ```bash
 # Export as environment YAML
 venvoy export --format yaml --output environment.yaml
@@ -227,7 +239,7 @@ venvoy export --format dockerfile --output Dockerfile
 venvoy export --format tarball --output project.tar.gz
 ```
 
-### 5. Configure Environment Settings
+### 6. Configure Environment Settings
 ```bash
 # Check and update AI editor integration settings
 venvoy configure --name my-project

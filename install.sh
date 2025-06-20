@@ -155,12 +155,14 @@ echo "📋 Next steps:"
 # Test if venvoy is immediately available
 if command -v venvoy &> /dev/null; then
     echo "   ✅ venvoy is ready to use!"
-    echo "   1. Run: venvoy init"
-    echo "   2. Start coding with AI-powered environments!"
+    echo "   1. (Optional) Run: venvoy setup (to configure AI editors)"
+    echo "   2. Run: venvoy init --python-version <python-version> --name <environment-name>"
+    echo "   3. Start coding with AI-powered environments!"
 else
     echo "   1. Restart your terminal (or run: source $SHELL_RC)"
-    echo "   2. Run: venvoy init"
-    echo "   3. Start coding with AI-powered environments!"
+    echo "   2. (Optional) Run: venvoy setup (to configure AI editors)"
+    echo "   3. Run: venvoy init"
+    echo "   4. Start coding with AI-powered environments!"
 fi
 
 echo ""
