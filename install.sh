@@ -52,70 +52,98 @@ cat > "$INSTALL_DIR/venvoy" << 'EOF'
 
 set -e
 
-VENVOY_IMAGE="venvoy/bootstrap:latest"
+VENVOY_IMAGE="zaphodbeeblebrox3rd/venvoy:bootstrap"
 VENVOY_DIR="$HOME/.venvoy"
 
 # Ensure venvoy directory exists
 mkdir -p "$VENVOY_DIR"
 
-# Build bootstrap image if it doesn't exist
+# Pull venvoy image if it doesn't exist
 if ! docker image inspect "$VENVOY_IMAGE" &> /dev/null; then
-    echo "🔨 Building venvoy bootstrap image..."
-    
-    # Create temporary Dockerfile
-    TEMP_DIR=$(mktemp -d)
-    cat > "$TEMP_DIR/Dockerfile" << 'DOCKERFILE'
-FROM python:3.11-slim
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install venvoy from git
-RUN pip install git+https://github.com/zaphodbeeblebrox3rd/venvoy.git
-
-# Set up entrypoint
-WORKDIR /workspace
-ENTRYPOINT ["venvoy"]
-DOCKERFILE
-
-    # Build the image
-    docker build -t "$VENVOY_IMAGE" "$TEMP_DIR"
-    rm -rf "$TEMP_DIR"
-    
-    echo "✅ Bootstrap image built successfully"
+    echo "📦 Downloading venvoy environment..."
+    docker pull "$VENVOY_IMAGE"
+    echo "✅ Environment ready"
 fi
 
-# Run venvoy inside Docker container
-docker run --rm -it \
-    -v /var/run/docker.sock:/var/run/docker.sock \
-    -v "$HOME:$HOME" \
-    -v "$(pwd):/workspace" \
-    -w /workspace \
-    -e HOME="$HOME" \
-    "$VENVOY_IMAGE" "$@"
+# Handle uninstall command specially
+if [ "$1" = "uninstall" ]; then
+    # Run uninstall inside container with access to host filesystem
+    docker run --rm -it \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -v "$HOME:$HOME" \
+        -v "$(pwd):/workspace" \
+        -w /workspace \
+        -e HOME="$HOME" \
+        -e VENVOY_UNINSTALL_MODE=1 \
+        "$VENVOY_IMAGE" "$@"
+else
+    # Run normal venvoy commands
+    docker run --rm -it \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -v "$HOME:$HOME" \
+        -v "$(pwd):/workspace" \
+        -w /workspace \
+        -e HOME="$HOME" \
+        "$VENVOY_IMAGE" "$@"
+fi
 EOF
 
 # Make script executable
 chmod +x "$INSTALL_DIR/venvoy"
 
-# Add to PATH
+# Add to PATH with better shell detection
 case $PLATFORM in
     linux|macos)
-        SHELL_RC="$HOME/.bashrc"
-        if [[ "$SHELL" == *"zsh"* ]]; then
+        # Detect shell and appropriate RC file
+        SHELL_RC=""
+        if [[ -n "$ZSH_VERSION" ]] || [[ "$SHELL" == *"zsh"* ]]; then
             SHELL_RC="$HOME/.zshrc"
+        elif [[ -n "$BASH_VERSION" ]] || [[ "$SHELL" == *"bash"* ]]; then
+            SHELL_RC="$HOME/.bashrc"
+        elif [[ "$SHELL" == *"fish"* ]]; then
+            SHELL_RC="$HOME/.config/fish/config.fish"
+            mkdir -p "$HOME/.config/fish"
+        else
+            # Default to .bashrc for unknown shells
+            SHELL_RC="$HOME/.bashrc"
         fi
         
-        if ! grep -q "$INSTALL_DIR" "$SHELL_RC" 2>/dev/null; then
-            echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "$SHELL_RC"
+        # Create shell RC file if it doesn't exist
+        touch "$SHELL_RC"
+        
+        # Check if PATH is already set
+        PATH_ALREADY_SET=false
+        if [[ -f "$SHELL_RC" ]] && grep -q "$INSTALL_DIR" "$SHELL_RC" 2>/dev/null; then
+            PATH_ALREADY_SET=true
+        fi
+        
+        if [[ "$PATH_ALREADY_SET" == false ]]; then
+            echo "" >> "$SHELL_RC"
+            echo "# Added by venvoy installer" >> "$SHELL_RC"
+            
+            if [[ "$SHELL_RC" == *"fish"* ]]; then
+                echo "set -gx PATH \"$INSTALL_DIR\" \$PATH" >> "$SHELL_RC"
+            else
+                echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "$SHELL_RC"
+            fi
+            
             echo "📝 Added venvoy to PATH in $SHELL_RC"
+        else
+            echo "📝 venvoy already in PATH"
+        fi
+        
+        # Also try to add to current session PATH
+        export PATH="$INSTALL_DIR:$PATH"
+        
+        # Create symlink in /usr/local/bin if writable (for system-wide access)
+        if [[ -w "/usr/local/bin" ]]; then
+            ln -sf "$INSTALL_DIR/venvoy" "/usr/local/bin/venvoy" 2>/dev/null || true
+            echo "📝 Created system-wide symlink in /usr/local/bin"
         fi
         ;;
     windows)
         echo "📝 Please add $INSTALL_DIR to your PATH manually"
+        echo "   Or restart your terminal to use the updated PATH"
         ;;
 esac
 
@@ -123,9 +151,23 @@ echo ""
 echo "🎉 venvoy installed successfully!"
 echo ""
 echo "📋 Next steps:"
-echo "   1. Restart your terminal (or run: source $SHELL_RC)"
-echo "   2. Run: venvoy init"
-echo "   3. Start coding with AI-powered environments!"
+
+# Test if venvoy is immediately available
+if command -v venvoy &> /dev/null; then
+    echo "   ✅ venvoy is ready to use!"
+    echo "   1. Run: venvoy init"
+    echo "   2. Start coding with AI-powered environments!"
+else
+    echo "   1. Restart your terminal (or run: source $SHELL_RC)"
+    echo "   2. Run: venvoy init"
+    echo "   3. Start coding with AI-powered environments!"
+fi
+
 echo ""
 echo "💡 The first run will download the venvoy bootstrap image"
-echo "   All subsequent operations will be containerized" 
+echo "   All subsequent operations will be containerized"
+echo ""
+echo "🔧 Installed to: $INSTALL_DIR/venvoy"
+echo "📝 Shell config: $SHELL_RC"
+echo ""
+echo "🚀 Quick test: venvoy --help" 

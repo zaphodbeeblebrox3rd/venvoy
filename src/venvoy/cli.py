@@ -63,8 +63,8 @@ def init(python_version: str, name: str, force: bool):
         env = VenvoyEnvironment(name=name, python_version=python_version)
         env.initialize(force=force, editor_type=editor_type, editor_available=editor_available)
         
-        progress.update(task, description="Building and launching container...")
-        env.build_and_launch()
+        progress.update(task, description="Finalizing setup...")
+        # Environment is ready to use
         
         progress.remove_task(task)
     
@@ -119,49 +119,7 @@ def freeze(name: str, include_dev: bool):
     console.print("📦 All packages downloaded to vendor/ directory")
 
 
-@main.command()
-@click.option(
-    "--name", 
-    default="venvoy-env", 
-    help="Name of the environment to build"
-)
-@click.option(
-    "--tag", 
-    help="Tag for the built image"
-)
-@click.option(
-    "--push", 
-    is_flag=True, 
-    help="Push to registry after building"
-)
-def build(name: str, tag: str, push: bool):
-    """Build multi-architecture Docker image"""
-    console.print(Panel.fit("🔨 Building multi-arch image", style="bold green"))
-    
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Building image...", total=None)
-        
-        env = VenvoyEnvironment(name=name)
-        
-        progress.update(task, description="Setting up BuildKit...")
-        env.setup_buildx()
-        
-        progress.update(task, description="Building multi-arch image...")
-        image_tag = env.build_multiarch(tag=tag)
-        
-        if push:
-            progress.update(task, description="Pushing to registry...")
-            env.push_image(image_tag)
-        
-        progress.remove_task(task)
-    
-    console.print(f"✅ Multi-arch image built: {image_tag}")
-    if push:
-        console.print("📤 Image pushed to registry")
+
 
 
 @main.command()
@@ -247,6 +205,42 @@ def list():
         console.print(f"🐍 {env_info['name']} (Python {env_info['python_version']})")
         console.print(f"   Created: {env_info['created']}")
         console.print(f"   Status: {env_info['status']}")
+
+
+@main.command()
+@click.option(
+    "--name", 
+    default="venvoy-env", 
+    help="Name of the environment to list exports for"
+)
+def history(name: str):
+    """List environment export history"""
+    console.print(Panel.fit(f"📜 Environment Export History: {name}", style="bold purple"))
+    
+    env = VenvoyEnvironment(name=name)
+    exports = env.list_environment_exports()
+    
+    if not exports:
+        console.print(f"No export history found for environment '{name}'.")
+        console.print("💡 Environment exports are created automatically when packages change.")
+        return
+    
+    console.print(f"Found {len(exports)} environment exports:\n")
+    
+    for i, export in enumerate(exports, 1):
+        # Status indicator for most recent
+        status = "🔥 Latest" if i == 1 else f"#{i:2d}"
+        
+        console.print(f"{status} {export['formatted_time']}")
+        console.print(f"    📦 {export['total_packages']} packages ({export['conda_packages']} conda, {export['pip_packages']} pip)")
+        console.print(f"    💾 {export['file'].name}")
+        
+        if i < len(exports):  # Don't add separator after last item
+            console.print()
+    
+    console.print(f"\n💡 Use 'venvoy init --name {name}' to restore from any of these exports")
+    console.print(f"📂 Export files stored in: ~/venvoy-projects/{name}/")
+    console.print("🔄 New exports are created automatically when packages change")
 
 
 @main.command()
@@ -354,6 +348,267 @@ def package_managers():
     console.print("   • For web development: `uv pip install fastapi uvicorn`")
     console.print("   • For data science: `mamba install pandas numpy matplotlib jupyter`")
     console.print("   • For quick installs: `uv pip install requests beautifulsoup4`")
+
+
+@main.command()
+@click.option(
+    "--force", 
+    is_flag=True, 
+    help="Skip confirmation prompts"
+)
+@click.option(
+    "--keep-projects", 
+    is_flag=True, 
+    help="Keep environment exports in ~/venvoy-projects"
+)
+@click.option(
+    "--keep-images", 
+    is_flag=True, 
+    help="Keep Docker images"
+)
+def uninstall(force: bool, keep_projects: bool, keep_images: bool):
+    """Uninstall venvoy and clean up all files"""
+    import os
+    import shutil
+    import subprocess
+    import platform
+    from pathlib import Path
+    
+    console.print(Panel.fit("🗑️  venvoy Uninstaller", style="bold red"))
+    
+    # Detect platform
+    system = platform.system().lower()
+    home_path = Path.home()
+    
+    install_dir = home_path / ".venvoy" / "bin"
+    venvoy_dir = home_path / ".venvoy"
+    projects_dir = home_path / "venvoy-projects"
+    
+    # Show what will be removed
+    console.print("")
+    console.print("This will remove:", style="bold yellow")
+    console.print(f"  📁 Installation directory: {install_dir}")
+    console.print(f"  📁 Configuration directory: {venvoy_dir}")
+    if not keep_projects:
+        console.print(f"  📁 Projects directory: {projects_dir}")
+    console.print("  🔗 PATH entries from shell configuration files")
+    if not keep_images:
+        console.print("  🐳 Docker images (venvoy/bootstrap:latest and venvoy/* images)")
+    console.print("")
+    
+    if not force:
+        confirm = click.confirm("Are you sure you want to uninstall venvoy?")
+        if not confirm:
+            console.print("❌ Uninstallation cancelled", style="bold red")
+            return
+    
+    console.print("")
+    console.print("🗑️  Removing venvoy...", style="bold red")
+    
+    # Remove installation directory
+    if install_dir.exists():
+        shutil.rmtree(install_dir)
+        console.print("✅ Removed installation directory", style="green")
+    
+    # Remove configuration directory
+    if venvoy_dir.exists():
+        shutil.rmtree(venvoy_dir)
+        console.print("✅ Removed configuration directory", style="green")
+    
+    # Handle projects directory
+    if projects_dir.exists():
+        if keep_projects:
+            console.print(f"📁 Kept projects directory: {projects_dir}", style="yellow")
+        else:
+            if not force:
+                remove_projects = click.confirm("Remove projects directory with environment exports?")
+                if remove_projects:
+                    shutil.rmtree(projects_dir)
+                    console.print("✅ Removed projects directory", style="green")
+                else:
+                    console.print(f"📁 Kept projects directory: {projects_dir}", style="yellow")
+            else:
+                shutil.rmtree(projects_dir)
+                console.print("✅ Removed projects directory", style="green")
+    
+    # Remove PATH entries from shell configuration files
+    if system in ["linux", "darwin"]:  # Linux and macOS
+        shell_files = [
+            home_path / ".bashrc",
+            home_path / ".zshrc",
+            home_path / ".config" / "fish" / "config.fish",
+            home_path / ".profile",
+            home_path / ".bash_profile"
+        ]
+        
+        for shell_file in shell_files:
+            if shell_file.exists():
+                try:
+                    # Read current content
+                    with open(shell_file, 'r') as f:
+                        content = f.read()
+                    
+                    # Check if venvoy PATH is present
+                    if str(install_dir) in content:
+                        # Create backup
+                        backup_file = shell_file.with_suffix(shell_file.suffix + '.venvoy-backup')
+                        shutil.copy2(shell_file, backup_file)
+                        
+                        # Remove venvoy-related lines
+                        lines = content.split('\n')
+                        new_lines = []
+                        skip_next = 0
+                        
+                        for i, line in enumerate(lines):
+                            if skip_next > 0:
+                                skip_next -= 1
+                                continue
+                            
+                            if "# Added by venvoy installer" in line:
+                                # Skip this line and the next 2 lines (comment + export + blank)
+                                skip_next = 2
+                                continue
+                            elif str(install_dir) in line:
+                                # Skip any line containing the install dir
+                                continue
+                            else:
+                                new_lines.append(line)
+                        
+                        # Write cleaned content
+                        with open(shell_file, 'w') as f:
+                            f.write('\n'.join(new_lines))
+                        
+                        console.print(f"✅ Cleaned PATH from {shell_file.name}", style="green")
+                        console.print(f"   📋 Backup saved as: {backup_file.name}", style="dim")
+                        
+                except Exception as e:
+                    console.print(f"⚠️  Warning: Could not clean {shell_file.name}: {e}", style="yellow")
+        
+        # Remove system-wide symlink if it exists
+        system_link = Path("/usr/local/bin/venvoy")
+        if system_link.exists() and system_link.is_symlink():
+            try:
+                system_link.unlink()
+                console.print("✅ Removed system-wide symlink", style="green")
+            except PermissionError:
+                console.print("⚠️  Could not remove system-wide symlink (permission denied)", style="yellow")
+    
+    elif system == "windows":
+        # Windows PATH cleanup
+        try:
+            import winreg
+            
+            # Get current user PATH
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_READ | winreg.KEY_WRITE) as key:
+                try:
+                    current_path, _ = winreg.QueryValueEx(key, "PATH")
+                    if str(install_dir) in current_path:
+                        # Create backup
+                        backup_path = Path(os.environ.get('TEMP', '.')) / f"venvoy-path-backup-{os.getpid()}.txt"
+                        with open(backup_path, 'w') as f:
+                            f.write(current_path)
+                        
+                        # Remove venvoy from PATH
+                        path_parts = [p for p in current_path.split(';') if str(install_dir) not in p]
+                        new_path = ';'.join(path_parts)
+                        
+                        winreg.SetValueEx(key, "PATH", 0, winreg.REG_EXPAND_SZ, new_path)
+                        console.print("✅ Removed venvoy from user PATH", style="green")
+                        console.print(f"📋 PATH backup saved to: {backup_path}", style="dim")
+                        
+                except FileNotFoundError:
+                    pass  # PATH key doesn't exist
+        except ImportError:
+            console.print("⚠️  Could not clean Windows PATH (winreg not available)", style="yellow")
+        except Exception as e:
+            console.print(f"⚠️  Warning: Could not clean Windows PATH: {e}", style="yellow")
+    
+    # Remove Docker images
+    if not keep_images:
+        console.print("")
+        console.print("🐳 Cleaning up Docker images...", style="cyan")
+        
+        try:
+            # Check if Docker is available
+            subprocess.run(["docker", "--version"], capture_output=True, check=True)
+            
+            # Remove bootstrap image
+            try:
+                subprocess.run(["docker", "image", "inspect", "venvoy/bootstrap:latest"], 
+                             capture_output=True, check=True)
+                subprocess.run(["docker", "rmi", "venvoy/bootstrap:latest"], 
+                             capture_output=True, check=True)
+                console.print("✅ Removed bootstrap image", style="green")
+            except subprocess.CalledProcessError:
+                pass  # Image doesn't exist
+            
+            # Remove venvoy environment images
+            try:
+                result = subprocess.run(["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"], 
+                                      capture_output=True, text=True, check=True)
+                venvoy_images = [line for line in result.stdout.strip().split('\n') 
+                               if line.startswith('venvoy/') and 'bootstrap' not in line]
+                
+                if venvoy_images:
+                    console.print("Found venvoy environment images:", style="yellow")
+                    for image in venvoy_images:
+                        console.print(f"  {image}")
+                    
+                    if not force:
+                        remove_images = click.confirm("Remove all venvoy environment images?")
+                        if remove_images:
+                            for image in venvoy_images:
+                                try:
+                                    subprocess.run(["docker", "rmi", image], 
+                                                 capture_output=True, check=True)
+                                except subprocess.CalledProcessError:
+                                    pass  # Ignore errors
+                            console.print("✅ Removed venvoy environment images", style="green")
+                    else:
+                        for image in venvoy_images:
+                            try:
+                                subprocess.run(["docker", "rmi", image], 
+                                             capture_output=True, check=True)
+                            except subprocess.CalledProcessError:
+                                pass  # Ignore errors
+                        console.print("✅ Removed venvoy environment images", style="green")
+                        
+            except subprocess.CalledProcessError:
+                pass  # No images or docker command failed
+            
+            # Remove stopped containers
+            try:
+                result = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"], 
+                                      capture_output=True, text=True, check=True)
+                venvoy_containers = [line for line in result.stdout.strip().split('\n') 
+                                   if 'venvoy' in line.lower() or 'bootstrap' in line.lower()]
+                
+                for container in venvoy_containers:
+                    if container and container != "NAMES":
+                        try:
+                            subprocess.run(["docker", "rm", container], 
+                                         capture_output=True, check=True)
+                        except subprocess.CalledProcessError:
+                            pass  # Ignore errors
+                
+                if venvoy_containers:
+                    console.print("✅ Removed venvoy containers", style="green")
+                    
+            except subprocess.CalledProcessError:
+                pass  # No containers or docker command failed
+                
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            console.print("⚠️  Docker not available, skipping image cleanup", style="yellow")
+    
+    console.print("")
+    console.print("🎉 venvoy uninstalled successfully!", style="bold green")
+    console.print("")
+    console.print("📋 Next steps:", style="cyan")
+    console.print("   1. Restart your terminal to update PATH")
+    console.print("   2. Remove any remaining Docker volumes manually if needed:")
+    console.print("      docker volume ls | grep venvoy", style="dim")
+    console.print("")
+    console.print("💡 To reinstall venvoy later, run the installer again", style="yellow")
 
 
 if __name__ == "__main__":

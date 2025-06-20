@@ -68,14 +68,27 @@ if errorlevel 1 (
 set "HOME_UNIX=%USERPROFILE:\=/%"
 set "PWD_UNIX=%CD:\=/%"
 
-:: Run venvoy inside Docker container
-docker run --rm -it ^
-    -v /var/run/docker.sock:/var/run/docker.sock ^
-    -v "%USERPROFILE%:/host-home" ^
-    -v "%CD%:/workspace" ^
-    -w /workspace ^
-    -e HOME="/host-home" ^
-    %VENVOY_IMAGE% %*
+:: Handle uninstall command specially
+if "%1"=="uninstall" (
+    :: Run uninstall inside container with access to host filesystem
+    docker run --rm -it ^
+        -v /var/run/docker.sock:/var/run/docker.sock ^
+        -v "%USERPROFILE%:/host-home" ^
+        -v "%CD%:/workspace" ^
+        -w /workspace ^
+        -e HOME="/host-home" ^
+        -e VENVOY_UNINSTALL_MODE=1 ^
+        %VENVOY_IMAGE% %*
+) else (
+    :: Run normal venvoy commands
+    docker run --rm -it ^
+        -v /var/run/docker.sock:/var/run/docker.sock ^
+        -v "%USERPROFILE%:/host-home" ^
+        -v "%CD%:/workspace" ^
+        -w /workspace ^
+        -e HOME="/host-home" ^
+        %VENVOY_IMAGE% %*
+)
 "@
 
 $BatchScript | Out-File -FilePath "$InstallDir\venvoy.bat" -Encoding ASCII
@@ -90,21 +103,50 @@ param([Parameter(ValueFromRemainingArguments=`$true)]`$Arguments)
 
 $PowerShellScript | Out-File -FilePath "$InstallDir\venvoy.ps1" -Encoding UTF8
 
-# Add to PATH
-$CurrentPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-if ($CurrentPath -notlike "*$InstallDir*") {
-    $NewPath = "$InstallDir;$CurrentPath"
+# Add to PATH with better handling
+$CurrentUserPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+$CurrentSystemPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
+
+# Check if already in PATH
+$InUserPath = $CurrentUserPath -like "*$InstallDir*"
+$InSystemPath = $CurrentSystemPath -like "*$InstallDir*"
+$InCurrentSession = $env:PATH -like "*$InstallDir*"
+
+if (-not $InUserPath -and -not $InSystemPath) {
+    # Add to user PATH
+    $NewPath = "$InstallDir;$CurrentUserPath"
     [Environment]::SetEnvironmentVariable("PATH", $NewPath, "User")
     Write-Host "📝 Added venvoy to user PATH" -ForegroundColor Green
+    
+    # Also add to current session
+    $env:PATH = "$InstallDir;$env:PATH"
+    Write-Host "📝 Added venvoy to current session PATH" -ForegroundColor Green
+} else {
+    Write-Host "📝 venvoy already in PATH" -ForegroundColor Yellow
 }
 
 Write-Host ""
 Write-Host "🎉 venvoy installed successfully!" -ForegroundColor Green
 Write-Host ""
 Write-Host "📋 Next steps:" -ForegroundColor Cyan
-Write-Host "   1. Restart your terminal or PowerShell" -ForegroundColor White
-Write-Host "   2. Run: venvoy init" -ForegroundColor White
-Write-Host "   3. Start coding with AI-powered environments!" -ForegroundColor White
+
+# Test if venvoy is immediately available
+try {
+    $null = Get-Command venvoy -ErrorAction Stop
+    Write-Host "   ✅ venvoy is ready to use!" -ForegroundColor Green
+    Write-Host "   1. Run: venvoy init" -ForegroundColor White
+    Write-Host "   2. Start coding with AI-powered environments!" -ForegroundColor White
+} catch {
+    Write-Host "   1. Restart your terminal or PowerShell" -ForegroundColor White
+    Write-Host "   2. Run: venvoy init" -ForegroundColor White
+    Write-Host "   3. Start coding with AI-powered environments!" -ForegroundColor White
+}
+
 Write-Host ""
 Write-Host "💡 The first run will download the venvoy bootstrap image" -ForegroundColor Yellow
-Write-Host "   All subsequent operations will be containerized" -ForegroundColor Yellow 
+Write-Host "   All subsequent operations will be containerized" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "🔧 Installed to: $InstallDir" -ForegroundColor Cyan
+Write-Host "📝 Added to user PATH environment variable" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "🚀 Quick test: venvoy --help" -ForegroundColor Green 

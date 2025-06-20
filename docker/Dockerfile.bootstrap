@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install venvoy from git
+RUN pip install git+https://github.com/zaphodbeeblebrox3rd/venvoy.git
+
+# Set up entrypoint
+WORKDIR /workspace
+ENTRYPOINT ["venvoy"] 
