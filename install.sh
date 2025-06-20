@@ -58,6 +58,13 @@ VENVOY_DIR="$HOME/.venvoy"
 # Ensure venvoy directory exists
 mkdir -p "$VENVOY_DIR"
 
+# Clear Python bytecode cache to ensure latest code is used
+if [[ -d "/workspace" ]]; then
+    echo "🧹 Clearing Python bytecode cache..."
+    find /workspace -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+    find /workspace -name "*.pyc" -delete 2>/dev/null || true
+fi
+
 # Pull venvoy image if it doesn't exist
 if ! docker image inspect "$VENVOY_IMAGE" &> /dev/null; then
     echo "📦 Downloading venvoy environment..."

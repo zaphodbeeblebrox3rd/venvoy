@@ -27,6 +27,9 @@ bootstrap:
 # Development installation - requires Python on host
 install:
 	@echo "🚀 Installing venvoy for development..."
+	@echo "🧹 Clearing Python bytecode cache..."
+	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	@if command -v pip >/dev/null 2>&1; then \
 		pip install -e .; \
 		echo "✅ Installed for development"; \
