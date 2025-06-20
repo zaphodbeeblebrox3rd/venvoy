@@ -7,9 +7,17 @@ import sys
 import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
-import docker
-from docker.errors import DockerException
 import requests
+
+# Try to import docker module, but don't fail if it's not available
+try:
+    import docker
+    from docker.errors import DockerException
+    DOCKER_AVAILABLE = True
+except ImportError:
+    DOCKER_AVAILABLE = False
+    docker = None
+    DockerException = Exception
 
 from .platform_detector import PlatformDetector
 
@@ -20,10 +28,14 @@ class DockerManager:
     def __init__(self):
         self.platform = PlatformDetector()
         self.client = None
-        self._init_client()
+        if DOCKER_AVAILABLE:
+            self._init_client()
     
     def _init_client(self):
         """Initialize Docker client"""
+        if not DOCKER_AVAILABLE:
+            return
+            
         try:
             self.client = docker.from_env()
             # Test connection
@@ -33,10 +45,15 @@ class DockerManager:
     
     def is_docker_installed(self) -> bool:
         """Check if Docker is installed and running"""
+        if not DOCKER_AVAILABLE:
+            return False
         return self.client is not None
     
     def ensure_docker_installed(self):
         """Ensure Docker is installed, install if necessary"""
+        if not DOCKER_AVAILABLE:
+            raise RuntimeError("Docker Python module not available. Please install with: pip install docker")
+            
         if self.is_docker_installed():
             return
         
@@ -303,6 +320,9 @@ class DockerManager:
     
     def setup_buildx(self):
         """Setup Docker BuildX for multi-architecture builds"""
+        if not DOCKER_AVAILABLE:
+            raise RuntimeError("Docker Python module not available. Please install with: pip install docker")
+            
         if not self.client:
             raise RuntimeError("Docker client not available")
         
@@ -376,6 +396,9 @@ class DockerManager:
         detach: bool = False
     ):
         """Run a container with specified configuration"""
+        if not DOCKER_AVAILABLE:
+            raise RuntimeError("Docker Python module not available. Please install with: pip install docker")
+            
         if not self.client:
             raise RuntimeError("Docker client not available")
         
@@ -398,7 +421,7 @@ class DockerManager:
     
     def stop_container(self, name: str):
         """Stop a running container"""
-        if not self.client:
+        if not DOCKER_AVAILABLE or not self.client:
             return
         
         try:
@@ -409,7 +432,7 @@ class DockerManager:
     
     def list_containers(self, all_containers: bool = False) -> List[Dict]:
         """List containers"""
-        if not self.client:
+        if not DOCKER_AVAILABLE or not self.client:
             return []
         
         try:
