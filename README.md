@@ -25,7 +25,15 @@ venvoy might be the right solution for you!
 - **Team collaboration** - Share identical AI-ready environments with your team
 - **Reproducible research** - Archive environments for long-term reproducibility  
 - **CI/CD pipelines** - Consistent environments from development to production
-- **Multi-architecture support** - Build for AMD64, ARM64, and more
+- **Multi-architecture support** - Automatic support for Intel/AMD, Apple Silicon, and ARM devices
+
+### 🌐 **How Cross-Platform Magic Works:**
+- **🪟 Windows**: Docker Desktop + WSL2 runs Linux containers seamlessly
+- **🍎 macOS**: Docker Desktop virtualizes Linux containers transparently  
+- **🐧 Linux**: Native container execution with zero overhead
+- **🎯 Result**: Identical Python environments regardless of your host OS!
+
+*Enterprise platforms (IBM Power/mainframes) available on consulting basis.*
 
 ## ✨ Features
 
@@ -66,13 +74,22 @@ iwr -useb https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/inst
 ### 🔧 **How Bootstrap Installation Works**
 
 The bootstrap installer:
-1. **Detects your platform** (Linux/macOS/Windows)
+1. **Detects your platform** (Linux/macOS/Windows) and shell (bash/zsh/fish)
 2. **Checks for Docker** (installs if missing on Linux)
 3. **Creates a containerized venvoy** that runs entirely in Docker
-4. **Adds venvoy to PATH** so you can run `venvoy` commands
-5. **First run builds bootstrap image** with Python + venvoy inside
+4. **Adds venvoy to PATH** automatically in your shell configuration
+5. **Creates system-wide symlink** when possible (Linux/macOS)
+6. **Tests installation** and provides immediate feedback
+7. **First run builds bootstrap image** with Python + venvoy inside
 
-**Result:** You get a fully functional `venvoy` command without installing Python!
+**PATH Integration Features:**
+- ✅ **Multi-shell support** - Detects bash, zsh, fish, and more
+- ✅ **Immediate availability** - Works in current session when possible
+- ✅ **System-wide access** - Creates `/usr/local/bin` symlink when writable
+- ✅ **Smart detection** - Prevents duplicate PATH entries
+- ✅ **Cross-platform** - Works on Linux, macOS, Windows, and WSL
+
+**Result:** You get a fully functional `venvoy` command available from any directory!
 
 ### 📦 **Alternative Methods**
 
@@ -95,6 +112,61 @@ cd venvoy
 make install-dev
 ```
 
+### ✅ **Installation Verification**
+
+After installation, test that venvoy is available:
+```bash
+venvoy --help
+```
+
+If the command isn't found, restart your terminal or run:
+```bash
+source ~/.bashrc  # or ~/.zshrc for zsh users
+```
+
+### 🗑️ **Uninstallation**
+
+**Recommended method (if venvoy is working):**
+```bash
+venvoy uninstall
+```
+
+**Alternative methods (if venvoy command is not available):**
+
+**Linux/macOS/WSL:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/uninstall.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+iwr -useb https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/uninstall.ps1 | iex
+```
+
+**Uninstall options:**
+```bash
+# Quick uninstall with confirmation
+venvoy uninstall
+
+# Force uninstall without prompts
+venvoy uninstall --force
+
+# Keep environment exports
+venvoy uninstall --keep-projects
+
+# Keep Docker images
+venvoy uninstall --keep-images
+
+# Minimal cleanup (keep projects and images)
+venvoy uninstall --keep-projects --keep-images
+```
+
+The uninstaller will:
+- 🗑️ Remove all venvoy files and directories
+- 🔧 Clean up PATH entries from shell configs
+- 🐳 Optionally remove Docker images and containers
+- 📁 Optionally preserve your environment exports
+
 ## 🎯 Quick Start
 
 ### 1. Initialize a New Environment
@@ -108,6 +180,12 @@ venvoy init --python-version 3.12 --name my-project
 # Force reinitialize existing environment
 venvoy init --force
 ```
+
+**Environment Restoration**: If you have previous environment exports, venvoy will automatically detect them and offer a scrollable list to restore from. This allows you to:
+- 🔄 **Restore previous states** - Select from any timestamped environment export
+- 📊 **View package counts** - See conda and pip package counts for each export
+- 📅 **Browse history** - Scroll through chronologically sorted environment states
+- 🆕 **Create new** - Skip restoration and create a fresh environment
 
 **AI Editor Integration**: During initialization, venvoy will detect available AI-powered editors (Cursor and VSCode). You'll be prompted to choose your preferred editor or can opt for an enhanced interactive shell with AI-ready environment setup.
 
@@ -137,16 +215,7 @@ venvoy init --force
 venvoy freeze --include-dev
 ```
 
-### 4. Build Multi-Architecture Images
-```bash
-# Build for multiple architectures
-venvoy build --tag myregistry/myproject:latest
-
-# Build and push to registry
-venvoy build --tag myregistry/myproject:latest --push
-```
-
-### 5. Export for Sharing
+### 4. Export for Sharing
 ```bash
 # Export as environment YAML
 venvoy export --format yaml --output environment.yaml
@@ -158,7 +227,7 @@ venvoy export --format dockerfile --output Dockerfile
 venvoy export --format tarball --output project.tar.gz
 ```
 
-### 6. Configure Environment Settings
+### 5. Configure Environment Settings
 ```bash
 # Check and update AI editor integration settings
 venvoy configure --name my-project
@@ -168,6 +237,12 @@ venvoy package-managers
 
 # List all environments
 venvoy list
+
+# View environment export history
+venvoy history --name my-project
+
+# Uninstall venvoy completely
+venvoy uninstall
 ```
 
 ## 📁 Auto-Save Environment Tracking
@@ -177,13 +252,18 @@ venvoy automatically tracks and saves your environment changes:
 ### 🏠 **venvoy-projects Directory**
 - **Location**: `~/venvoy-projects/[environment-name]/`
 - **Auto-created**: Created automatically for each environment
-- **Contents**: `environment.yml` and `.last_updated` timestamp
+- **Contents**: 
+  - `environment.yml` (latest state)
+  - `environment_YYYYMMDD_HHMMSS.yml` (timestamped exports)
+  - `.last_updated` timestamp
 
 ### 📝 **Automatic environment.yml Generation**
 - **Real-time monitoring**: Detects package installations/removals as they happen
 - **Smart categorization**: Separates conda and pip packages automatically
+- **Timestamped exports**: Each change creates a dated backup file
 - **Exit save**: Final save when container stops
 - **Conda-compatible**: Standard `environment.yml` format for easy sharing
+- **History tracking**: Retain complete environment evolution history
 
 ### 🔄 **When Auto-Save Triggers**
 1. **Package Installation**: `pip install`, `mamba install`, `uv pip install`
@@ -241,11 +321,10 @@ The `init` command performs the following steps:
 
 1. **Platform Detection** - Identifies OS, architecture, and available tools
 2. **Docker Setup** - Ensures Docker is installed and running
-3. **VSCode Check** - Verifies VSCode installation (optional)
-4. **Environment Creation** - Creates directory structure and configuration
-5. **Dockerfile Generation** - Creates optimized multi-stage Dockerfile
-6. **Container Build** - Builds the Docker image with Python and miniconda
-7. **Home Mounting** - Configures access to host home directory
+3. **Editor Check** - Verifies AI editor installation (optional)
+4. **Environment Setup** - Downloads pre-built environment for your Python version
+5. **Configuration** - Creates directory structure and configuration
+6. **Home Mounting** - Configures access to host home directory
 
 ### `venvoy freeze` - Environment Snapshotting
 
@@ -258,14 +337,7 @@ The `freeze` command creates a complete snapshot:
 5. **Vendor Directory** - Stores all wheels in `vendor/` folder
 6. **Snapshot Creation** - Creates timestamped environment snapshot
 
-### `venvoy build` - Multi-Architecture Building
 
-The `build` command uses Docker BuildX:
-
-1. **BuildX Setup** - Configures multi-architecture builder
-2. **Platform Targeting** - Builds for linux/amd64, linux/arm64
-3. **Layer Optimization** - Optimizes Docker layers for size
-4. **Registry Push** - Optionally pushes to container registry
 
 ### `venvoy run` - Container Execution
 

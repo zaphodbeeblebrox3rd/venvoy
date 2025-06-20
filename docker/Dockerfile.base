@@ -1,0 +1,108 @@
+# venvoy Base Image - Multi-architecture Python environment
+# This image is pre-built and published to Docker Hub
+# Usage: docker run --rm -it zaphodbeeblebrox3rd/venvoy:python3.11
+
+ARG PYTHON_VERSION=3.11
+FROM python:${PYTHON_VERSION}-slim
+
+# Set labels for the image
+LABEL org.opencontainers.image.title="venvoy"
+LABEL org.opencontainers.image.description="Extremely Portable AI-ready Python environment with ultra-fast package managers"
+LABEL org.opencontainers.image.url="https://github.com/zaphodbeeblebrox3rd/venvoy"
+LABEL org.opencontainers.image.source="https://github.com/zaphodbeeblebrox3rd/venvoy"
+LABEL org.opencontainers.image.vendor="zaphodbeeblebrox3rd"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV VENVOY_VERSION=0.1.0
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    wget \
+    vim \
+    nano \
+    htop \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install miniconda
+RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-$(uname -m).sh -O /tmp/miniconda.sh && \
+    bash /tmp/miniconda.sh -b -p /opt/conda && \
+    rm /tmp/miniconda.sh
+
+# Add conda to PATH
+ENV PATH="/opt/conda/bin:$PATH"
+
+# Initialize conda with better error handling
+RUN /opt/conda/bin/conda --version && \
+    (/opt/conda/bin/conda init bash || /opt/conda/bin/conda init || echo "conda init not supported on this platform")
+
+# Update conda first to ensure compatibility
+RUN /opt/conda/bin/conda update -n base -c defaults conda -y || echo "conda update failed, continuing"
+
+# Install mamba for faster dependency resolution
+RUN /opt/conda/bin/conda install -n base -c conda-forge mamba -y
+
+# Create venvoy environment using mamba (much faster than conda)
+RUN /opt/conda/bin/mamba create -n venvoy python=${PYTHON_VERSION} -c conda-forge -y
+
+# Install uv for ultra-fast Python package management
+RUN pip install --no-cache-dir uv
+
+# Activate environment by default
+ENV CONDA_DEFAULT_ENV=venvoy
+ENV CONDA_PREFIX=/opt/conda/envs/venvoy
+ENV PATH="/opt/conda/envs/venvoy/bin:$PATH"
+
+# Install common AI/ML packages using mamba for better dependency resolution
+RUN /opt/conda/bin/mamba install -n venvoy -c conda-forge \
+    numpy \
+    pandas \
+    matplotlib \
+    seaborn \
+    jupyter \
+    ipython \
+    requests \
+    python-dotenv \
+    scikit-learn \
+    -y
+
+# Install additional fast tools
+RUN /opt/conda/envs/venvoy/bin/pip install \
+    rich \
+    click \
+    fastapi \
+    uvicorn
+
+# Create user with flexible UID/GID (will be overridden at runtime)
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+RUN groupadd -g $GROUP_ID venvoy && \
+    useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash venvoy
+
+# Set up workspace
+WORKDIR /workspace
+RUN chown venvoy:venvoy /workspace
+
+# Switch to user
+USER venvoy
+
+# Set up shell with better interactive experience
+RUN echo 'conda activate venvoy' >> ~/.bashrc && \
+    echo 'export PS1="(🤖 venvoy) \\u@\\h:\\w\\$ "' >> ~/.bashrc && \
+    echo 'echo "🚀 Welcome to your AI-ready venvoy environment!"' >> ~/.bashrc && \
+    echo 'echo "🐍 Python $(python --version) with AI/ML packages"' >> ~/.bashrc && \
+    echo 'echo "📦 Package managers: mamba (fast conda), uv (ultra-fast pip), pip"' >> ~/.bashrc && \
+    echo 'echo "📊 Pre-installed: numpy, pandas, matplotlib, jupyter, scikit-learn, and more"' >> ~/.bashrc && \
+    echo 'echo "📂 Workspace: $(pwd)"' >> ~/.bashrc && \
+    echo 'echo "💡 Home directory mounted at: /home/venvoy/host-home"' >> ~/.bashrc
+
+# Default command
+CMD ["/bin/bash"] 

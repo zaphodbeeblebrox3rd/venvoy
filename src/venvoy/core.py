@@ -46,8 +46,30 @@ class VenvoyEnvironment:
         if self.env_dir.exists() and not force:
             raise RuntimeError(f"Environment '{self.name}' already exists. Use --force to reinitialize.")
         
+        print(f"🚀 Initializing venvoy environment: {self.name}")
+        
         # Create environment directory
         self.env_dir.mkdir(parents=True, exist_ok=True)
+        self.projects_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Pull the pre-built image if needed
+        image_name = f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}"
+        print(f"📦 Setting up Python {self.python_version} environment...")
+        self._ensure_image_available(image_name)
+        
+        # Check for existing environment exports and offer to restore
+        selected_export = self.select_environment_export()
+        
+        if selected_export:
+            # Restore from selected export
+            self.restore_from_environment_export(selected_export)
+        else:
+            # Create new environment
+            print("🆕 Creating new environment...")
+            
+            # Create requirements files
+            (self.env_dir / "requirements.txt").touch()
+            (self.env_dir / "requirements-dev.txt").touch()
         
         # Create configuration
         config = {
@@ -55,30 +77,18 @@ class VenvoyEnvironment:
             'python_version': self.python_version,
             'created': datetime.now().isoformat(),
             'platform': self.platform.detect(),
-            'base_image': self.platform.get_base_image(self.python_version),
+            'image_name': image_name,
             'packages': [],
             'dev_packages': [],
             'editor_type': editor_type,
             'editor_available': editor_available,
             # Keep backward compatibility
             'vscode_available': editor_available and editor_type == "vscode",
+            'restored_from': selected_export.name if selected_export else None,
         }
         
         with open(self.config_file, 'w') as f:
             yaml.safe_dump(config, f, default_flow_style=False)
-        
-        # Create Dockerfile
-        self._create_dockerfile()
-        
-        # Create docker-compose.yml for easy management
-        self._create_docker_compose()
-        
-        # Create requirements files
-        (self.env_dir / "requirements.txt").touch()
-        (self.env_dir / "requirements-dev.txt").touch()
-        
-        # Create vendor directory for wheels
-        (self.env_dir / "vendor").mkdir(exist_ok=True)
         
         # Copy package monitor script to environment directory
         monitor_script = Path(__file__).parent / "templates" / "package_monitor.py"
@@ -86,6 +96,31 @@ class VenvoyEnvironment:
         if monitor_script.exists():
             import shutil
             shutil.copy2(monitor_script, target_script)
+        
+        print(f"✅ Environment '{self.name}' ready!")
+        if selected_export:
+            print(f"🔄 Restored from: {selected_export.name}")
+        else:
+            print(f"🆕 New environment created")
+    
+    def _ensure_image_available(self, image_name: str):
+        """Ensure the venvoy image is available locally"""
+        try:
+            # Check if image exists locally
+            result = subprocess.run([
+                'docker', 'image', 'inspect', image_name
+            ], capture_output=True, check=True)
+            
+        except subprocess.CalledProcessError:
+            # Image doesn't exist, pull it
+            print(f"⬇️  Downloading environment (one-time setup)...")
+            try:
+                subprocess.run([
+                    'docker', 'pull', image_name
+                ], check=True)
+                print(f"✅ Environment ready")
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"Failed to download environment: {e}")
     
     def _create_dockerfile(self):
         """Create Dockerfile for the environment"""
@@ -360,7 +395,17 @@ CMD ["/bin/bash"]
     
     def run(self, command: Optional[str] = None, additional_mounts: List[str] = None):
         """Run the environment container with auto-save monitoring"""
-        image_tag = f"venvoy/{self.name}:{self.python_version}"
+        # Load configuration to get the image name
+        if not self.config_file.exists():
+            raise RuntimeError(f"Environment '{self.name}' not found. Run 'venvoy init' first.")
+        
+        with open(self.config_file, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        image_name = config.get('image_name', f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}")
+        
+        # Ensure image is available
+        self._ensure_image_available(image_name)
         
         # Check editor configuration
         editor_type, editor_available = self._get_editor_config()
@@ -393,10 +438,10 @@ CMD ["/bin/bash"]
             if editor_available:
                 if editor_type == "cursor":
                     # Try to launch Cursor and connect to container
-                    self._launch_with_cursor(image_tag, volumes)
+                    self._launch_with_cursor(image_name, volumes)
                 elif editor_type == "vscode":
                     # Try to launch VSCode and connect to container
-                    self._launch_with_vscode(image_tag, volumes)
+                    self._launch_with_vscode(image_name, volumes)
                 else:
                     # Launch interactive shell
                     command = self._get_interactive_shell_command()
@@ -408,7 +453,7 @@ CMD ["/bin/bash"]
         try:
             if not editor_available or command is not None:
                 self.docker_manager.run_container(
-                    image=image_tag,
+                    image=image_name,
                     name=f"{self.name}-runtime",
                     command=command,
                     volumes=volumes,
@@ -488,7 +533,7 @@ CMD ["/bin/bash"]
         return str(output_file)
     
     def auto_save_environment(self):
-        """Auto-save environment.yml to venvoy-projects directory"""
+        """Auto-save environment.yml to venvoy-projects directory with timestamp"""
         try:
             # Get current packages from container
             packages = self._get_installed_packages()
@@ -497,7 +542,9 @@ CMD ["/bin/bash"]
             env_data = {
                 'name': self.name,
                 'channels': ['conda-forge', 'defaults'],
-                'dependencies': []
+                'dependencies': [],
+                'exported': datetime.now().isoformat(),
+                'venvoy_version': '0.1.0'
             }
             
             # Separate conda and pip packages
@@ -527,12 +574,20 @@ CMD ["/bin/bash"]
                     'pip': pip_packages
                 })
             
-            # Save to venvoy-projects directory
-            env_file = self.projects_dir / "environment.yml"
+            # Create timestamped filename
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            env_file = self.projects_dir / f"environment_{timestamp}.yml"
+            
+            # Save timestamped environment file
             with open(env_file, 'w') as f:
                 yaml.safe_dump(env_data, f, default_flow_style=False, sort_keys=False)
             
-            # Also save a timestamp file
+            # Also maintain current environment.yml as latest
+            current_env_file = self.projects_dir / "environment.yml"
+            with open(current_env_file, 'w') as f:
+                yaml.safe_dump(env_data, f, default_flow_style=False, sort_keys=False)
+            
+            # Update timestamp file
             timestamp_file = self.projects_dir / ".last_updated"
             with open(timestamp_file, 'w') as f:
                 f.write(datetime.now().isoformat())
@@ -541,6 +596,147 @@ CMD ["/bin/bash"]
             
         except Exception as e:
             print(f"Warning: Failed to auto-save environment: {e}")
+    
+    def list_environment_exports(self) -> List[Dict[str, Any]]:
+        """List all timestamped environment exports for this environment"""
+        exports = []
+        
+        if not self.projects_dir.exists():
+            return exports
+        
+        # Find all environment_*.yml files
+        for env_file in self.projects_dir.glob("environment_*.yml"):
+            try:
+                with open(env_file, 'r') as f:
+                    env_data = yaml.safe_load(f)
+                
+                # Extract timestamp from filename
+                filename = env_file.name
+                if filename.startswith('environment_') and filename.endswith('.yml'):
+                    timestamp_str = filename[12:-4]  # Remove 'environment_' and '.yml'
+                    
+                    try:
+                        # Parse timestamp
+                        timestamp = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+                        
+                        # Count packages
+                        package_count = 0
+                        pip_count = 0
+                        
+                        for dep in env_data.get('dependencies', []):
+                            if isinstance(dep, dict) and 'pip' in dep:
+                                pip_count = len(dep['pip'])
+                            elif isinstance(dep, str):
+                                package_count += 1
+                        
+                        exports.append({
+                            'file': env_file,
+                            'timestamp': timestamp,
+                            'timestamp_str': timestamp_str,
+                            'formatted_time': timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                            'conda_packages': package_count,
+                            'pip_packages': pip_count,
+                            'total_packages': package_count + pip_count,
+                            'exported_date': env_data.get('exported', 'Unknown'),
+                            'venvoy_version': env_data.get('venvoy_version', 'Unknown')
+                        })
+                        
+                    except ValueError:
+                        # Skip files with invalid timestamp format
+                        continue
+                        
+            except (yaml.YAMLError, FileNotFoundError):
+                continue
+        
+        # Sort by timestamp (newest first)
+        exports.sort(key=lambda x: x['timestamp'], reverse=True)
+        return exports
+    
+    def select_environment_export(self) -> Optional[Path]:
+        """Present user with a list of environment exports to choose from"""
+        exports = self.list_environment_exports()
+        
+        if not exports:
+            return None
+        
+        print(f"\n📋 Found {len(exports)} previous environment exports for '{self.name}':")
+        print("=" * 80)
+        
+        for i, export in enumerate(exports, 1):
+            print(f"{i:2d}. {export['formatted_time']} - "
+                  f"{export['total_packages']} packages "
+                  f"({export['conda_packages']} conda, {export['pip_packages']} pip)")
+        
+        print(f"{len(exports) + 1:2d}. Create new environment (skip restore)")
+        print("=" * 80)
+        
+        while True:
+            try:
+                choice = input(f"\nSelect environment to restore (1-{len(exports) + 1}): ").strip()
+                
+                if not choice:
+                    continue
+                    
+                choice_num = int(choice)
+                
+                if choice_num == len(exports) + 1:
+                    # User chose to create new environment
+                    return None
+                elif 1 <= choice_num <= len(exports):
+                    selected = exports[choice_num - 1]
+                    print(f"\n✅ Selected: {selected['formatted_time']}")
+                    print(f"📦 Packages: {selected['total_packages']} total")
+                    return selected['file']
+                else:
+                    print(f"❌ Please enter a number between 1 and {len(exports) + 1}")
+                    
+            except ValueError:
+                print("❌ Please enter a valid number")
+            except KeyboardInterrupt:
+                print("\n🚫 Cancelled")
+                return None
+    
+    def restore_from_environment_export(self, export_file: Path):
+        """Restore environment from a specific export file"""
+        try:
+            print(f"🔄 Restoring environment from: {export_file.name}")
+            
+            # Copy the export file to requirements files
+            with open(export_file, 'r') as f:
+                env_data = yaml.safe_load(f)
+            
+            # Extract conda and pip dependencies
+            conda_deps = []
+            pip_deps = []
+            
+            for dep in env_data.get('dependencies', []):
+                if isinstance(dep, dict) and 'pip' in dep:
+                    pip_deps.extend(dep['pip'])
+                elif isinstance(dep, str):
+                    conda_deps.append(dep)
+            
+            # Write to requirements files
+            if conda_deps:
+                conda_req_file = self.env_dir / "conda-requirements.txt"
+                with open(conda_req_file, 'w') as f:
+                    for dep in conda_deps:
+                        # Convert conda format (name=version) to pip format (name==version)
+                        if '=' in dep and not dep.startswith('='):
+                            dep = dep.replace('=', '==', 1)
+                        f.write(f"{dep}\n")
+            
+            if pip_deps:
+                pip_req_file = self.env_dir / "requirements.txt"
+                with open(pip_req_file, 'w') as f:
+                    for dep in pip_deps:
+                        f.write(f"{dep}\n")
+            
+            print(f"✅ Environment configuration restored")
+            print(f"📦 {len(conda_deps)} conda packages, {len(pip_deps)} pip packages")
+            
+        except Exception as e:
+            print(f"❌ Failed to restore environment: {e}")
+            raise
     
     def _monitor_package_changes(self, container_name: str):
         """Monitor for package changes and auto-save environment.yml"""

@@ -2,14 +2,18 @@
 
 help:
 	@echo "Available commands:"
-	@echo "  bootstrap   - Install venvoy (containerized, no Python needed)"
-	@echo "  install     - Install for development (requires Python)"
-	@echo "  docker-dev  - Run development environment in container"
-	@echo "  test        - Run tests (containerized)"
-	@echo "  lint        - Run linting (containerized)"
-	@echo "  format      - Format code (containerized)"
-	@echo "  clean       - Clean build artifacts"
-	@echo "  build       - Build the package (containerized)"
+	@echo "  bootstrap     - Install venvoy (containerized, no Python needed)"
+	@echo "  install       - Install for development (requires Python)"
+	@echo "  docker-dev    - Run development environment in container"
+	@echo "  test          - Run tests (containerized)"
+	@echo "  lint          - Run linting (containerized)"
+	@echo "  format        - Format code (containerized)"
+	@echo "  clean         - Clean build artifacts"
+	@echo "  build         - Build the package (containerized)"
+	@echo "  check-package - Check package with twine"
+	@echo "  upload-test   - Upload to TestPyPI (for testing)"
+	@echo "  upload        - Upload to PyPI (production)"
+	@echo "  publish       - Interactive publishing script"
 
 # Recommended installation method - no Python needed on host
 bootstrap:
@@ -91,9 +95,28 @@ build: clean
 		pip install build && \
 		python -m build"
 
-# Upload to PyPI (requires credentials)
-upload: build
+# Check package with twine
+check-package: build
+	@echo "🔍 Checking package with twine..."
+	@docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim bash -c "\
+		pip install twine && \
+		python -m twine check dist/*"
+
+# Upload to TestPyPI (for testing)
+upload-test: check-package
+	@echo "📤 Uploading to TestPyPI..."
+	@docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim bash -c "\
+		pip install twine && \
+		python -m twine upload --repository testpypi dist/*"
+
+# Upload to PyPI (production - requires credentials)
+upload: check-package
 	@echo "📤 Uploading to PyPI..."
 	@docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim bash -c "\
 		pip install twine && \
-		python -m twine upload dist/*" 
+		python -m twine upload dist/*"
+
+# Interactive publishing script
+publish:
+	@echo "🚀 Running interactive publishing script..."
+	@python scripts/publish.py 

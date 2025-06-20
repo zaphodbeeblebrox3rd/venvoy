@@ -9,7 +9,7 @@ description = "A multi-OS, multi-architecture, immutable, portable, and shareabl
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "zaphodbeeblebrox3rd", email = "zaphodbeeblebrox3rd@users.noreply.github.com"}
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
