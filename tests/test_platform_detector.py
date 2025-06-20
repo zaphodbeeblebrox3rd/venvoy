@@ -3,7 +3,7 @@ Tests for platform detection
 """
 
 import pytest
-from src.venvoy.platform_detector import PlatformDetector
+from venvoy.platform_detector import PlatformDetector
 
 
 class TestPlatformDetector:
