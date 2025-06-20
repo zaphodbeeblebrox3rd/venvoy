@@ -61,7 +61,23 @@ def init(python_version: str, name: str, force: bool):
         
         progress.update(task, description="Creating environment...")
         env = VenvoyEnvironment(name=name, python_version=python_version)
-        env.initialize(force=force, editor_type=editor_type, editor_available=editor_available)
+        
+        try:
+            env.initialize(force=force, editor_type=editor_type, editor_available=editor_available)
+        except RuntimeError as e:
+            if "already exists" in str(e):
+                progress.remove_task(task)
+                console.print(f"\n❌ {e}")
+                console.print(f"\n💡 To reinitialize the existing environment '{name}', use:")
+                console.print(f"   venvoy init --name {name} --force")
+                console.print(f"\n🔍 To see all your environments:")
+                console.print(f"   venvoy list")
+                console.print(f"\n🚀 To start working with the existing environment:")
+                console.print(f"   venvoy run --name {name}")
+                return
+            else:
+                # Re-raise other RuntimeErrors
+                raise
         
         progress.update(task, description="Building and launching container...")
         env.build_and_launch()

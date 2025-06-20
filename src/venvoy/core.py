@@ -44,7 +44,11 @@ class VenvoyEnvironment:
     def initialize(self, force: bool = False, editor_type: str = "none", editor_available: bool = False):
         """Initialize a new venvoy environment"""
         if self.env_dir.exists() and not force:
-            raise RuntimeError(f"Environment '{self.name}' already exists. Use --force to reinitialize.")
+            raise RuntimeError(
+                f"Environment '{self.name}' already exists at {self.env_dir}. "
+                f"This directory contains your environment configuration, Dockerfile, and requirements. "
+                f"Use --force to reinitialize and overwrite the existing environment."
+            )
         
         # Create environment directory
         self.env_dir.mkdir(parents=True, exist_ok=True)
