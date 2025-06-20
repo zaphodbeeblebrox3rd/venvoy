@@ -401,6 +401,65 @@ packages: []
 dev_packages: []
 ```
 
+## 🛠️ Troubleshooting
+
+### Environment Already Exists Error
+
+If you see an error like:
+```
+RuntimeError: Environment 'venvoy-env' already exists at ~/.venvoy/environments/venvoy-env. 
+This directory contains your environment configuration, Dockerfile, and requirements. 
+Use --force to reinitialize and overwrite the existing environment.
+```
+
+**Solutions:**
+
+1. **Reinitialize the existing environment:**
+   ```bash
+   venvoy init --force
+   ```
+
+2. **Use a different environment name:**
+   ```bash
+   venvoy init --name my-new-project
+   ```
+
+3. **Start working with the existing environment:**
+   ```bash
+   venvoy run
+   ```
+
+4. **List all environments to see what's available:**
+   ```bash
+   venvoy list
+   ```
+
+### Docker Not Running
+
+If you get Docker-related errors:
+```bash
+# Start Docker Desktop (macOS/Windows)
+# Or on Linux:
+sudo systemctl start docker
+sudo systemctl enable docker
+```
+
+### Permission Issues
+
+If you encounter permission errors:
+```bash
+# Add your user to the docker group (Linux)
+sudo usermod -aG docker $USER
+# Then log out and back in
+```
+
+### AI Editor Not Detected
+
+If Cursor or VSCode isn't detected:
+1. **Cursor**: Download from [cursor.sh](https://cursor.sh)
+2. **VSCode**: Download from [code.visualstudio.com](https://code.visualstudio.com)
+3. **Manual launch**: Use `venvoy run --command /bin/bash` for interactive shell
+
 ## 🧪 Testing
 
 ```bash
