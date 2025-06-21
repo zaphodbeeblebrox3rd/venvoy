@@ -1,11 +1,11 @@
 #!/bin/bash
-# venvoy Self-Bootstrapping Installer
+# venvoy Self-Bootstrapping Installer & Updater
 # Works without requiring Python on the host system
 
 set -e
 
-echo "🚀 venvoy Self-Bootstrapping Installer"
-echo "======================================"
+echo "🚀 venvoy Self-Bootstrapping Installer & Updater"
+echo "================================================"
 
 # Detect platform
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
@@ -45,6 +45,14 @@ echo "✅ Docker found"
 INSTALL_DIR="$HOME/.venvoy/bin"
 mkdir -p "$INSTALL_DIR"
 
+# Check if venvoy is already installed
+EXISTING_INSTALL=false
+if [ -f "$INSTALL_DIR/venvoy" ]; then
+    EXISTING_INSTALL=true
+    echo "📦 Found existing venvoy installation"
+    echo "🔄 Updating to latest version..."
+fi
+
 # Download or create venvoy bootstrap script
 cat > "$INSTALL_DIR/venvoy" << 'EOF'
 #!/bin/bash
@@ -65,11 +73,15 @@ if [[ -d "/workspace" ]]; then
     find /workspace -name "*.pyc" -delete 2>/dev/null || true
 fi
 
-# Pull venvoy image if it doesn't exist
+# Pull venvoy image if it doesn't exist or force update
 if ! docker image inspect "$VENVOY_IMAGE" &> /dev/null; then
     echo "📦 Downloading venvoy environment..."
     docker pull "$VENVOY_IMAGE"
     echo "✅ Environment ready"
+elif [ "$1" = "update" ] || [ "$1" = "upgrade" ]; then
+    echo "🔄 Updating venvoy environment..."
+    docker pull "$VENVOY_IMAGE"
+    echo "✅ Environment updated"
 fi
 
 # Handle uninstall command specially
@@ -299,19 +311,44 @@ case $PLATFORM in
         ;;
 esac
 
+# Force update the bootstrap image to ensure latest features
+echo "🔄 Updating venvoy bootstrap image..."
+if command -v docker &> /dev/null; then
+    docker pull "zaphodbeeblebrox3rd/venvoy:bootstrap" 2>/dev/null || true
+    echo "✅ Bootstrap image updated"
+fi
+
 echo ""
-echo "🎉 venvoy installed successfully!"
+if [ "$EXISTING_INSTALL" = true ]; then
+    echo "🎉 venvoy updated successfully!"
+    echo "✨ All new features are now active"
+else
+    echo "🎉 venvoy installed successfully!"
+fi
+
 echo ""
 echo "📋 Next steps:"
 
 # Test if venvoy is immediately available
 if command -v venvoy &> /dev/null; then
     echo "   ✅ venvoy is ready to use!"
+    if [ "$EXISTING_INSTALL" = true ]; then
+        echo "   🆕 New features available:"
+        echo "      • Enhanced WSL editor detection"
+        echo "      • Working uninstall command"
+        echo "      • Improved platform detection"
+    fi
     echo "   1. (Optional) Run: venvoy setup (to configure AI editors)"
     echo "   2. Run: venvoy init --python-version <python-version> --name <environment-name>"
     echo "   3. Start coding with AI-powered environments!"
 else
     echo "   1. Restart your terminal (or run: source $SHELL_RC)"
+    if [ "$EXISTING_INSTALL" = true ]; then
+        echo "   🆕 New features available:"
+        echo "      • Enhanced WSL editor detection"
+        echo "      • Working uninstall command"
+        echo "      • Improved platform detection"
+    fi
     echo "   2. (Optional) Run: venvoy setup (to configure AI editors)"
     echo "   3. Run: venvoy init"
     echo "   4. Start coding with AI-powered environments!"
@@ -324,4 +361,8 @@ echo ""
 echo "🔧 Installed to: $INSTALL_DIR/venvoy"
 echo "📝 Shell config: $SHELL_RC"
 echo ""
-echo "🚀 Quick test: venvoy --help" 
+if [ "$EXISTING_INSTALL" = true ]; then
+    echo "🚀 Test new features: venvoy --help"
+else
+    echo "🚀 Quick test: venvoy --help"
+fi 

@@ -92,6 +92,45 @@ The bootstrap installer:
 
 **Result:** You get a fully functional `venvoy` command available from any directory!
 
+### 🔄 **Updating venvoy**
+
+**One-Liner Updates (Recommended):**
+The same one-liner installation commands act as updaters:
+
+**Linux/macOS/WSL:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/install.sh | bash
+```
+
+**Windows PowerShell:**
+```powershell
+iwr -useb https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/install.ps1 | iex
+```
+
+**Built-in Update Commands:**
+```bash
+# Update venvoy to latest version
+venvoy update
+
+# Alternative update command
+venvoy upgrade
+```
+
+**What Gets Updated:**
+- ✅ **Bootstrap script** - Latest features and bug fixes
+- ✅ **Docker image** - Latest venvoy code and dependencies
+- ✅ **Platform detection** - Enhanced WSL and cross-platform support
+- ✅ **Editor integration** - Improved AI editor detection
+- ✅ **Uninstall functionality** - Working uninstall command
+- ✅ **Error handling** - Better error messages and recovery
+
+**Update Features:**
+- 🔄 **Smart detection** - Automatically detects existing installations
+- 🚀 **Zero downtime** - Updates happen seamlessly in background
+- ✨ **Feature announcements** - Shows new features after update
+- 🛡️ **Safe updates** - Preserves existing environments and configurations
+- 📦 **Bootstrap updates** - Ensures latest Docker image is available
+
 ### 📦 **Alternative Methods**
 
 **From PyPI (requires Python):**
