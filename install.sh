@@ -84,6 +84,13 @@ elif [ "$1" = "update" ] || [ "$1" = "upgrade" ]; then
     echo "✅ Environment updated"
 fi
 
+# Check if we're in a venvoy development directory (has src/venvoy/)
+USE_LOCAL_CODE=false
+if [[ -d "$(pwd)/src/venvoy" ]] && [[ -f "$(pwd)/pyproject.toml" ]]; then
+    USE_LOCAL_CODE=true
+    echo "🔧 Using local venvoy development code"
+fi
+
 # Handle uninstall command specially
 if [ "$1" = "uninstall" ]; then
     # Run uninstall directly on host, not in container
@@ -242,13 +249,26 @@ if [ "$1" = "uninstall" ]; then
     exit 0
 else
     # Run normal venvoy commands
-    docker run --rm -it \
-        -v /var/run/docker.sock:/var/run/docker.sock \
-        -v "$HOME:$HOME" \
-        -v "$(pwd):/workspace" \
-        -w /workspace \
-        -e HOME="$HOME" \
-        "$VENVOY_IMAGE" "$@"
+    if [ "$USE_LOCAL_CODE" = true ]; then
+        # Use local development code
+        docker run --rm -it \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME:$HOME" \
+            -v "$(pwd):/workspace" \
+            -w /workspace \
+            -e HOME="$HOME" \
+            -e PYTHONPATH="/workspace/src" \
+            "$VENVOY_IMAGE" python -m venvoy "$@"
+    else
+        # Use installed package
+        docker run --rm -it \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME:$HOME" \
+            -v "$(pwd):/workspace" \
+            -w /workspace \
+            -e HOME="$HOME" \
+            "$VENVOY_IMAGE" "$@"
+    fi
 fi
 EOF
 
