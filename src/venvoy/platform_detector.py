@@ -4,6 +4,7 @@ Platform detection utilities for venvoy
 
 import platform
 import sys
+import os
 from typing import Dict, Any
 from pathlib import Path
 
@@ -15,6 +16,27 @@ class PlatformDetector:
         self.system = platform.system().lower()
         self.machine = platform.machine().lower()
         self.architecture = self._normalize_architecture()
+        self.is_wsl = self._detect_wsl()
+        
+    def _detect_wsl(self) -> bool:
+        """Detect if running in WSL (Windows Subsystem for Linux)"""
+        # Check for WSL-specific indicators
+        if self.system == 'linux':
+            # Check for WSL-specific files
+            wsl_indicators = [
+                '/proc/version',
+                '/proc/sys/kernel/osrelease'
+            ]
+            for indicator in wsl_indicators:
+                if os.path.exists(indicator):
+                    try:
+                        with open(indicator, 'r') as f:
+                            content = f.read().lower()
+                            if 'microsoft' in content or 'wsl' in content:
+                                return True
+                    except:
+                        pass
+        return False
         
     def _normalize_architecture(self) -> str:
         """Normalize architecture names to Docker platform format"""
@@ -42,6 +64,7 @@ class PlatformDetector:
             'docker_supported': self._check_docker_support(),
             'vscode_available': self._check_vscode_available(),
             'cursor_available': self._check_cursor_available(),
+            'is_wsl': self.is_wsl,
         }
     
     def _check_docker_support(self) -> bool:
@@ -73,12 +96,24 @@ class PlatformDetector:
                 Path.home() / "Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
             ]
         elif self.system == 'linux':
-            return [
+            paths = [
                 Path("/usr/bin/code"),
                 Path("/usr/local/bin/code"),
                 Path("/snap/bin/code"),
                 Path.home() / ".local/bin/code",
             ]
+            
+            # If running in WSL, also check for Windows VSCode installations
+            if self.is_wsl:
+                # Convert Windows paths to WSL paths
+                windows_paths = [
+                    "/mnt/c/Users/erich/AppData/Local/Programs/Microsoft VS Code/Code.exe",
+                    "/mnt/c/Program Files/Microsoft VS Code/Code.exe",
+                    "/mnt/c/Program Files (x86)/Microsoft VS Code/Code.exe",
+                ]
+                paths.extend([Path(path) for path in windows_paths])
+            
+            return paths
         return []
     
     def _get_cursor_paths(self) -> list:
@@ -95,13 +130,25 @@ class PlatformDetector:
                 Path.home() / "Applications/Cursor.app/Contents/Resources/app/bin/cursor",
             ]
         elif self.system == 'linux':
-            return [
+            paths = [
                 Path("/usr/bin/cursor"),
                 Path("/usr/local/bin/cursor"),
                 Path("/snap/bin/cursor"),
                 Path.home() / ".local/bin/cursor",
                 Path.home() / ".cursor/cursor",
             ]
+            
+            # If running in WSL, also check for Windows Cursor installations
+            if self.is_wsl:
+                # Convert Windows paths to WSL paths
+                windows_paths = [
+                    "/mnt/c/Users/erich/AppData/Local/Programs/cursor/Cursor.exe",
+                    "/mnt/c/Program Files/Cursor/Cursor.exe",
+                    "/mnt/c/Program Files (x86)/Cursor/Cursor.exe",
+                ]
+                paths.extend([Path(path) for path in windows_paths])
+            
+            return paths
         return []
     
     def get_docker_platform(self) -> str:

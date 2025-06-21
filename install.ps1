@@ -25,10 +25,11 @@ New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 # Create venvoy.bat bootstrap script
 $BatchScript = @"
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 
 set VENVOY_IMAGE=venvoy/bootstrap:latest
 set VENVOY_DIR=%USERPROFILE%\.venvoy
+set InstallDir=%USERPROFILE%\.venvoy\bin
 
 :: Ensure venvoy directory exists
 if not exist "%VENVOY_DIR%" mkdir "%VENVOY_DIR%"
@@ -70,15 +71,120 @@ set "PWD_UNIX=%CD:\=/%"
 
 :: Handle uninstall command specially
 if "%1"=="uninstall" (
-    :: Run uninstall inside container with access to host filesystem
-    docker run --rm -it ^
-        -v /var/run/docker.sock:/var/run/docker.sock ^
-        -v "%USERPROFILE%:/host-home" ^
-        -v "%CD%:/workspace" ^
-        -w /workspace ^
-        -e HOME="/host-home" ^
-        -e VENVOY_UNINSTALL_MODE=1 ^
-        %VENVOY_IMAGE% %*
+    :: Run uninstall directly on host, not in container
+    echo 🗑️  venvoy Uninstaller
+    echo ====================
+    echo.
+    
+    :: Parse arguments
+    set FORCE=false
+    set KEEP_PROJECTS=false
+    set KEEP_IMAGES=false
+    
+    shift
+    :parse_args
+    if "%1"=="" goto :end_parse
+    if "%1"=="--force" set FORCE=true
+    if "%1"=="--keep-projects" set KEEP_PROJECTS=true
+    if "%1"=="--keep-images" set KEEP_IMAGES=true
+    shift
+    goto :parse_args
+    :end_parse
+    
+    :: Show what will be removed
+    echo This will remove:
+    echo   📁 Installation directory: !InstallDir!
+    echo   📁 Configuration directory: %USERPROFILE%\.venvoy
+    if "!KEEP_PROJECTS!"=="false" (
+        echo   📁 Projects directory: %USERPROFILE%\venvoy-projects
+    )
+    echo   🔗 PATH entries from environment variables
+    if "!KEEP_IMAGES!"=="false" (
+        echo   🐳 Docker images (venvoy/bootstrap:latest and zaphodbeeblebrox3rd/venvoy:bootstrap)
+    )
+    echo.
+    
+    if "!FORCE!"=="false" (
+        set /p CONFIRM="Are you sure you want to uninstall venvoy? (y/N): "
+        if /i not "!CONFIRM!"=="y" (
+            echo ❌ Uninstallation cancelled
+            exit /b 0
+        )
+    )
+    
+    echo.
+    echo 🗑️  Removing venvoy...
+    
+    :: Remove installation directory
+    if exist "!InstallDir!" (
+        rmdir /s /q "!InstallDir!"
+        echo ✅ Removed installation directory
+    )
+    
+    :: Remove configuration directory
+    if exist "%USERPROFILE%\.venvoy" (
+        rmdir /s /q "%USERPROFILE%\.venvoy"
+        echo ✅ Removed configuration directory
+    )
+    
+    :: Handle projects directory
+    if exist "%USERPROFILE%\venvoy-projects" (
+        if "!KEEP_PROJECTS!"=="true" (
+            echo 📁 Kept projects directory: %USERPROFILE%\venvoy-projects
+        ) else (
+            if "!FORCE!"=="false" (
+                set /p REMOVE_PROJECTS="Remove projects directory with environment exports? (y/N): "
+                if /i "!REMOVE_PROJECTS!"=="y" (
+                    rmdir /s /q "%USERPROFILE%\venvoy-projects"
+                    echo ✅ Removed projects directory
+                ) else (
+                    echo 📁 Kept projects directory: %USERPROFILE%\venvoy-projects
+                )
+            ) else (
+                rmdir /s /q "%USERPROFILE%\venvoy-projects"
+                echo ✅ Removed projects directory
+            )
+        )
+    )
+    
+    :: Remove from PATH
+    for /f "tokens=2*" %%a in ('reg query "HKCU\Environment" /v PATH 2^>nul') do set CURRENT_PATH=%%b
+    if defined CURRENT_PATH (
+        :: Create backup
+        echo !CURRENT_PATH! > "%TEMP%\venvoy-path-backup-%RANDOM%.txt"
+        
+        :: Remove venvoy from PATH
+        set NEW_PATH=!CURRENT_PATH!
+        set NEW_PATH=!NEW_PATH:!InstallDir!;=!
+        set NEW_PATH=!NEW_PATH:;!InstallDir!=!
+        set NEW_PATH=!NEW_PATH:!InstallDir!=!
+        
+        reg add "HKCU\Environment" /v PATH /t REG_EXPAND_SZ /d "!NEW_PATH!" /f >nul
+        echo ✅ Removed venvoy from user PATH
+    )
+    
+    :: Remove Docker images
+    if "!KEEP_IMAGES!"=="false" (
+        echo.
+        echo 🐳 Cleaning up Docker images...
+        
+        docker image inspect venvoy/bootstrap:latest >nul 2>&1
+        if not errorlevel 1 (
+            docker rmi venvoy/bootstrap:latest >nul 2>&1
+            echo ✅ Removed bootstrap image
+        )
+        
+        docker image inspect zaphodbeeblebrox3rd/venvoy:bootstrap >nul 2>&1
+        if not errorlevel 1 (
+            docker rmi zaphodbeeblebrox3rd/venvoy:bootstrap >nul 2>&1
+            echo ✅ Removed venvoy bootstrap image
+        )
+    )
+    
+    echo.
+    echo ✅ venvoy uninstalled successfully!
+    echo 💡 You may need to restart your terminal for PATH changes to take effect.
+    exit /b 0
 ) else (
     :: Run normal venvoy commands
     docker run --rm -it ^
