@@ -74,15 +74,160 @@ fi
 
 # Handle uninstall command specially
 if [ "$1" = "uninstall" ]; then
-    # Run uninstall inside container with access to host filesystem
-    docker run --rm -it \
-        -v /var/run/docker.sock:/var/run/docker.sock \
-        -v "$HOME:$HOME" \
-        -v "$(pwd):/workspace" \
-        -w /workspace \
-        -e HOME="$HOME" \
-        -e VENVOY_UNINSTALL_MODE=1 \
-        "$VENVOY_IMAGE" "$@"
+    # Run uninstall directly on host, not in container
+    echo "🗑️  venvoy Uninstaller"
+    echo "===================="
+    
+    # Parse arguments
+    FORCE=false
+    KEEP_PROJECTS=false
+    KEEP_IMAGES=false
+    
+    shift  # Remove 'uninstall' from arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --force)
+                FORCE=true
+                shift
+                ;;
+            --keep-projects)
+                KEEP_PROJECTS=true
+                shift
+                ;;
+            --keep-images)
+                KEEP_IMAGES=true
+                shift
+                ;;
+            *)
+                echo "Unknown option: $1"
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Show what will be removed
+    echo ""
+    echo "This will remove:"
+    echo "  📁 Installation directory: $INSTALL_DIR"
+    echo "  📁 Configuration directory: $HOME/.venvoy"
+    if [ "$KEEP_PROJECTS" = false ]; then
+        echo "  📁 Projects directory: $HOME/venvoy-projects"
+    fi
+    echo "  🔗 PATH entries from shell configuration files"
+    if [ "$KEEP_IMAGES" = false ]; then
+        echo "  🐳 Docker images (venvoy/bootstrap:latest and zaphodbeeblebrox3rd/venvoy:bootstrap)"
+    fi
+    echo ""
+    
+    if [ "$FORCE" = false ]; then
+        read -p "Are you sure you want to uninstall venvoy? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "❌ Uninstallation cancelled"
+            exit 0
+        fi
+    fi
+    
+    echo ""
+    echo "🗑️  Removing venvoy..."
+    
+    # Remove installation directory
+    if [ -d "$INSTALL_DIR" ]; then
+        rm -rf "$INSTALL_DIR"
+        echo "✅ Removed installation directory"
+    fi
+    
+    # Remove configuration directory
+    if [ -d "$HOME/.venvoy" ]; then
+        rm -rf "$HOME/.venvoy"
+        echo "✅ Removed configuration directory"
+    fi
+    
+    # Handle projects directory
+    if [ -d "$HOME/venvoy-projects" ]; then
+        if [ "$KEEP_PROJECTS" = true ]; then
+            echo "📁 Kept projects directory: $HOME/venvoy-projects"
+        else
+            if [ "$FORCE" = false ]; then
+                read -p "Remove projects directory with environment exports? (y/N): " -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    rm -rf "$HOME/venvoy-projects"
+                    echo "✅ Removed projects directory"
+                else
+                    echo "📁 Kept projects directory: $HOME/venvoy-projects"
+                fi
+            else
+                rm -rf "$HOME/venvoy-projects"
+                echo "✅ Removed projects directory"
+            fi
+        fi
+    fi
+    
+    # Remove PATH entries from shell configuration files
+    if [[ "$OSTYPE" == "linux-gnu"* ]] || [[ "$OSTYPE" == "darwin"* ]]; then
+        # Linux and macOS
+        SHELL_FILES=(
+            "$HOME/.bashrc"
+            "$HOME/.zshrc"
+            "$HOME/.config/fish/config.fish"
+            "$HOME/.profile"
+            "$HOME/.bash_profile"
+        )
+        
+        for shell_file in "${SHELL_FILES[@]}"; do
+            if [ -f "$shell_file" ]; then
+                if grep -q "$INSTALL_DIR" "$shell_file" 2>/dev/null; then
+                    # Create backup
+                    cp "$shell_file" "$shell_file.venvoy-backup"
+                    
+                    # Remove venvoy-related lines
+                    sed -i.bak '/# Added by venvoy installer/,+2d' "$shell_file"
+                    sed -i.bak "s|$INSTALL_DIR:||g" "$shell_file"
+                    sed -i.bak "s|:$INSTALL_DIR||g" "$shell_file"
+                    
+                    echo "✅ Cleaned PATH from $(basename "$shell_file")"
+                    echo "   📋 Backup saved as: $(basename "$shell_file").venvoy-backup"
+                fi
+            fi
+        done
+        
+        # Remove system-wide symlink if it exists
+        if [ -L "/usr/local/bin/venvoy" ]; then
+            rm -f "/usr/local/bin/venvoy"
+            echo "✅ Removed system-wide symlink"
+        fi
+        
+    elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]]; then
+        # Windows (Git Bash, Cygwin)
+        echo "⚠️  Please manually remove $INSTALL_DIR from your Windows PATH"
+        echo "   Control Panel > System > Advanced System Settings > Environment Variables"
+    fi
+    
+    # Remove Docker images
+    if [ "$KEEP_IMAGES" = false ]; then
+        echo ""
+        echo "🐳 Cleaning up Docker images..."
+        
+        if command -v docker &> /dev/null; then
+            # Remove bootstrap image
+            if docker image inspect venvoy/bootstrap:latest &> /dev/null; then
+                docker rmi venvoy/bootstrap:latest &> /dev/null || true
+                echo "✅ Removed bootstrap image"
+            fi
+            
+            # Remove venvoy bootstrap image
+            if docker image inspect zaphodbeeblebrox3rd/venvoy:bootstrap &> /dev/null; then
+                docker rmi zaphodbeeblebrox3rd/venvoy:bootstrap &> /dev/null || true
+                echo "✅ Removed venvoy bootstrap image"
+            fi
+        fi
+    fi
+    
+    echo ""
+    echo "✅ venvoy uninstalled successfully!"
+    echo "💡 You may need to restart your terminal for PATH changes to take effect."
+    exit 0
 else
     # Run normal venvoy commands
     docker run --rm -it \
