@@ -17,7 +17,14 @@ console = Console()
 @click.group()
 @click.version_option()
 def main():
-    """venvoy - A portable Python environment manager"""
+    """venvoy - A portable Python environment manager
+
+    Quick Start Example:
+        venvoy init --python-version 3.13 --name mynewpy313
+
+    This creates a new Python 3.13 environment named "mynewpy313".
+    Both the Python version and environment name are required parameters.
+    """
     pass
 
 
@@ -223,7 +230,8 @@ def list():
     environments = env.list_environments()
     
     if not environments:
-        console.print("No environments found. Use 'venvoy init' to create one.")
+        console.print("No environments found.")
+        console.print ("Here is an example on how to create one: 'venvoy init --python-version 3.13 --name mynewpy313'")
         return
     
     for env_info in environments:
