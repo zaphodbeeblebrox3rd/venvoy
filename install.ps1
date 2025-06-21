@@ -1,12 +1,12 @@
-# venvoy Self-Bootstrapping Installer for Windows
+# venvoy Self-Bootstrapping Installer & Updater for Windows
 # Works without requiring Python on the host system
 
 param(
     [switch]$Force
 )
 
-Write-Host "🚀 venvoy Self-Bootstrapping Installer (Windows)" -ForegroundColor Cyan
-Write-Host "=================================================" -ForegroundColor Cyan
+Write-Host "🚀 venvoy Self-Bootstrapping Installer & Updater (Windows)" -ForegroundColor Cyan
+Write-Host "=========================================================" -ForegroundColor Cyan
 
 # Check for Docker
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -21,6 +21,14 @@ Write-Host "✅ Docker found" -ForegroundColor Green
 # Create installation directory
 $InstallDir = "$env:USERPROFILE\.venvoy\bin"
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+
+# Check if venvoy is already installed
+$ExistingInstall = $false
+if (Test-Path "$InstallDir\venvoy.bat") {
+    $ExistingInstall = $true
+    Write-Host "📦 Found existing venvoy installation" -ForegroundColor Yellow
+    Write-Host "🔄 Updating to latest version..." -ForegroundColor Cyan
+}
 
 # Create venvoy.bat bootstrap script
 $BatchScript = @"
@@ -236,14 +244,46 @@ Write-Host "🎉 venvoy installed successfully!" -ForegroundColor Green
 Write-Host ""
 Write-Host "📋 Next steps:" -ForegroundColor Cyan
 
+# Force update the bootstrap image to ensure latest features
+Write-Host "🔄 Updating venvoy bootstrap image..." -ForegroundColor Cyan
+try {
+    docker pull "zaphodbeeblebrox3rd/venvoy:bootstrap" 2>$null
+    Write-Host "✅ Bootstrap image updated" -ForegroundColor Green
+} catch {
+    Write-Host "⚠️  Could not update bootstrap image (will be updated on first use)" -ForegroundColor Yellow
+}
+
+Write-Host ""
+if ($ExistingInstall) {
+    Write-Host "🎉 venvoy updated successfully!" -ForegroundColor Green
+    Write-Host "✨ All new features are now active" -ForegroundColor Green
+} else {
+    Write-Host "🎉 venvoy installed successfully!" -ForegroundColor Green
+}
+
+Write-Host ""
+Write-Host "📋 Next steps:" -ForegroundColor Cyan
+
 # Test if venvoy is immediately available
 try {
     $null = Get-Command venvoy -ErrorAction Stop
     Write-Host "   ✅ venvoy is ready to use!" -ForegroundColor Green
+    if ($ExistingInstall) {
+        Write-Host "   🆕 New features available:" -ForegroundColor Cyan
+        Write-Host "      • Enhanced WSL editor detection" -ForegroundColor White
+        Write-Host "      • Working uninstall command" -ForegroundColor White
+        Write-Host "      • Improved platform detection" -ForegroundColor White
+    }
     Write-Host "   1. Run: venvoy init" -ForegroundColor White
     Write-Host "   2. Start coding with AI-powered environments!" -ForegroundColor White
 } catch {
     Write-Host "   1. Restart your terminal or PowerShell" -ForegroundColor White
+    if ($ExistingInstall) {
+        Write-Host "   🆕 New features available:" -ForegroundColor Cyan
+        Write-Host "      • Enhanced WSL editor detection" -ForegroundColor White
+        Write-Host "      • Working uninstall command" -ForegroundColor White
+        Write-Host "      • Improved platform detection" -ForegroundColor White
+    }
     Write-Host "   2. Run: venvoy init" -ForegroundColor White
     Write-Host "   3. Start coding with AI-powered environments!" -ForegroundColor White
 }
@@ -255,4 +295,8 @@ Write-Host ""
 Write-Host "🔧 Installed to: $InstallDir" -ForegroundColor Cyan
 Write-Host "📝 Added to user PATH environment variable" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "🚀 Quick test: venvoy --help" -ForegroundColor Green 
+if ($ExistingInstall) {
+    Write-Host "🚀 Test new features: venvoy --help" -ForegroundColor Green
+} else {
+    Write-Host "🚀 Quick test: venvoy --help" -ForegroundColor Green
+} 

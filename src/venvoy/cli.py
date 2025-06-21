@@ -722,5 +722,54 @@ def restore(name: str):
         console.print("🚫 Restoration cancelled")
 
 
+@main.command()
+def update():
+    """Update venvoy to the latest version"""
+    console.print(Panel.fit("🔄 Updating venvoy", style="bold blue"))
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Updating venvoy...", total=None)
+        
+        # Update bootstrap image
+        progress.update(task, description="Updating bootstrap image...")
+        docker_manager = DockerManager()
+        
+        try:
+            # Pull latest bootstrap image
+            import subprocess
+            result = subprocess.run(
+                ["docker", "pull", "zaphodbeeblebrox3rd/venvoy:bootstrap"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            progress.remove_task(task)
+            
+            console.print("✅ venvoy updated successfully!")
+            console.print("✨ All new features are now active")
+            console.print("")
+            console.print("🆕 New features available:")
+            console.print("   • Enhanced WSL editor detection")
+            console.print("   • Working uninstall command")
+            console.print("   • Improved platform detection")
+            console.print("   • Better error handling")
+            
+        except subprocess.CalledProcessError as e:
+            progress.remove_task(task)
+            console.print(f"❌ Failed to update venvoy: {e}")
+            console.print("💡 Try running the installer again:")
+            console.print("   curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/install.sh | bash")
+
+
+@main.command()
+def upgrade():
+    """Alias for update command"""
+    update()
+
+
 if __name__ == "__main__":
     main() 

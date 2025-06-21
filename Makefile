@@ -1,9 +1,11 @@
-.PHONY: help install bootstrap install-dev test lint format clean build upload docker-dev
+.PHONY: help install bootstrap install-dev test lint format clean build upload docker-dev update upgrade
 
 help:
 	@echo "Available commands:"
 	@echo "  bootstrap     - Install venvoy (containerized, no Python needed)"
 	@echo "  install       - Install for development (requires Python)"
+	@echo "  update        - Update venvoy to latest version"
+	@echo "  upgrade       - Alias for update command"
 	@echo "  docker-dev    - Run development environment in container"
 	@echo "  test          - Run tests (containerized)"
 	@echo "  lint          - Run linting (containerized)"
@@ -122,4 +124,16 @@ upload: check-package
 # Interactive publishing script
 publish:
 	@echo "🚀 Running interactive publishing script..."
-	@python scripts/publish.py 
+	@python scripts/publish.py
+
+# Update venvoy to latest version
+update:
+	@echo "🔄 Updating venvoy to latest version..."
+	@if [ -f install.sh ]; then \
+		bash install.sh; \
+	else \
+		curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebros3rd/venvoy/main/install.sh | bash; \
+	fi
+
+# Alias for update command
+upgrade: update 
