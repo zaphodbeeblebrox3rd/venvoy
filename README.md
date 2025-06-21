@@ -34,6 +34,13 @@ venvoy might be the right solution for you!
 - **🐧 Linux**: Native container execution with zero overhead
 - **🎯 Result**: Identical Python environments regardless of your host OS!
 
+**🏗️ Multi-Architecture Support:**
+- **Intel/AMD x86_64**: Full native performance on desktop and server
+- **Apple Silicon (M1/M2)**: Optimized ARM64 containers for maximum performance
+- **ARM64 Servers**: Cloud-native support for ARM-based infrastructure
+- **ARM32 Devices**: Support for embedded and IoT devices
+- **Automatic Selection**: Docker automatically pulls the correct architecture for your system
+
 *Enterprise platforms (IBM Power/mainframes) available on consulting basis.*
 
 ## ✨ Features
@@ -41,7 +48,8 @@ venvoy might be the right solution for you!
 - 🐍 **Python 3.9-3.13 support** - Choose your Python version
 - 🧠 **AI-powered editors** - Cursor (AI-first) and VSCode with AI extensions
 - 🐳 **Docker-based isolation** - Complete environment encapsulation
-- 🏗️ **Multi-architecture builds** - AMD64, ARM64, and more
+- 🏗️ **Multi-architecture builds** - AMD64, ARM64, ARM32 with automatic selection
+- 🌐 **Cross-platform compatibility** - Works on Windows, macOS, and Linux
 - 📦 **Wheel caching** - Offline package installation support
 - 💾 **Multiple export formats** - YAML, Dockerfile, or tarball
 - 🤖 **AI-ready environment** - Pre-configured for AI/ML development
