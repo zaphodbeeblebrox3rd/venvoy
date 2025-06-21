@@ -16,6 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 import yaml
+import os
+import shutil
 
 from .docker_manager import DockerManager
 from .platform_detector import PlatformDetector
@@ -34,7 +36,7 @@ class VenvoyEnvironment:
         self.config_file = self.env_dir / "config.yaml"
         
         # Create venvoy-projects directory for auto-saved environments
-        self.projects_dir = Path.home() / "venvoy-projects" / name
+        self.projects_dir = self.config_dir / "projects" / name
         
         # Ensure directories exist
         self.config_dir.mkdir(exist_ok=True)
@@ -110,20 +112,48 @@ class VenvoyEnvironment:
         else:
             print(f"🆕 New environment created")
     
+    def _find_docker_command(self) -> str:
+        """Find the Docker command with proper PATH handling"""
+        # Common Docker installation paths
+        common_paths = [
+            '/usr/local/bin/docker',
+            '/usr/bin/docker',
+            '/opt/homebrew/bin/docker',
+            shutil.which('docker')
+        ]
+        
+        for docker_path in common_paths:
+            if docker_path and Path(docker_path).exists():
+                return docker_path
+        
+        raise RuntimeError("Docker not found. Please install Docker and ensure it's in your PATH.")
+
+    def _run_docker_command(self, args: List[str], **kwargs) -> subprocess.CompletedProcess:
+        """Run a Docker command with proper PATH handling"""
+        docker_cmd = self._find_docker_command()
+        full_command = [docker_cmd] + args
+        
+        # Ensure we have a proper environment with PATH
+        env = os.environ.copy()
+        if '/usr/local/bin' not in env.get('PATH', ''):
+            env['PATH'] = f"/usr/local/bin:{env.get('PATH', '')}"
+        
+        return subprocess.run(full_command, env=env, **kwargs)
+
     def _ensure_image_available(self, image_name: str):
         """Ensure the venvoy image is available locally"""
         try:
             # Check if image exists locally
-            result = subprocess.run([
-                'docker', 'image', 'inspect', image_name
+            result = self._run_docker_command([
+                'image', 'inspect', image_name
             ], capture_output=True, check=True)
             
         except subprocess.CalledProcessError:
             # Image doesn't exist, pull it
             print(f"⬇️  Downloading environment (one-time setup)...")
             try:
-                subprocess.run([
-                    'docker', 'pull', image_name
+                self._run_docker_command([
+                    'pull', image_name
                 ], check=True)
                 print(f"✅ Environment ready")
             except subprocess.CalledProcessError as e:
@@ -284,8 +314,8 @@ CMD ["/bin/bash"]
         image_tag = f"venvoy/{self.name}:{self.python_version}"
         
         try:
-            subprocess.run([
-                'docker', 'build',
+            self._run_docker_command([
+                'build',
                 '-t', image_tag,
                 str(self.env_dir)
             ], check=True, cwd=self.env_dir)
@@ -320,8 +350,8 @@ CMD ["/bin/bash"]
                     
                     # Try uv first for ultra-fast downloads (inside container)
                     try:
-                        subprocess.run([
-                            'docker', 'run', '--rm',
+                        self._run_docker_command([
+                            'run', '--rm',
                             '-v', f"{req_file}:/workspace/{req_filename}:ro",
                             '-v', f"{vendor_dir}:/workspace/vendor",
                             image_tag,
@@ -331,8 +361,8 @@ CMD ["/bin/bash"]
                     except subprocess.CalledProcessError:
                         # Fallback to pip if uv fails (inside container)
                         try:
-                            subprocess.run([
-                                'docker', 'run', '--rm',
+                            self._run_docker_command([
+                                'run', '--rm',
                                 '-v', f"{req_file}:/workspace/{req_filename}:ro",
                                 '-v', f"{vendor_dir}:/workspace/vendor",
                                 image_tag,
@@ -364,8 +394,8 @@ CMD ["/bin/bash"]
         """Get list of installed packages from the environment"""
         try:
             # Run pip freeze inside the container to get actual installed packages
-            result = subprocess.run([
-                'docker', 'run', '--rm',
+            result = self._run_docker_command([
+                'run', '--rm',
                 f"venvoy/{self.name}:{self.python_version}",
                 'bash', '-c', 'source /opt/conda/bin/activate venvoy && pip freeze'
             ], capture_output=True, text=True, check=True)
@@ -754,8 +784,8 @@ CMD ["/bin/bash"]
         while True:
             try:
                 # Check if signal file exists in container
-                result = subprocess.run([
-                    'docker', 'exec', container_name,
+                result = self._run_docker_command([
+                    'exec', container_name,
                     'test', '-f', '/tmp/venvoy_package_changed'
                 ], capture_output=True)
                 
@@ -767,8 +797,8 @@ CMD ["/bin/bash"]
                     self.auto_save_environment()
                     
                     # Remove signal file
-                    subprocess.run([
-                        'docker', 'exec', container_name,
+                    self._run_docker_command([
+                        'exec', container_name,
                         'rm', '-f', '/tmp/venvoy_package_changed'
                     ], capture_output=True)
                 
