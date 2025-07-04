@@ -339,8 +339,11 @@ if [ "$1" = "uninstall" ]; then
     echo "💡 You may need to restart your terminal for PATH changes to take effect."
     exit 0
 else
-    # Run normal venvoy commands directly on host
-    if [ "$USE_LOCAL_CODE" = true ]; then
+    # Run normal venvoy commands
+    if command -v pipx &> /dev/null && pipx list | grep -q venvoy; then
+        # Use pipx installation (preferred)
+        pipx run --spec . venvoy "$@"
+    elif [ "$USE_LOCAL_CODE" = true ]; then
         # Use local development code (dependencies already installed)
         cd "$(pwd)"
         python3 -c "import sys; sys.path.insert(0, 'src'); from venvoy.cli import main; main()" "$@"
