@@ -6,7 +6,7 @@ FROM rocker/r-ver:${R_VERSION}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV R_VERSION=${R_VERSION}
 
-# Install system dependencies for R packages and scientific computing
+# Install comprehensive system dependencies for R packages and scientific computing
 RUN apt-get update && apt-get install -y \
     # Build tools
     build-essential \
@@ -19,14 +19,31 @@ RUN apt-get update && apt-get install -y \
     # Text processing
     vim \
     nano \
-    # Basic LaTeX for R Markdown (minimal)
+    # LaTeX for R Markdown
     texlive-latex-base \
-    # Core libraries
+    texlive-latex-recommended \
+    texlive-fonts-recommended \
+    texlive-latex-extra \
+    # Spatial analysis libraries
+    libgdal-dev \
+    libproj-dev \
+    libgeos-dev \
+    # Database connectivity
+    libpq-dev \
+    libmariadb-dev \
+    unixodbc-dev \
+    # Image processing
+    libmagick++-dev \
+    # XML processing
     libxml2-dev \
+    # SSL/TLS
     libssl-dev \
+    # Compression
     libbz2-dev \
     liblzma-dev \
+    # Cairo graphics
     libcairo2-dev \
+    # Fonts
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
@@ -57,9 +74,11 @@ RUN echo 'export PS1="(📊 venvoy-R) \\u@\\h:\\w\\$ "' >> ~/.bashrc && \
     echo 'echo "🚀 Welcome to your R-powered venvoy environment!"' >> ~/.bashrc && \
     echo 'echo "📊 R $(R --version | head -1 | cut -d\" \" -f3) ready for your packages"' >> ~/.bashrc && \
     echo 'echo "📦 Package managers: install.packages() (CRAN), BiocManager (Bioconductor), renv (reproducible)"' >> ~/.bashrc && \
-    echo 'echo "🔧 System libraries: build tools, XML, SSL, compression, Cairo graphics"' >> ~/.bashrc && \
+    echo 'echo "🔧 Pre-installed: build tools, LaTeX, spatial libraries, database connectors, graphics libraries"' >> ~/.bashrc && \
     echo 'echo "📂 Workspace: $(pwd)"' >> ~/.bashrc && \
-    echo 'echo "💡 Install packages with: install.packages(c(\"package1\", \"package2\"))"' >> ~/.bashrc
+    echo 'echo "💡 Install R packages: install.packages(c(\"package1\", \"package2\"))"' >> ~/.bashrc && \
+    echo 'echo "🔧 Additional system packages: sudo apt-get update && sudo apt-get install package-name"' >> ~/.bashrc && \
+    echo 'echo "📚 Ready for: tidyverse, sf, rmarkdown, shiny, plotly, and most CRAN/Bioconductor packages"' >> ~/.bashrc
 
 # Default command
 CMD ["/bin/bash"] 
