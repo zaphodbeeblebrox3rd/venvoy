@@ -53,6 +53,102 @@ if [ -f "$INSTALL_DIR/venvoy" ]; then
     echo "🔄 Updating to latest version..."
 fi
 
+# Ensure pip is installed
+if ! command -v pip3 &> /dev/null; then
+    echo "❌ pip3 (Python package manager) is not installed."
+    echo "   venvoy needs pip3 to install its dependencies."
+    echo "   We will now attempt to install pip3 using sudo (you may be prompted for your password)."
+    read -p "Proceed with installing pip3 using sudo? [Y/n]: " yn
+    yn=${yn:-Y}
+    if [[ $yn =~ ^[Yy]$ ]]; then
+        # Check for and fix broken repositories before installing pip3
+        echo "🔧 Checking for broken package repositories..."
+        if sudo apt update 2>&1 | grep -q "404.*kubernetes"; then
+            echo "⚠️  Detected broken Kubernetes repository. Attempting to fix..."
+            sudo rm -f /etc/apt/sources.list.d/kubernetes.list*
+            echo "✅ Removed broken Kubernetes repository"
+        fi
+        
+        # Try to update package lists again
+        echo "📦 Updating package lists..."
+        sudo apt update || {
+            echo "⚠️  Package update had issues, but continuing with pip3 installation..."
+        }
+        
+        # Install pip3
+        echo "📦 Installing pip3..."
+        sudo apt install -y python3-pip
+        
+        if ! command -v pip3 &> /dev/null; then
+            echo "❌ pip3 installation failed. Please install pip3 manually:"
+            echo "   sudo apt update && sudo apt install python3-pip"
+            exit 1
+        fi
+        echo "✅ pip3 installed successfully"
+    else
+        echo "❌ pip3 is required. Please install it manually:"
+        echo "   sudo apt update && sudo apt install python3-pip"
+        exit 1
+    fi
+fi
+
+# Install pipx in a cross-platform way
+if ! command -v pipx &> /dev/null; then
+    echo "📦 pipx (Python application installer) is not installed."
+    if [[ "$PLATFORM" == "linux" ]]; then
+        echo "   Attempting to install pipx using apt (Linux)..."
+        sudo apt install -y pipx || {
+            echo "❌ Failed to install pipx with apt. Please install it manually:"
+            echo "   sudo apt install pipx"
+            exit 1
+        }
+    elif [[ "$PLATFORM" == "macos" ]]; then
+        if command -v brew &> /dev/null; then
+            echo "   Attempting to install pipx using Homebrew (macOS)..."
+            brew install pipx || {
+                echo "❌ Failed to install pipx with Homebrew. Trying pip..."
+                python3 -m pip install --user pipx || {
+                    echo "❌ Failed to install pipx with pip. Please install it manually:"
+                    echo "   brew install pipx   # or: python3 -m pip install --user pipx"
+                    exit 1
+                }
+            }
+        else
+            echo "   Homebrew not found. Trying pip..."
+            python3 -m pip install --user pipx || {
+                echo "❌ Failed to install pipx with pip. Please install it manually:"
+                echo "   python3 -m pip install --user pipx"
+                exit 1
+            }
+        fi
+    elif [[ "$PLATFORM" == "windows" ]]; then
+        echo "   Attempting to install pipx using pip (Windows)..."
+        python -m pip install --user pipx || {
+            echo "❌ Failed to install pipx with pip. Please install it manually:"
+            echo "   python -m pip install --user pipx"
+            exit 1
+        }
+        echo "   Please ensure %USERPROFILE%\.local\bin is in your PATH."
+    else
+        echo "❌ Unsupported platform for automatic pipx installation. Please install pipx manually."
+        exit 1
+    fi
+fi
+
+echo "📦 Installing venvoy using pipx..."
+pipx install -e . || {
+    echo "❌ Failed to install venvoy. Please check your Python and pipx installation."
+    exit 1
+}
+echo "✅ venvoy installed successfully using pipx"
+
+# Ensure ~/.local/bin is in PATH for user installs
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    echo "📝 Adding $HOME/.local/bin to PATH in ~/.bashrc"
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
 # Download or create venvoy bootstrap script
 cat > "$INSTALL_DIR/venvoy" << 'EOF'
 #!/bin/bash
@@ -243,26 +339,14 @@ if [ "$1" = "uninstall" ]; then
     echo "💡 You may need to restart your terminal for PATH changes to take effect."
     exit 0
 else
-    # Run normal venvoy commands
+    # Run normal venvoy commands directly on host
     if [ "$USE_LOCAL_CODE" = true ]; then
-        # Use local development code
-        docker run --rm -it \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$HOME:$HOME" \
-            -v "$(pwd):/workspace" \
-            -w /workspace \
-            -e HOME="$HOME" \
-            -e PYTHONPATH="/workspace/src" \
-            "$VENVOY_IMAGE" python -m venvoy "$@"
+        # Use local development code (dependencies already installed)
+        cd "$(pwd)"
+        python3 -c "import sys; sys.path.insert(0, 'src'); from venvoy.cli import main; main()" "$@"
     else
         # Use installed package
-        docker run --rm -it \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$HOME:$HOME" \
-            -v "$(pwd):/workspace" \
-            -w /workspace \
-            -e HOME="$HOME" \
-            "$VENVOY_IMAGE" "$@"
+        python3 -m venvoy "$@"
     fi
 fi
 EOF

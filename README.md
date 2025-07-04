@@ -2,15 +2,16 @@
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 ![Python Versions](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
+![R Versions](https://img.shields.io/badge/R-4.2%2B-blue.svg)
 ![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)
 ![AI Ready](https://img.shields.io/badge/AI-Ready-brightgreen.svg)
 ![Cross Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)
 
-**Scientifically reproducible, containerized Python environments for data science**
+**Scientifically reproducible, containerized Python and R environments for data science**
 
 ## 🔬 Core Mission: Scientific Reproducibility
 
-venvoy creates **truly portable Python environments** that deliver **identical results** across any platform. Built for data scientists, researchers, and teams who need:
+venvoy creates **truly portable Python and R environments** that deliver **identical results** across any platform. Built for data scientists, researchers, and teams who need:
 
 - **Exact same numerical results** from the same analysis, regardless of hardware
 - **Bit-for-bit identical outputs** across Intel, Apple Silicon, and ARM servers  
@@ -77,6 +78,7 @@ Developers, Hobbyists, Researchers, and IT Professionals - have you had these he
 ## ✨ Features
 
 - 🐍 **Python 3.9-3.13 support** - Choose your Python version
+- 📊 **R 4.2-4.5 support** - Choose your R version
 - 🧠 **AI-powered editors** - Cursor (AI-first) and VSCode with AI extensions
 - 🐳 **Docker-based isolation** - Complete environment encapsulation
 - 🏗️ **Multi-architecture builds** - AMD64, ARM64, ARM32 with automatic selection
@@ -688,6 +690,7 @@ This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENS
 
 - Docker team for the containerization platform
 - Python Software Foundation for the language
+- R Core Team for the R language and statistical computing environment
 - Anaconda team for miniconda
 - All contributors and users of venvoy
 
