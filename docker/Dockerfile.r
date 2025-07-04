@@ -30,7 +30,6 @@ RUN apt-get update && apt-get install -y \
     libgeos-dev \
     # Database connectivity
     libpq-dev \
-    libmariadb-dev \
     unixodbc-dev \
     # Image processing
     libmagick++-dev \
