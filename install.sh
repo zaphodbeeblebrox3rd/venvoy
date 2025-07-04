@@ -136,7 +136,7 @@ if ! command -v pipx &> /dev/null; then
 fi
 
 echo "📦 Installing venvoy using pipx..."
-pipx install -e . || {
+pipx install git+https://github.com/zaphodbeeblebrox3rd/venvoy.git || {
     echo "❌ Failed to install venvoy. Please check your Python and pipx installation."
     exit 1
 }
