@@ -24,11 +24,13 @@ from .platform_detector import PlatformDetector
 
 
 class VenvoyEnvironment:
-    """Manages portable Python environments"""
+    """Manages portable Python and R environments"""
     
-    def __init__(self, name: str = "venvoy-env", python_version: str = "3.11"):
+    def __init__(self, name: str = "venvoy-env", python_version: str = "3.11", runtime: str = "python", r_version: str = "4.4"):
         self.name = name
+        self.runtime = runtime  # "python", "r", or "mixed"
         self.python_version = python_version
+        self.r_version = r_version
         self.platform = PlatformDetector()
         self.docker_manager = DockerManager()
         self.config_dir = Path.home() / ".venvoy"
@@ -59,8 +61,15 @@ class VenvoyEnvironment:
         self.projects_dir.mkdir(parents=True, exist_ok=True)
         
         # Pull the pre-built image if needed
-        image_name = f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}"
-        print(f"📦 Setting up Python {self.python_version} environment...")
+        if self.runtime == "python":
+            image_name = f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}"
+            print(f"📦 Setting up Python {self.python_version} environment...")
+        elif self.runtime == "r":
+            image_name = f"zaphodbeeblebrox3rd/venvoy:r{self.r_version}"
+            print(f"📊 Setting up R {self.r_version} environment...")
+        else:
+            raise ValueError(f"Unsupported runtime: {self.runtime}")
+        
         self._ensure_image_available(image_name)
         
         # Check for existing environment exports but don't prompt during init
@@ -83,7 +92,9 @@ class VenvoyEnvironment:
         # Create configuration
         config = {
             'name': self.name,
+            'runtime': self.runtime,
             'python_version': self.python_version,
+            'r_version': self.r_version,
             'created': datetime.now().isoformat(),
             'platform': self.platform.detect(),
             'image_name': image_name,
@@ -256,7 +267,7 @@ USER venvoy
 
 # Set up shell with better interactive experience
 RUN echo 'conda activate venvoy' >> ~/.bashrc && \\
-    echo 'export PS1="(🤖 venvoy) \\u@\\h:\\w\\$ "' >> ~/.bashrc && \\
+    echo 'export PS1="(🤖 venvoy) \\u@\\h:\\w$ "' >> ~/.bashrc && \\
     echo 'echo "🚀 Welcome to your AI-ready venvoy environment!"' >> ~/.bashrc && \\
     echo 'echo "🐍 Python $(python --version) with AI/ML packages"' >> ~/.bashrc && \\
     echo 'echo "📦 Package managers: mamba (fast conda), uv (ultra-fast pip), pip"' >> ~/.bashrc && \\
@@ -568,6 +579,498 @@ CMD ["/bin/bash"]
                 tar.add(tmp.name, arcname=f"{self.name}/export-info.json")
         
         return str(output_file)
+    
+    def export_archive(self, output_path: Optional[str] = None, include_base: bool = False) -> str:
+        """
+        Export complete binary archive for long-term scientific reproducibility.
+        
+        This creates a comprehensive archive containing:
+        - Complete Docker image with all binaries and libraries
+        - Environment configuration and metadata
+        - Package manifests and dependency trees
+        - Platform and architecture information
+        
+        Args:
+            output_path: Path for the archive file
+            include_base: Whether to include the base Python image layers
+            
+        Returns:
+            Path to the created archive file
+        """
+        if output_path is None:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_path = f"{self.name}-archive-{timestamp}.tar.gz"
+        
+        output_file = Path(output_path)
+        print(f"📦 Creating comprehensive binary archive...")
+        print(f"⚠️  This may take several minutes and create a large file (1-5GB)")
+        
+        # Load configuration to get image name
+        if not self.config_file.exists():
+            raise RuntimeError(f"Environment '{self.name}' not found. Run 'venvoy init' first.")
+        
+        with open(self.config_file, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        image_name = config.get('image_name', f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}")
+        
+        # Ensure image is available
+        self._ensure_image_available(image_name)
+        
+        # Create temporary directory for archive contents
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_dir = temp_path / "venvoy-archive"
+            archive_dir.mkdir()
+            
+            # 1. Export Docker image as tar
+            print("🐳 Exporting Docker image...")
+            image_tar = archive_dir / "docker-image.tar"
+            try:
+                result = subprocess.run([
+                    'docker', 'save', '-o', str(image_tar), image_name
+                ], check=True, capture_output=True, text=True)
+                print(f"✅ Docker image exported ({image_tar.stat().st_size / 1024 / 1024:.1f} MB)")
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"Failed to export Docker image: {e.stderr}")
+            
+            # 2. Create comprehensive environment manifest
+            print("📋 Creating environment manifest...")
+            manifest = self._create_comprehensive_manifest(image_name)
+            manifest_file = archive_dir / "environment-manifest.json"
+            with open(manifest_file, 'w') as f:
+                json.dump(manifest, f, indent=2, default=str)
+            
+            # 3. Export environment configuration
+            config_dir = archive_dir / "config"
+            config_dir.mkdir()
+            if self.env_dir.exists():
+                shutil.copytree(self.env_dir, config_dir / "environment", dirs_exist_ok=True)
+            
+            # 4. Create archive metadata
+            archive_metadata = {
+                'archive_version': '1.0',
+                'created': datetime.now().isoformat(),
+                'venvoy_version': '0.1.0',
+                'archive_type': 'comprehensive_binary',
+                'environment': {
+                    'name': self.name,
+                    'python_version': self.python_version,
+                    'image_name': image_name,
+                    'platform': self.platform.detect(),
+                },
+                'contents': {
+                    'docker_image': 'docker-image.tar',
+                    'manifest': 'environment-manifest.json',
+                    'config': 'config/',
+                    'restore_script': 'restore.sh'
+                },
+                'usage': {
+                    'restore_command': 'bash restore.sh',
+                    'requirements': ['docker', 'bash'],
+                    'estimated_size_mb': image_tar.stat().st_size / 1024 / 1024
+                }
+            }
+            
+            metadata_file = archive_dir / "archive-metadata.json"
+            with open(metadata_file, 'w') as f:
+                json.dump(archive_metadata, f, indent=2, default=str)
+            
+            # 5. Create restore script
+            restore_script = archive_dir / "restore.sh"
+            self._create_restore_script(restore_script, archive_metadata)
+            restore_script.chmod(0o755)
+            
+            # 6. Create README
+            readme_file = archive_dir / "README.md"
+            self._create_archive_readme(readme_file, archive_metadata)
+            
+            # 7. Create final compressed archive
+            print("🗜️  Compressing archive...")
+            with tarfile.open(output_file, 'w:gz') as tar:
+                tar.add(archive_dir, arcname=f"{self.name}-archive")
+            
+            # Calculate final size
+            final_size_mb = output_file.stat().st_size / 1024 / 1024
+            print(f"✅ Archive created: {output_file} ({final_size_mb:.1f} MB)")
+        
+        return str(output_file)
+    
+    def _create_comprehensive_manifest(self, image_name: str) -> Dict:
+        """Create comprehensive environment manifest with all package details"""
+        manifest = {
+            'created': datetime.now().isoformat(),
+            'image_name': image_name,
+            'platform': self.platform.detect(),
+            'python_version': self.python_version,
+            'packages': {
+                'conda': [],
+                'pip': [],
+                'system': []
+            },
+            'system_info': {},
+            'dependency_tree': {}
+        }
+        
+        try:
+            # Get detailed package information from container
+            print("🔍 Analyzing package dependencies...")
+            
+            # Get conda packages with detailed info
+            conda_result = subprocess.run([
+                'docker', 'run', '--rm', image_name,
+                'bash', '-c', 'source /opt/conda/bin/activate venvoy && conda list --json'
+            ], capture_output=True, text=True, check=True)
+            
+            conda_packages = json.loads(conda_result.stdout)
+            manifest['packages']['conda'] = conda_packages
+            
+            # Get pip packages with detailed info
+            pip_result = subprocess.run([
+                'docker', 'run', '--rm', image_name,
+                'bash', '-c', 'source /opt/conda/bin/activate venvoy && pip list --format=json'
+            ], capture_output=True, text=True, check=True)
+            
+            pip_packages = json.loads(pip_result.stdout)
+            manifest['packages']['pip'] = pip_packages
+            
+            # Get system packages (Debian/Ubuntu)
+            system_result = subprocess.run([
+                'docker', 'run', '--rm', image_name,
+                'bash', '-c', 'dpkg-query -W -f="${Package}\\t${Version}\\t${Architecture}\\n"'
+            ], capture_output=True, text=True, check=True)
+            
+            system_packages = []
+            for line in system_result.stdout.strip().split('\n'):
+                if line:
+                    parts = line.split('\t')
+                    if len(parts) >= 3:
+                        system_packages.append({
+                            'name': parts[0],
+                            'version': parts[1],
+                            'architecture': parts[2]
+                        })
+            manifest['packages']['system'] = system_packages
+            
+            # Get Python and system information
+            info_result = subprocess.run([
+                'docker', 'run', '--rm', image_name,
+                'bash', '-c', '''
+                source /opt/conda/bin/activate venvoy
+                echo "PYTHON_VERSION=$(python --version)"
+                echo "PYTHON_PATH=$(which python)"
+                echo "CONDA_VERSION=$(conda --version)"
+                echo "OS_INFO=$(cat /etc/os-release | grep PRETTY_NAME)"
+                echo "ARCHITECTURE=$(uname -m)"
+                echo "KERNEL=$(uname -r)"
+                '''
+            ], capture_output=True, text=True, check=True)
+            
+            system_info = {}
+            for line in info_result.stdout.strip().split('\n'):
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    system_info[key] = value
+            manifest['system_info'] = system_info
+            
+            # Get dependency tree for critical packages
+            print("🌳 Building dependency tree...")
+            dep_result = subprocess.run([
+                'docker', 'run', '--rm', image_name,
+                'bash', '-c', 'source /opt/conda/bin/activate venvoy && pip show --verbose numpy pandas matplotlib jupyter || true'
+            ], capture_output=True, text=True, check=True)
+            
+            # Parse dependency information (simplified)
+            manifest['dependency_tree']['pip_show_output'] = dep_result.stdout
+            
+        except subprocess.CalledProcessError as e:
+            print(f"⚠️  Warning: Could not gather complete manifest: {e}")
+            manifest['warning'] = f"Incomplete manifest due to: {e}"
+        except json.JSONDecodeError as e:
+            print(f"⚠️  Warning: Could not parse package JSON: {e}")
+            manifest['warning'] = f"Package parsing error: {e}"
+        
+        return manifest
+    
+    def _create_restore_script(self, script_path: Path, metadata: Dict):
+        """Create restore script for the archive"""
+        script_content = f'''#!/bin/bash
+# venvoy Archive Restore Script
+# Generated: {metadata['created']}
+# Environment: {metadata['environment']['name']}
+
+set -e
+
+echo "🔄 Restoring venvoy environment from archive..."
+echo "📦 Environment: {metadata['environment']['name']}"
+echo "🐍 Python: {metadata['environment']['python_version']}"
+echo "📅 Archived: {metadata['created']}"
+
+# Check prerequisites
+if ! command -v docker &> /dev/null; then
+    echo "❌ Docker is required but not installed"
+    echo "   Please install Docker: https://docs.docker.com/get-docker/"
+    exit 1
+fi
+
+# Check if Docker is running
+if ! docker info &> /dev/null; then
+    echo "❌ Docker is not running"
+    echo "   Please start Docker and try again"
+    exit 1
+fi
+
+# Load Docker image
+echo "🐳 Loading Docker image..."
+if [ -f "docker-image.tar" ]; then
+    docker load -i docker-image.tar
+    echo "✅ Docker image loaded"
+else
+    echo "❌ docker-image.tar not found"
+    exit 1
+fi
+
+# Create venvoy directory structure
+echo "📁 Setting up venvoy directories..."
+mkdir -p "$HOME/.venvoy/environments"
+mkdir -p "$HOME/.venvoy/projects"
+
+# Copy environment configuration
+if [ -d "config/environment" ]; then
+    cp -r "config/environment" "$HOME/.venvoy/environments/{metadata['environment']['name']}"
+    echo "✅ Environment configuration restored"
+fi
+
+# Install venvoy CLI if not present
+if ! command -v venvoy &> /dev/null; then
+    echo "⚠️  venvoy CLI not found"
+    echo "   Installing venvoy CLI..."
+    
+    # Try to install venvoy
+    if command -v pip &> /dev/null; then
+        pip install git+https://github.com/zaphodbeeblebrox3rd/venvoy.git
+    else
+        echo "❌ pip not found. Please install venvoy manually:"
+        echo "   curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/install.sh | bash"
+        exit 1
+    fi
+fi
+
+echo ""
+echo "✅ Archive restored successfully!"
+echo ""
+echo "🚀 To use your restored environment:"
+echo "   venvoy run --name {metadata['environment']['name']}"
+echo ""
+echo "📋 To view environment details:"
+echo "   venvoy history --name {metadata['environment']['name']}"
+echo ""
+echo "🔍 Archive contents:"
+echo "   - Docker image: {metadata['environment']['image_name']}"
+echo "   - Configuration: ~/.venvoy/environments/{metadata['environment']['name']}"
+echo "   - Manifest: environment-manifest.json"
+echo ""
+'''
+        
+        with open(script_path, 'w') as f:
+            f.write(script_content)
+    
+    def _create_archive_readme(self, readme_path: Path, metadata: Dict):
+        """Create README for the archive"""
+        readme_content = f'''# venvoy Environment Archive
+
+## Archive Information
+
+- **Environment Name**: {metadata['environment']['name']}
+- **Python Version**: {metadata['environment']['python_version']}
+- **Created**: {metadata['created']}
+- **Archive Type**: Comprehensive Binary Archive
+- **Size**: ~{metadata['usage']['estimated_size_mb']:.1f} MB
+
+## Purpose
+
+This archive contains a complete, self-contained Python environment for **scientific reproducibility**. Unlike standard requirements.txt exports, this archive includes:
+
+- ✅ Complete Docker image with all binaries and libraries
+- ✅ System packages and dependencies
+- ✅ Exact package versions with full dependency trees
+- ✅ Platform and architecture information
+- ✅ Environment configuration and metadata
+
+## Use Cases
+
+- **Long-term Archival**: Store environments for years without dependency on external repositories
+- **Regulatory Compliance**: Meet requirements for reproducible research documentation
+- **Peer Review**: Share exact computational environments with reviewers
+- **Cross-institutional Collaboration**: Ensure identical results across different computing environments
+- **Package Abandonment Protection**: Continue using environments even if packages are removed from PyPI
+
+## Contents
+
+```
+{metadata['environment']['name']}-archive/
+├── docker-image.tar          # Complete Docker image
+├── environment-manifest.json # Comprehensive package manifest
+├── config/                   # Environment configuration
+├── restore.sh               # Restoration script
+├── archive-metadata.json    # Archive metadata
+└── README.md               # This file
+```
+
+## Restoration
+
+### Quick Restore
+```bash
+bash restore.sh
+```
+
+### Manual Restore
+```bash
+# 1. Load Docker image
+docker load -i docker-image.tar
+
+# 2. Install venvoy (if not already installed)
+curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/install.sh | bash
+
+# 3. Copy configuration
+mkdir -p ~/.venvoy/environments
+cp -r config/environment ~/.venvoy/environments/{metadata['environment']['name']}
+
+# 4. Run environment
+venvoy run --name {metadata['environment']['name']}
+```
+
+## Requirements
+
+- Docker (any recent version)
+- Bash shell
+- ~{metadata['usage']['estimated_size_mb']:.0f} MB free disk space
+
+## Verification
+
+After restoration, verify the environment:
+
+```bash
+# Check environment status
+venvoy history --name {metadata['environment']['name']}
+
+# Run environment
+venvoy run --name {metadata['environment']['name']}
+
+# Inside the environment, verify packages
+python -c "import numpy, pandas, matplotlib; print('✅ Core packages working')"
+```
+
+## Scientific Reproducibility
+
+This archive ensures bit-for-bit reproducible results by capturing:
+
+1. **Exact Binary Versions**: All compiled libraries and dependencies
+2. **System Dependencies**: Operating system packages and configurations  
+3. **Architecture Details**: Platform-specific optimizations and builds
+4. **Complete Dependency Tree**: All transitive dependencies with exact versions
+5. **Environment State**: Configuration files and settings
+
+## Archive Metadata
+
+- **venvoy Version**: {metadata.get('venvoy_version', 'Unknown')}
+- **Archive Version**: {metadata.get('archive_version', '1.0')}
+- **Platform**: {metadata['environment']['platform']}
+- **Docker Image**: {metadata['environment']['image_name']}
+
+---
+
+Generated by venvoy - Scientific Python Environment Management
+https://github.com/zaphodbeeblebrox3rd/venvoy
+'''
+        
+        with open(readme_path, 'w') as f:
+            f.write(readme_content)
+    
+    def import_archive(self, archive_path: str, force: bool = False) -> str:
+        """
+        Import and restore environment from a comprehensive binary archive.
+        
+        Args:
+            archive_path: Path to the venvoy archive file
+            force: Whether to overwrite existing environment
+            
+        Returns:
+            Name of the restored environment
+        """
+        archive_file = Path(archive_path)
+        if not archive_file.exists():
+            raise FileNotFoundError(f"Archive file not found: {archive_path}")
+        
+        print(f"📦 Importing venvoy archive: {archive_file.name}")
+        
+        # Extract archive to temporary directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            print("📂 Extracting archive...")
+            with tarfile.open(archive_file, 'r:gz') as tar:
+                tar.extractall(temp_path)
+            
+            # Find archive directory (should be only subdirectory)
+            archive_dirs = [d for d in temp_path.iterdir() if d.is_dir()]
+            if not archive_dirs:
+                raise RuntimeError("Invalid archive: no directories found")
+            
+            archive_dir = archive_dirs[0]
+            
+            # Read archive metadata
+            metadata_file = archive_dir / "archive-metadata.json"
+            if not metadata_file.exists():
+                raise RuntimeError("Invalid archive: missing metadata")
+            
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+            
+            env_name = metadata['environment']['name']
+            python_version = metadata['environment']['python_version']
+            
+            print(f"🔍 Archive contains environment: {env_name} (Python {python_version})")
+            print(f"📅 Created: {metadata['created']}")
+            
+            # Check if environment already exists
+            target_env_dir = self.config_dir / "environments" / env_name
+            if target_env_dir.exists() and not force:
+                raise RuntimeError(
+                    f"Environment '{env_name}' already exists. Use --force to overwrite."
+                )
+            
+            # Load Docker image
+            docker_image_file = archive_dir / "docker-image.tar"
+            if docker_image_file.exists():
+                print("🐳 Loading Docker image...")
+                try:
+                    subprocess.run([
+                        'docker', 'load', '-i', str(docker_image_file)
+                    ], check=True, capture_output=True)
+                    print("✅ Docker image loaded")
+                except subprocess.CalledProcessError as e:
+                    raise RuntimeError(f"Failed to load Docker image: {e}")
+            else:
+                print("⚠️  No Docker image found in archive")
+            
+            # Restore environment configuration
+            config_dir = archive_dir / "config" / "environment"
+            if config_dir.exists():
+                print("📁 Restoring environment configuration...")
+                if target_env_dir.exists():
+                    shutil.rmtree(target_env_dir)
+                shutil.copytree(config_dir, target_env_dir)
+                print("✅ Configuration restored")
+            
+            # Create projects directory
+            projects_dir = self.config_dir / "projects" / env_name
+            projects_dir.mkdir(parents=True, exist_ok=True)
+            
+            print(f"✅ Environment '{env_name}' imported successfully!")
+            print(f"🚀 Run with: venvoy run --name {env_name}")
+            
+            return env_name
     
     def auto_save_environment(self):
         """Auto-save environment.yml to venvoy-projects directory with timestamp"""

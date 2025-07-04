@@ -60,23 +60,9 @@ cat > "$INSTALL_DIR/venvoy" << 'EOF'
 
 set -e
 
-# Default to Python 3.11 bootstrap image
-DEFAULT_PYTHON_VERSION="3.11"
+# Use single multi-architecture bootstrap image
 VENVOY_IMAGE="zaphodbeeblebrox3rd/venvoy:bootstrap"
 VENVOY_DIR="$HOME/.venvoy"
-
-# Function to get appropriate bootstrap image for Python version
-get_bootstrap_image() {
-    local python_version="$1"
-    case "$python_version" in
-        "3.9"|"3.10"|"3.11"|"3.12"|"3.13")
-            echo "zaphodbeeblebrox3rd/venvoy:bootstrap-python${python_version}"
-            ;;
-        *)
-            echo "zaphodbeeblebrox3rd/venvoy:bootstrap"
-            ;;
-    esac
-}
 
 # Ensure venvoy directory exists
 mkdir -p "$VENVOY_DIR"
@@ -86,26 +72,6 @@ if [[ -d "/workspace" ]]; then
     echo "🧹 Clearing Python bytecode cache..."
     find /workspace -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
     find /workspace -name "*.pyc" -delete 2>/dev/null || true
-fi
-
-# Determine which bootstrap image to use
-if [ "$1" = "init" ] && [ -n "$2" ]; then
-    # Check if --python-version is specified
-    for i in "$@"; do
-        if [[ "$i" == "--python-version" ]]; then
-            # Get the next argument as Python version
-            PYTHON_VERSION_ARG=""
-            for j in "$@"; do
-                if [ "$PYTHON_VERSION_ARG" = "next" ]; then
-                    VENVOY_IMAGE=$(get_bootstrap_image "$j")
-                    break
-                elif [ "$j" = "--python-version" ]; then
-                    PYTHON_VERSION_ARG="next"
-                fi
-            done
-            break
-        fi
-    done
 fi
 
 # Pull venvoy image if it doesn't exist or force update
@@ -169,7 +135,7 @@ if [ "$1" = "uninstall" ]; then
     fi
     echo "  🔗 PATH entries from shell configuration files"
     if [ "$KEEP_IMAGES" = false ]; then
-        echo "  🐳 Docker images (venvoy/bootstrap:latest and zaphodbeeblebrox3rd/venvoy:bootstrap*)"
+        echo "  🐳 Docker images (venvoy/bootstrap:latest and zaphodbeeblebrox3rd/venvoy:bootstrap)"
     fi
     echo ""
     
@@ -264,18 +230,10 @@ if [ "$1" = "uninstall" ]; then
         echo "🐳 Cleaning up Docker images..."
         
         if command -v docker &> /dev/null; then
-            # Remove bootstrap images for all Python versions
-            for version in "3.9" "3.10" "3.11" "3.12" "3.13"; do
-                if docker image inspect "zaphodbeeblebrox3rd/venvoy:bootstrap-python${version}" &> /dev/null; then
-                    docker rmi "zaphodbeeblebrox3rd/venvoy:bootstrap-python${version}" &> /dev/null || true
-                    echo "✅ Removed Python ${version} bootstrap image"
-                fi
-            done
-            
-            # Remove default bootstrap image
+            # Remove bootstrap image
             if docker image inspect zaphodbeeblebrox3rd/venvoy:bootstrap &> /dev/null; then
                 docker rmi zaphodbeeblebrox3rd/venvoy:bootstrap &> /dev/null || true
-                echo "✅ Removed default bootstrap image"
+                echo "✅ Removed bootstrap image"
             fi
         fi
     fi
