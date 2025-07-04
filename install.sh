@@ -192,6 +192,12 @@ elif [ "$1" = "update" ] || [ "$1" = "upgrade" ]; then
     echo "🔄 Updating venvoy environment..."
     docker pull "$VENVOY_IMAGE"
     echo "✅ Environment updated"
+    
+    # Handle upgrade command by converting it to update
+    if [ "$1" = "upgrade" ]; then
+        # Replace upgrade with update in arguments
+        set -- update "${@:2}"
+    fi
 fi
 
 # Check if we're in a venvoy development directory (has src/venvoy/)
