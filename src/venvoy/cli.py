@@ -19,21 +19,44 @@ console = Console()
 def main():
     """venvoy - A portable Python environment manager
 
-    Quick Start Example:
-        venvoy init --python-version 3.13 --name mynewpy313
+    Core Mission: Scientific Reproducibility for Data Science
 
-    This creates a new Python 3.13 environment named "mynewpy313".
-    Both the Python version and environment name are required parameters.
+    Quick Start Examples:
+        venvoy init --runtime python --python-version 3.13 --name mynewpy313
+        venvoy init --runtime r --r-version 4.4 --name myrstats
+
+    Common Commands:
+        venvoy init             # Initialize new environment (Python or R)
+        venvoy run              # Launch environment  
+        venvoy export           # Export for sharing (yaml/dockerfile/tarball/archive)
+        venvoy import-archive   # Import comprehensive binary archive
+        venvoy history          # View environment history
+
+    Scientific Reproducibility:
+        venvoy export --format archive    # Create comprehensive binary archive
+        venvoy import-archive archive.tar.gz  # Restore from binary archive
     """
     pass
 
 
 @main.command()
 @click.option(
+    "--runtime",
+    default="python",
+    type=click.Choice(["python", "r"]),
+    help="Runtime environment (python or r)",
+)
+@click.option(
     "--python-version",
     default="3.11",
     type=click.Choice(["3.9", "3.10", "3.11", "3.12", "3.13"]),
-    help="Python version to use",
+    help="Python version to use (when runtime=python)",
+)
+@click.option(
+    "--r-version",
+    default="4.4",
+    type=click.Choice(["4.2", "4.3", "4.4", "4.5"]),
+    help="R version to use (when runtime=r)",
 )
 @click.option(
     "--name", 
@@ -45,9 +68,14 @@ def main():
     is_flag=True, 
     help="Force reinitialize even if environment exists"
 )
-def init(python_version: str, name: str, force: bool):
-    """Initialize a new portable Python environment"""
-    console.print(Panel.fit("🚀 Initializing venvoy environment", style="bold blue"))
+def init(runtime: str, python_version: str, r_version: str, name: str, force: bool):
+    """Initialize a new portable Python or R environment"""
+    if runtime == "python":
+        console.print(Panel.fit("🚀 Initializing venvoy Python environment", style="bold blue"))
+    elif runtime == "r":
+        console.print(Panel.fit("📊 Initializing venvoy R environment", style="bold green"))
+    else:
+        console.print(Panel.fit("🚀 Initializing venvoy environment", style="bold blue"))
     
     with Progress(
         SpinnerColumn(),
@@ -76,7 +104,7 @@ def init(python_version: str, name: str, force: bool):
             editor_type, editor_available = "none", False
         
         progress.update(task, description="Creating environment...")
-        env = VenvoyEnvironment(name=name, python_version=python_version)
+        env = VenvoyEnvironment(name=name, python_version=python_version, runtime=runtime, r_version=r_version)
         
         try:
             env.initialize(force=force, editor_type=editor_type, editor_available=editor_available)
@@ -101,7 +129,10 @@ def init(python_version: str, name: str, force: bool):
         progress.remove_task(task)
     
     console.print(f"✅ Environment '{name}' initialized successfully!")
-    console.print(f"🐍 Python {python_version} runtime ready")
+    if runtime == "python":
+        console.print(f"🐍 Python {python_version} runtime ready")
+    elif runtime == "r":
+        console.print(f"📊 R {r_version} runtime ready")
     
     if editor_available:
         if editor_type == "cursor":
@@ -186,7 +217,7 @@ def run(name: str, command: str, mount: tuple):
 @click.option(
     "--format", 
     default="yaml",
-    type=click.Choice(["yaml", "dockerfile", "tarball"]),
+    type=click.Choice(["yaml", "dockerfile", "tarball", "archive"]),
     help="Export format"
 )
 @click.option(
@@ -194,8 +225,24 @@ def run(name: str, command: str, mount: tuple):
     help="Output file path"
 )
 def export(name: str, format: str, output: str):
-    """Export environment for sharing/archival"""
-    console.print(Panel.fit("📤 Exporting environment", style="bold yellow"))
+    """Export environment for sharing/archival
+    
+    Formats:
+    - yaml: Environment specification (requirements.txt style)
+    - dockerfile: Standalone Dockerfile for custom builds
+    - tarball: Complete offline package with dependencies
+    - archive: Comprehensive binary archive for scientific reproducibility
+    
+    The 'archive' format creates a large file (1-5GB) containing the complete
+    Docker image, system packages, and metadata for long-term archival and
+    regulatory compliance. Use this for scientific reproducibility when
+    package abandonment or PyPI changes are a concern.
+    """
+    if format == "archive":
+        console.print(Panel.fit("📦 Creating Comprehensive Binary Archive", style="bold red"))
+        console.print("⚠️  [yellow]This creates a large file (1-5GB) for long-term scientific reproducibility[/yellow]")
+    else:
+        console.print(Panel.fit("📤 Exporting environment", style="bold yellow"))
     
     with Progress(
         SpinnerColumn(),
@@ -215,10 +262,18 @@ def export(name: str, format: str, output: str):
         elif format == "tarball":
             progress.update(task, description="Creating tarball...")
             output_path = env.export_tarball(output)
+        elif format == "archive":
+            progress.update(task, description="Creating comprehensive binary archive...")
+            output_path = env.export_archive(output)
         
         progress.remove_task(task)
     
-    console.print(f"✅ Environment exported: {output_path}")
+    if format == "archive":
+        console.print(f"✅ [green]Comprehensive archive created:[/green] {output_path}")
+        console.print("🔬 [cyan]This archive ensures bit-for-bit reproducible results[/cyan]")
+        console.print("📁 [dim]Contains complete Docker image, system packages, and metadata[/dim]")
+    else:
+        console.print(f"✅ Environment exported: {output_path}")
 
 
 @main.command()
@@ -720,6 +775,51 @@ def restore(name: str):
         console.print("💡 Run 'venvoy run' to start working with the restored environment")
     else:
         console.print("🚫 Restoration cancelled")
+
+
+@main.command()
+@click.argument("archive_path", type=click.Path(exists=True))
+@click.option(
+    "--force", 
+    is_flag=True, 
+    help="Overwrite existing environment"
+)
+def import_archive(archive_path: str, force: bool):
+    """Import environment from a comprehensive binary archive"""
+    console.print(Panel.fit("📦 Importing Binary Archive", style="bold blue"))
+    console.print(f"📁 Archive: {archive_path}")
+    
+    if not force:
+        console.print("⚠️  [yellow]This will load Docker images and restore environment configuration[/yellow]")
+        if not click.confirm("Continue with import?"):
+            console.print("🚫 Import cancelled")
+            return
+    
+    try:
+        # Create temporary environment for import
+        temp_env = VenvoyEnvironment()
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Importing archive...", total=None)
+            
+            progress.update(task, description="Extracting and analyzing archive...")
+            env_name = temp_env.import_archive(archive_path, force=force)
+            
+            progress.remove_task(task)
+        
+        console.print(f"✅ [green]Archive imported successfully![/green]")
+        console.print(f"📦 Environment: {env_name}")
+        console.print(f"🚀 Run with: [cyan]venvoy run --name {env_name}[/cyan]")
+        console.print(f"📋 View history: [cyan]venvoy history --name {env_name}[/cyan]")
+        
+    except Exception as e:
+        console.print(f"❌ [red]Import failed:[/red] {str(e)}")
+        if "already exists" in str(e):
+            console.print("💡 Use --force to overwrite existing environment")
 
 
 @main.command()
