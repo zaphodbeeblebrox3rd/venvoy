@@ -31,6 +31,7 @@ def main():
         venvoy export           # Export for sharing (yaml/dockerfile/tarball/archive)
         venvoy import-archive   # Import comprehensive binary archive
         venvoy history          # View environment history
+        venvoy update/upgrade   # Update venvoy to latest version
 
     Scientific Reproducibility:
         venvoy export --format archive    # Create comprehensive binary archive
@@ -865,10 +866,8 @@ def update():
             console.print("   curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/install.sh | bash")
 
 
-@main.command()
-def upgrade():
-    """Alias for update command"""
-    update()
+# Note: upgrade command is handled by the bootstrap script
+# This prevents "unexpected extra argument" errors
 
 
 if __name__ == "__main__":
