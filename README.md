@@ -4,6 +4,7 @@
 ![Python Versions](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
 ![R Versions](https://img.shields.io/badge/R-4.2%2B-blue.svg)
 ![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)
+![HPC Compatible](https://img.shields.io/badge/HPC-Compatible-brightgreen.svg)
 ![AI Ready](https://img.shields.io/badge/AI-Ready-brightgreen.svg)
 ![Cross Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)
 
@@ -18,6 +19,7 @@ venvoy creates **truly portable Python and R environments** that deliver **ident
 - **Complete environment snapshots** that can be shared with colleagues and reviewers
 - **Long-term archival** for research validation and replication studies
 - **Guaranteed reproducibility** for regulatory compliance and peer review
+- **HPC cluster compatibility** for research computing without root access
 
 ## 🎯 Why This Matters for Data Science
 
@@ -37,6 +39,8 @@ venvoy creates **truly portable Python and R environments** that deliver **ident
 - **Version drift**: Lock down exact package versions for long-term reproducibility
 - **Platform dependencies**: Handle Windows/Linux/macOS differences seamlessly
 - **Hardware specifics**: Manage CUDA vs Metal vs CPU-only package variants
+- **HPC access barriers**: Work on research clusters without root access or Docker
+- **Container runtime conflicts**: Automatic detection of Docker, Apptainer, Singularity, Podman
 
 ## 🚀 Overview
 
@@ -59,12 +63,14 @@ Developers, Hobbyists, Researchers, and IT Professionals - have you had these he
 - **Long-term archival** - Reproduce results years later for validation studies
 - **Peer review** - Reviewers get your exact computational environment
 - **Multi-architecture deployment** - Seamless scaling from laptop to cloud infrastructure
+- **HPC clusters** - Work on research computing clusters without root access
 
 ### 🌐 **How Cross-Platform Magic Works:**
 - **🪟 Windows**: Docker Desktop + WSL2 runs Linux containers seamlessly
 - **🍎 macOS**: Docker Desktop virtualizes Linux containers transparently  
 - **🐧 Linux**: Native container execution with zero overhead
-- **🎯 Result**: Identical Python environments regardless of your host OS!
+- **🏢 HPC Clusters**: Apptainer/Singularity containers without root access
+- **🎯 Result**: Identical Python environments regardless of your host OS or cluster setup!
 
 **🏗️ Multi-Architecture Support:**
 - **Intel/AMD x86_64**: Full native performance on desktop and server
@@ -75,26 +81,48 @@ Developers, Hobbyists, Researchers, and IT Professionals - have you had these he
 
 *Enterprise platforms (IBM Power/mainframes) available on consulting basis.*
 
+**🔧 Multi-Runtime Container Support:**
+- **Docker**: Traditional containers for development environments
+- **Apptainer**: Modern HPC container runtime (no root access required)
+- **Singularity**: Legacy HPC container runtime (widely adopted)
+- **Podman**: Rootless containers for enterprise environments
+- **Automatic Detection**: Venvoy chooses the best available runtime for your environment
+
 ## ✨ Features
 
 - 🐍 **Python 3.9-3.13 support** - Choose your Python version
 - 📊 **R 4.2-4.5 support** - Choose your R version
 - 🧠 **AI-powered editors** - Cursor (AI-first) and VSCode with AI extensions
-- 🐳 **Docker-based isolation** - Complete environment encapsulation
+- 🐳 **Multi-runtime containers** - Docker, Apptainer, Singularity, and Podman
+- 🏢 **HPC compatibility** - Works on clusters without root access
+- 🔧 **Automatic runtime detection** - Chooses best container technology for your environment
 - 🏗️ **Multi-architecture builds** - AMD64, ARM64, ARM32 with automatic selection
 - 🌐 **Cross-platform compatibility** - Works on Windows, macOS, and Linux
 - 📦 **Wheel caching** - Offline package installation support
-- 💾 **Multiple export formats** - YAML, Dockerfile, or tarball
+- 💾 **Multiple export formats** - YAML, Dockerfile, tarball, and comprehensive archives
 - 🤖 **AI-ready environment** - Pre-configured for AI/ML development
 - 🏠 **Home directory mounting** - Access your files from containers
 - ⚡ **Ultra-fast package managers** - mamba, uv, and pip for optimal performance
+- 🔬 **Scientific reproducibility** - Complete environment snapshots for research validation
 
 ## 📋 Prerequisites
 
 The prerequisites will be handled for you automatically if they are missing:
-- Docker (will be installed automatically if missing)
-- AI Editor: Cursor (recommended) or VSCode (will prompt for installation)
-- Python 3.9 or higher only required for alternative/development installations
+- **Container Runtime**: Docker, Apptainer, Singularity, or Podman (will be detected automatically)
+- **AI Editor**: Cursor (recommended) or VSCode (will prompt for installation)
+- **Python 3.9 or higher** only required for alternative/development installations
+
+### 🏢 HPC Cluster Support
+
+Venvoy automatically detects HPC environments and uses the appropriate container runtime:
+- **Apptainer/Singularity**: No root access required, perfect for research clusters
+- **Podman**: Rootless containers for enterprise environments
+- **Docker**: Traditional containers for development environments
+
+**Automatic Environment Detection:**
+- Detects SLURM, PBS, LSF, SGE job schedulers
+- Identifies HPC hostname patterns (login, compute, node, hpc, cluster)
+- Adjusts runtime priority based on environment type
 
 ## 🛠️ Installation
 
@@ -200,6 +228,13 @@ After installation, test that venvoy is available:
 venvoy --help
 ```
 
+**Check your container runtime:**
+```bash
+venvoy runtime-info
+```
+
+This will show you which container runtime venvoy will use and whether it detected an HPC environment.
+
 If the command isn't found, restart your terminal or run:
 ```bash
 source ~/.bashrc  # or ~/.zshrc for zsh users
@@ -252,9 +287,14 @@ The uninstaller will:
 
 ### 0. Initial Setup (First time only)
 ```bash
+# Check your container runtime (especially important for HPC)
+venvoy runtime-info
+
 # Run initial setup to configure AI editors (optional)
 venvoy setup
 ```
+
+**💡 Pro Tip**: The `venvoy runtime-info` command is especially useful on HPC clusters to verify that venvoy will use Apptainer/Singularity instead of Docker.
 
 ### 1. Initialize a New Environment
 
@@ -297,8 +337,11 @@ venvoy run --command /bin/bash
 # Run specific command
 venvoy run --command "python script.py"
 
-# Mount additional directories
+# Mount additional directories (works with all container runtimes)
 venvoy run --mount /host/data:/container/data
+
+# HPC example: Mount scratch directory
+venvoy run --mount /scratch/data:/workspace/data
 ```
 
 ### 3. Restore Previous Environment (Optional)
@@ -364,6 +407,163 @@ venvoy import-archive archive.tar.gz --force
 - **Long-term Storage**: Archive environments for 5-10+ years
 - **Package Abandonment Protection**: Continue using environments even if packages disappear from PyPI
 - **Cross-institutional Collaboration**: Ensure identical results across different organizations
+- **HPC Clusters**: Work on research clusters without root access
+- **Multi-Runtime Environments**: Seamlessly switch between Docker, Apptainer, Singularity, and Podman
+
+## 🏢 HPC Cluster Compatibility
+
+Venvoy is designed to work seamlessly on High-Performance Computing (HPC) clusters where Docker may not be available or require root access.
+
+### 🔧 Automatic Runtime Detection
+
+Venvoy automatically detects your environment and chooses the best container runtime:
+
+```bash
+# Check what runtime venvoy will use
+venvoy runtime-info
+```
+
+**Runtime Priority (HPC Environments):**
+1. **Apptainer** - Most HPC-friendly, no root access required
+2. **Singularity** - Legacy HPC container runtime
+3. **Podman** - Rootless containers
+4. **Docker** - Fallback (may require root)
+
+**Runtime Priority (Development Environments):**
+1. **Docker** - Most familiar
+2. **Podman** - Rootless alternative
+3. **Apptainer/Singularity** - Available but less common
+
+**💡 Smart Detection**: Venvoy checks for all available runtimes and chooses the best one for your environment, ensuring maximum compatibility.
+
+### 🚀 HPC Usage Examples
+
+```bash
+# On an HPC cluster with Apptainer/Singularity
+venvoy runtime-info  # Shows: Runtime: apptainer, HPC Environment: True
+
+# Initialize environment (works without root access)
+venvoy init --runtime python --name my-research
+
+# Run your analysis
+venvoy run --name my-research --command "python analysis.py"
+
+# Mount your data directories
+venvoy run --name my-research --mount /scratch/data:/workspace/data
+
+# Export for sharing with collaborators
+venvoy export --name my-research --format archive
+```
+
+### 🔬 Scientific Computing Workflows
+
+**SLURM Job Submission:**
+```bash
+#!/bin/bash
+#SBATCH --job-name=venvoy-analysis
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --time=02:00:00
+
+# Load any required modules
+module load apptainer
+
+# Run venvoy environment (automatically uses Apptainer/Singularity)
+venvoy run --name my-research --command "python analysis.py"
+```
+
+**PBS Job Submission:**
+```bash
+#!/bin/bash
+#PBS -N venvoy-analysis
+#PBS -l nodes=1:ppn=1
+#PBS -l walltime=2:00:00
+
+# Run venvoy environment (automatically uses Apptainer/Singularity)
+venvoy run --name my-research --command "python analysis.py"
+```
+
+**Interactive HPC Session:**
+```bash
+# Start interactive session
+srun --pty bash
+
+# Check runtime (should show Apptainer/Singularity)
+venvoy runtime-info
+
+# Initialize and run environment
+venvoy init --name my-research
+venvoy run --name my-research --mount /scratch/data:/workspace/data
+```
+
+### 📋 HPC Best Practices
+
+1. **Use Apptainer/Singularity When Available**
+   - No root access required
+   - Designed specifically for HPC environments
+   - Widely adopted in scientific computing
+
+2. **Leverage Bind Mounts for Data**
+   ```bash
+   venvoy run --mount /scratch/data:/workspace/data
+   venvoy run --mount /home/user/code:/workspace/code
+   ```
+
+3. **Export Environments for Reproducibility**
+   ```bash
+   # Export for sharing
+   venvoy export --format archive --output research-env.tar.gz
+   
+   # Import on another system
+   venvoy import-archive research-env.tar.gz
+   ```
+
+4. **Monitor Resource Usage**
+   - Works with standard HPC monitoring tools
+   - SLURM's `squeue` and `scontrol`
+   - PBS's `qstat`
+   - System monitoring tools
+
+5. **Verify Runtime Selection**
+   ```bash
+   # Always check what runtime will be used
+   venvoy runtime-info
+   
+   # Should show Apptainer/Singularity on HPC clusters
+   ```
+
+6. **Handle Network Issues**
+   - Some clusters have restricted Docker Hub access
+   - Use comprehensive archives for offline environments
+   - Contact system administrators for registry access
+
+### 🔍 Troubleshooting HPC Issues
+
+**Common Issues:**
+- **"No supported container runtime found"** - Contact your HPC system administrators
+- **Permission denied errors** - Ensure you're using Apptainer/Singularity (not Docker)
+- **Image pulling fails** - Check network connectivity and registry access
+- **Network timeouts** - Common on restricted clusters, use comprehensive archives
+
+**Getting Help:**
+```bash
+# Check runtime information
+venvoy runtime-info
+
+# Verify HPC detection
+python -c "from venvoy.container_manager import ContainerManager; print(ContainerManager()._is_hpc_environment())"
+
+# Test runtime availability
+python -c "from venvoy.container_manager import ContainerRuntime; print(ContainerManager()._check_runtime_available(ContainerRuntime.APPTAINER))"
+```
+
+**Network Issues on HPC Clusters:**
+- Some clusters block Docker Hub access
+- Use `venvoy export --format archive` to create offline environments
+- Import archives with `venvoy import-archive` for offline use
+- Contact system administrators for registry access if needed
+
+For detailed HPC documentation, see [docs/HPC_COMPATIBILITY.md](docs/HPC_COMPATIBILITY.md).
 
 #### 📋 Complete Scientific Reproducibility Workflows
 
@@ -389,6 +589,24 @@ venvoy export --name cancer-research --format archive --output cancer-research-f
 venvoy import-archive cancer-research-final.tar.gz
 venvoy run --name cancer-research
 # Exact same results guaranteed!
+```
+
+**HPC Research Workflow:**
+```bash
+# 1. Check runtime (should show Apptainer/Singularity on HPC)
+venvoy runtime-info
+
+# 2. Create research environment
+venvoy init --runtime python --name hpc-research --python-version 3.11
+
+# 3. Run with data mounted from scratch directory
+venvoy run --name hpc-research --mount /scratch/data:/workspace/data
+
+# 4. Export for sharing with collaborators
+venvoy export --name hpc-research --format archive
+
+# 5. Submit as SLURM job
+venvoy run --name hpc-research --command "python analysis.py"
 ```
 
 **R Statistical Analysis Workflow:**
