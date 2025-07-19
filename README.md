@@ -1,5 +1,13 @@
 # venvoy
 
+> This project is not ready for use yet!
+> I want to be able to establish some reasonable guarantee that this will work.
+> It is important to be able to produce a precise replica of a computational environment
+> in order to provide the opportunity to reproduce a data analysis.
+> This will only be possible when the correct tools are offered to be able to freeze an environment
+> and to make it truly repeatable cross-platform.
+{ .is-info }
+
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 ![Python Versions](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
 ![R Versions](https://img.shields.io/badge/R-4.2%2B-blue.svg)
