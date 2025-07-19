@@ -7,7 +7,7 @@ __author__ = "Your Name"
 __email__ = "your.email@example.com"
 
 from .core import VenvoyEnvironment
-from .docker_manager import DockerManager
+from .container_manager import ContainerManager, ContainerRuntime
 from .platform_detector import PlatformDetector
 
-__all__ = ["VenvoyEnvironment", "DockerManager", "PlatformDetector"] 
+__all__ = ["VenvoyEnvironment", "ContainerManager", "ContainerRuntime", "PlatformDetector"] 

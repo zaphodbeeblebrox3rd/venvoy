@@ -8,7 +8,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .core import VenvoyEnvironment
-from .docker_manager import DockerManager
+from .container_manager import ContainerManager
 from .platform_detector import PlatformDetector
 
 console = Console()
@@ -21,6 +21,9 @@ def main():
 
     Core Mission: Scientific Reproducibility for Data Science
 
+    🏢 HPC Compatible: Automatically uses Apptainer/Singularity on clusters
+    🔧 Multi-Runtime: Supports Docker, Apptainer, Singularity, and Podman
+
     Quick Start Examples:
         venvoy init --runtime python --python-version 3.13 --name mynewpy313
         venvoy init --runtime r --r-version 4.4 --name myrstats
@@ -28,6 +31,7 @@ def main():
     Common Commands:
         venvoy init             # Initialize new environment (Python or R)
         venvoy run              # Launch environment  
+        venvoy runtime-info     # Show container runtime information
         venvoy export           # Export for sharing (yaml/dockerfile/tarball/archive)
         venvoy import-archive   # Import comprehensive binary archive
         venvoy history          # View environment history
@@ -36,6 +40,10 @@ def main():
     Scientific Reproducibility:
         venvoy export --format archive    # Create comprehensive binary archive
         venvoy import-archive archive.tar.gz  # Restore from binary archive
+
+    HPC Support:
+        venvoy runtime-info     # Check what runtime will be used
+        venvoy init             # Works on clusters with Apptainer/Singularity
     """
     pass
 
@@ -88,14 +96,14 @@ def init(runtime: str, python_version: str, r_version: str, name: str, force: bo
         detector = PlatformDetector()
         platform_info = detector.detect()
         
-        progress.update(task, description="Checking Docker installation...")
-        docker_manager = DockerManager()
-        docker_manager.ensure_docker_installed()
+        progress.update(task, description="Checking container runtime...")
+        container_manager = ContainerManager()
+        runtime_info = container_manager.get_runtime_info()
         
         progress.update(task, description="Detecting available editors...")
         # Just detect editors, don't prompt for installation
-        vscode_available = docker_manager.platform._check_vscode_available()
-        cursor_available = docker_manager.platform._check_cursor_available()
+        vscode_available = container_manager.platform._check_vscode_available()
+        cursor_available = container_manager.platform._check_cursor_available()
         
         if cursor_available:
             editor_type, editor_available = "cursor", True
@@ -821,6 +829,36 @@ def import_archive(archive_path: str, force: bool):
         console.print(f"❌ [red]Import failed:[/red] {str(e)}")
         if "already exists" in str(e):
             console.print("💡 Use --force to overwrite existing environment")
+
+
+@main.command()
+def runtime_info():
+    """Show information about the detected container runtime"""
+    console.print(Panel.fit("🔧 Container Runtime Information", style="bold blue"))
+    
+    try:
+        container_manager = ContainerManager()
+        info = container_manager.get_runtime_info()
+        
+        console.print(f"Runtime: {info['runtime']}")
+        console.print(f"Version: {info['version']}")
+        console.print(f"HPC Environment: {info['is_hpc']}")
+        
+        if info['is_hpc']:
+            console.print("\n🏢 HPC Environment Detected!")
+            if info['runtime'] in ['apptainer', 'singularity']:
+                console.print("✅ Using Apptainer/Singularity - perfect for HPC!")
+                console.print("💡 No root access required")
+            elif info['runtime'] == 'podman':
+                console.print("✅ Using Podman - rootless containers available")
+            else:
+                console.print("⚠️  Using Docker - may require root access on HPC")
+        else:
+            console.print("\n💻 Development Environment")
+            console.print(f"✅ Using {info['runtime']} for container management")
+        
+    except Exception as e:
+        console.print(f"❌ Error detecting runtime: {e}")
 
 
 @main.command()

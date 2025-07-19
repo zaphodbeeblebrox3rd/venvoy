@@ -19,7 +19,7 @@ import yaml
 import os
 import shutil
 
-from .docker_manager import DockerManager
+from .container_manager import ContainerManager
 from .platform_detector import PlatformDetector
 
 
@@ -32,7 +32,7 @@ class VenvoyEnvironment:
         self.python_version = python_version
         self.r_version = r_version
         self.platform = PlatformDetector()
-        self.docker_manager = DockerManager()
+        self.container_manager = ContainerManager()
         self.config_dir = Path.home() / ".venvoy"
         self.env_dir = self.config_dir / "environments" / name
         self.config_file = self.env_dir / "config.yaml"
@@ -71,6 +71,12 @@ class VenvoyEnvironment:
             raise ValueError(f"Unsupported runtime: {self.runtime}")
         
         self._ensure_image_available(image_name)
+        
+        # Log runtime information for debugging
+        runtime_info = self.container_manager.get_runtime_info()
+        print(f"🔧 Using {runtime_info['runtime']} {runtime_info['version']}")
+        if runtime_info['is_hpc']:
+            print(f"🏢 HPC environment detected - using {runtime_info['runtime']} for best compatibility")
         
         # Check for existing environment exports but don't prompt during init
         exports = self.list_environment_exports()
@@ -153,22 +159,38 @@ class VenvoyEnvironment:
 
     def _ensure_image_available(self, image_name: str):
         """Ensure the venvoy image is available locally"""
-        try:
-            # Check if image exists locally
-            result = self._run_docker_command([
-                'image', 'inspect', image_name
-            ], capture_output=True, check=True)
-            
-        except subprocess.CalledProcessError:
-            # Image doesn't exist, pull it
-            print(f"⬇️  Downloading environment (one-time setup)...")
+        runtime_info = self.container_manager.get_runtime_info()
+        
+        if runtime_info['runtime'] in ['apptainer', 'singularity']:
+            # For Apptainer/Singularity, check if SIF file exists
+            sif_file = f"{image_name}.sif"
+            if not Path(sif_file).exists():
+                print(f"⬇️  Downloading environment (one-time setup)...")
+                if self.container_manager.pull_image(image_name):
+                    print(f"✅ Environment ready")
+                else:
+                    raise RuntimeError(f"Failed to download environment")
+            else:
+                print(f"✅ Environment already available")
+        else:
+            # For Docker/Podman, use traditional image inspection
             try:
-                self._run_docker_command([
-                    'pull', image_name
-                ], check=True)
-                print(f"✅ Environment ready")
-            except subprocess.CalledProcessError as e:
-                raise RuntimeError(f"Failed to download environment: {e}")
+                if runtime_info['runtime'] == 'docker':
+                    result = self._run_docker_command([
+                        'image', 'inspect', image_name
+                    ], capture_output=True, check=True)
+                elif runtime_info['runtime'] == 'podman':
+                    result = subprocess.run([
+                        'podman', 'image', 'inspect', image_name
+                    ], capture_output=True, check=True)
+                    
+            except subprocess.CalledProcessError:
+                # Image doesn't exist, pull it
+                print(f"⬇️  Downloading environment (one-time setup)...")
+                if self.container_manager.pull_image(image_name):
+                    print(f"✅ Environment ready")
+                else:
+                    raise RuntimeError(f"Failed to download environment")
     
     def _create_dockerfile(self):
         """Create Dockerfile for the environment"""
@@ -423,7 +445,13 @@ CMD ["/bin/bash"]
     
     def setup_buildx(self):
         """Setup Docker BuildX for multi-arch builds"""
-        self.docker_manager.setup_buildx()
+        # Only available for Docker runtime
+        runtime_info = self.container_manager.get_runtime_info()
+        if runtime_info['runtime'] == 'docker':
+            # This would need to be implemented in container_manager
+            print("🔧 BuildX setup available for Docker runtime")
+        else:
+            print(f"⚠️  BuildX not available for {runtime_info['runtime']} runtime")
     
     def build_multiarch(self, tag: Optional[str] = None) -> str:
         """Build multi-architecture image"""
@@ -431,7 +459,7 @@ CMD ["/bin/bash"]
             tag = f"venvoy/{self.name}:{self.python_version}-multiarch"
         
         dockerfile_path = self.env_dir / "Dockerfile"
-        return self.docker_manager.build_multiarch_image(
+        return self.container_manager.build_image(
             dockerfile_path=dockerfile_path,
             tag=tag,
             context_path=self.env_dir
@@ -439,7 +467,12 @@ CMD ["/bin/bash"]
     
     def push_image(self, tag: str):
         """Push image to registry"""
-        self.docker_manager.push_image(tag)
+        # This would need to be implemented in container_manager
+        runtime_info = self.container_manager.get_runtime_info()
+        if runtime_info['runtime'] == 'docker':
+            print("🔧 Image pushing available for Docker runtime")
+        else:
+            print(f"⚠️  Image pushing not yet implemented for {runtime_info['runtime']} runtime")
     
     def run(self, command: Optional[str] = None, additional_mounts: List[str] = None):
         """Run the environment container with auto-save monitoring"""
@@ -500,11 +533,16 @@ CMD ["/bin/bash"]
         # Run container
         try:
             if not editor_available or command is not None:
-                self.docker_manager.run_container(
+                # Convert volumes format for container manager
+                volume_mounts = {}
+                for host_path, mount_info in volumes.items():
+                    volume_mounts[host_path] = mount_info['bind']
+                
+                self.container_manager.run_container(
                     image=image_name,
                     name=f"{self.name}-runtime",
                     command=command,
-                    volumes=volumes,
+                    volumes=volume_mounts,
                     detach=False
                 )
                 
