@@ -7,14 +7,14 @@ name = "venvoy"
 version = "0.1.0"
 description = "A multi-OS, multi-architecture, immutable, portable, and shareable AI-ready python environment with ultra-fast package managers"
 readme = "README.md"
-license = {text = "Apache-2.0"}
+license = {text = "MIT"}
 authors = [
     {name = "zaphodbeeblebrox3rd", email = "zaphodbeeblebrox3rd@users.noreply.github.com"}
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
