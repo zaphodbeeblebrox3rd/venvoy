@@ -473,7 +473,11 @@ if [ "$1" = "uninstall" ]; then
 else
     # Download latest venvoy source code if not available locally
     VENVOY_SOURCE_DIR="$HOME/.venvoy/src"
-    if [[ ! -d "$VENVOY_SOURCE_DIR" ]] || [[ ! -f "$VENVOY_SOURCE_DIR/src/venvoy/cli.py" ]]; then
+    if [[ "$USE_LOCAL_CODE" = true ]]; then
+        # Use local development code instead of downloading
+        VENVOY_SOURCE_DIR="$(pwd)"
+        echo "🔧 Using local venvoy development code from $VENVOY_SOURCE_DIR"
+    elif [[ ! -d "$VENVOY_SOURCE_DIR" ]] || [[ ! -f "$VENVOY_SOURCE_DIR/src/venvoy/cli.py" ]]; then
         echo "📥 Downloading latest venvoy source code..."
         mkdir -p "$VENVOY_SOURCE_DIR"
         curl -fsSL https://github.com/zaphodbeeblebrox3rd/venvoy/archive/main.tar.gz | \
