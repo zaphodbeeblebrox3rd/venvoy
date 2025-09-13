@@ -27,6 +27,7 @@ class VenvoyEnvironment:
     """Manages portable Python and R environments"""
     
     def __init__(self, name: str = "venvoy-env", python_version: str = "3.11", runtime: str = "python", r_version: str = "4.4"):
+        print(f"🔧 VenvoyEnvironment.__init__ called with name: {name}")
         self.name = name
         self.runtime = runtime  # "python", "r", or "mixed"
         self.python_version = python_version
@@ -36,6 +37,7 @@ class VenvoyEnvironment:
         self.config_dir = Path.home() / ".venvoy"
         self.env_dir = self.config_dir / "environments" / name
         self.config_file = self.env_dir / "config.yaml"
+        print(f"🔧 VenvoyEnvironment.__init__ completed")
         
         # Create venvoy-projects directory for auto-saved environments
         self.projects_dir = self.config_dir / "projects" / name
@@ -164,7 +166,8 @@ class VenvoyEnvironment:
         
         if runtime_info['runtime'] in ['apptainer', 'singularity']:
             # For Apptainer/Singularity, check if SIF file exists
-            sif_file = f"{image_name}.sif"
+            # Sanitize image name for SIF file (replace / and : with -)
+            sif_file = image_name.replace('/', '-').replace(':', '-') + '.sif'
             if not Path(sif_file).exists():
                 print(f"⬇️  Downloading environment (one-time setup)...")
                 if self.container_manager.pull_image(image_name):
@@ -477,6 +480,7 @@ CMD ["/bin/bash"]
     
     def run(self, command: Optional[str] = None, additional_mounts: List[str] = None):
         """Run the environment container with auto-save monitoring"""
+        print(f"🔧 run method called with command: {command}")
         # Load configuration to get the image name
         if not self.config_file.exists():
             raise RuntimeError(f"Environment '{self.name}' not found. Run 'venvoy init' first.")
@@ -533,7 +537,55 @@ CMD ["/bin/bash"]
         
         # Run container
         try:
-            if not editor_available or command is not None:
+            if command is not None:
+                # Execute the provided command
+                print(f"🔧 Executing command: {command}")
+                # Convert volumes format for container manager
+                volume_mounts = {}
+                for host_path, mount_info in volumes.items():
+                    volume_mounts[host_path] = mount_info['bind']
+                
+                self.container_manager.run_container(
+                    image=image_name,
+                    name=f"{self.name}-runtime",
+                    command=command,
+                    volumes=volume_mounts,
+                    detach=False
+                )
+                
+                # Auto-save environment when container exits
+                print("💾 Container stopped - saving final environment state...")
+                self.auto_save_environment()
+            elif editor_available:
+                # Launch with editor
+                if editor_type == "cursor":
+                    # Try to launch Cursor and connect to container
+                    self._launch_with_cursor(image_name, volumes)
+                elif editor_type == "vscode":
+                    # Try to launch VSCode and connect to container
+                    self._launch_with_vscode(image_name, volumes)
+                else:
+                    # Launch interactive shell
+                    command = self._get_interactive_shell_command()
+                    # Convert volumes format for container manager
+                    volume_mounts = {}
+                    for host_path, mount_info in volumes.items():
+                        volume_mounts[host_path] = mount_info['bind']
+                    
+                    self.container_manager.run_container(
+                        image=image_name,
+                        name=f"{self.name}-runtime",
+                        command=command,
+                        volumes=volume_mounts,
+                        detach=False
+                    )
+                    
+                    # Auto-save environment when container exits
+                    print("💾 Container stopped - saving final environment state...")
+                    self.auto_save_environment()
+            else:
+                # Launch interactive shell
+                command = self._get_interactive_shell_command()
                 # Convert volumes format for container manager
                 volume_mounts = {}
                 for host_path, mount_info in volumes.items():
@@ -1370,7 +1422,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                             config = yaml.safe_load(f)
                         
                         # Check if container exists
-                        containers = self.docker_manager.list_containers(all_containers=True)
+                        containers = self.container_manager.list_containers(all_containers=True)
                         status = "stopped"
                         for container in containers:
                             if container['name'] == config['name']:
@@ -1425,7 +1477,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
         
         # First, start the container in detached mode
         try:
-            container = self.docker_manager.run_container(
+            container = self.container_manager.run_container(
                 image=image_tag,
                 name=f"{self.name}-runtime",
                 command="sleep infinity",  # Keep container running
@@ -1456,7 +1508,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                 # Stop the detached container and run interactively instead
                 container.stop()
                 command = self._get_interactive_shell_command()
-                self.docker_manager.run_container(
+                self.container_manager.run_container(
                     image=image_tag,
                     name=f"{self.name}-runtime",
                     command=command,
@@ -1468,7 +1520,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
             print(f"Failed to launch with Cursor: {e}")
             print("🐚 Falling back to interactive shell...")
             command = self._get_interactive_shell_command()
-            self.docker_manager.run_container(
+            self.container_manager.run_container(
                 image=image_tag,
                 name=f"{self.name}-runtime",
                 command=command,
@@ -1483,7 +1535,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
         
         # First, start the container in detached mode
         try:
-            container = self.docker_manager.run_container(
+            container = self.container_manager.run_container(
                 image=image_tag,
                 name=f"{self.name}-runtime",
                 command="sleep infinity",  # Keep container running
@@ -1513,7 +1565,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                 # Stop the detached container and run interactively instead
                 container.stop()
                 command = self._get_interactive_shell_command()
-                self.docker_manager.run_container(
+                self.container_manager.run_container(
                     image=image_tag,
                     name=f"{self.name}-runtime",
                     command=command,
@@ -1525,7 +1577,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
             print(f"Failed to launch with VSCode: {e}")
             print("🐚 Falling back to interactive shell...")
             command = self._get_interactive_shell_command()
-            self.docker_manager.run_container(
+            self.container_manager.run_container(
                 image=image_tag,
                 name=f"{self.name}-runtime",
                 command=command,

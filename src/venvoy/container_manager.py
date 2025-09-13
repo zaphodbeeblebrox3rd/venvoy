@@ -54,6 +54,12 @@ class ContainerManager:
             return ContainerRuntime.DOCKER
         elif self._check_runtime_available(ContainerRuntime.PODMAN):
             return ContainerRuntime.PODMAN
+        
+        # If no runtime is available (e.g., running inside a container),
+        # try to detect the runtime from environment variables
+        runtime_from_env = self._detect_runtime_from_environment()
+        if runtime_from_env:
+            return runtime_from_env
             
         raise RuntimeError(
             "No supported container runtime found. "
@@ -82,6 +88,28 @@ class ContainerManager:
             return True
             
         return False
+    
+    def _detect_runtime_from_environment(self) -> Optional[ContainerRuntime]:
+        """Detect container runtime from environment variables when running inside a container"""
+        # Check for common environment variables that indicate the runtime
+        if 'SINGULARITY_NAME' in os.environ or 'SINGULARITY_CONTAINER' in os.environ:
+            return ContainerRuntime.SINGULARITY
+        elif 'APPTAINER_NAME' in os.environ or 'APPTAINER_CONTAINER' in os.environ:
+            return ContainerRuntime.APPTAINER
+        elif 'DOCKER_CONTAINER' in os.environ or 'container' in os.environ.get('HOSTNAME', '').lower():
+            return ContainerRuntime.DOCKER
+        elif 'PODMAN_CONTAINER' in os.environ:
+            return ContainerRuntime.PODMAN
+        
+        # Check if we're in a container by looking for container-specific files
+        if os.path.exists('/.dockerenv'):
+            return ContainerRuntime.DOCKER
+        elif os.path.exists('/proc/1/cgroup') and 'docker' in open('/proc/1/cgroup').read():
+            return ContainerRuntime.DOCKER
+        elif os.path.exists('/proc/1/cgroup') and 'containerd' in open('/proc/1/cgroup').read():
+            return ContainerRuntime.DOCKER
+        
+        return None
     
     def _check_runtime_available(self, runtime: ContainerRuntime) -> bool:
         """Check if a specific runtime is available"""
@@ -145,10 +173,14 @@ class ContainerManager:
             if self.runtime == ContainerRuntime.DOCKER:
                 subprocess.run(['docker', 'pull', image_name], check=True)
             elif self.runtime == ContainerRuntime.APPTAINER:
-                subprocess.run(['apptainer', 'pull', f'{image_name}.sif', 
+                # Sanitize image name for SIF file (replace / and : with -)
+                sif_name = image_name.replace('/', '-').replace(':', '-') + '.sif'
+                subprocess.run(['apptainer', 'pull', sif_name, 
                               f'docker://{image_name}'], check=True)
             elif self.runtime == ContainerRuntime.SINGULARITY:
-                subprocess.run(['singularity', 'pull', f'{image_name}.sif', 
+                # Sanitize image name for SIF file (replace / and : with -)
+                sif_name = image_name.replace('/', '-').replace(':', '-') + '.sif'
+                subprocess.run(['singularity', 'pull', sif_name, 
                               f'docker://{image_name}'], check=True)
             elif self.runtime == ContainerRuntime.PODMAN:
                 subprocess.run(['podman', 'pull', image_name], check=True)
@@ -161,13 +193,49 @@ class ContainerManager:
                      volumes: Optional[Dict[str, str]] = None,
                      ports: Optional[Dict[str, str]] = None,
                      environment: Optional[Dict[str, str]] = None,
-                     detach: bool = False) -> bool:
+                     detach: bool = False):
         """Run a container with the specified parameters"""
         try:
-            cmd = self._build_run_command(image, name, command, volumes, 
-                                        ports, environment, detach)
-            subprocess.run(cmd, check=True)
-            return True
+            if self.runtime == ContainerRuntime.DOCKER:
+                # For Docker, we need to return a container object
+                # Import docker module here to avoid import issues
+                try:
+                    import docker
+                    client = docker.from_env()
+                    container = client.containers.run(
+                        image=image,
+                        name=name,
+                        command=command,
+                        volumes=volumes,
+                        ports=ports,
+                        environment=environment,
+                        detach=detach,
+                        stdin_open=True,
+                        tty=True,
+                        remove=True
+                    )
+                    return container
+                except ImportError:
+                    # Fallback to subprocess if docker module not available
+                    cmd = self._build_run_command(image, name, command, volumes, 
+                                                ports, environment, detach)
+                    subprocess.run(cmd, check=True)
+                    # Return a mock container object for compatibility
+                    class MockContainer:
+                        def __init__(self, name):
+                            self.name = name
+                    return MockContainer(name)
+            else:
+                # For other runtimes, use subprocess
+                cmd = self._build_run_command(image, name, command, volumes, 
+                                            ports, environment, detach)
+                # Run with proper output handling
+                result = subprocess.run(cmd, check=True)
+                # Return a mock container object for compatibility
+                class MockContainer:
+                    def __init__(self, name):
+                        self.name = name
+                return MockContainer(name)
         except subprocess.CalledProcessError as e:
             print(f"Failed to run container: {e}")
             return False
@@ -233,7 +301,8 @@ class ContainerManager:
                                    detach: bool = False) -> List[str]:
         """Build Apptainer run command"""
         # Apptainer uses .sif files, so we need to check if the image exists
-        image_path = f"{image}.sif"
+        # Sanitize image name for SIF file (replace / and : with -)
+        image_path = image.replace('/', '-').replace(':', '-') + '.sif'
         if not Path(image_path).exists():
             # Pull the image first
             self.pull_image(image)
@@ -261,7 +330,8 @@ class ContainerManager:
                                      environment: Optional[Dict[str, str]] = None,
                                      detach: bool = False) -> List[str]:
         """Build Singularity run command (similar to Apptainer)"""
-        image_path = f"{image}.sif"
+        # Sanitize image name for SIF file (replace / and : with -)
+        image_path = image.replace('/', '-').replace(':', '-') + '.sif'
         if not Path(image_path).exists():
             self.pull_image(image)
         

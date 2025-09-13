@@ -212,10 +212,19 @@ def freeze(name: str, include_dev: bool):
 )
 def run(name: str, command: str, mount: tuple):
     """Launch the portable Python environment"""
-    console.print(Panel.fit("🏃 Launching environment", style="bold magenta"))
+    console.print(Panel.fit("🏃 Launching environment - RUN COMMAND", style="bold magenta"))
     
+    print(f"🔧 CLI Debug - command: {command}")
     env = VenvoyEnvironment(name=name)
-    env.run(command=command, additional_mounts=list(mount))
+    print(f"🔧 CLI Debug - about to call env.run()")
+    try:
+        env.run(command=command, additional_mounts=list(mount))
+        print(f"🔧 CLI Debug - env.run() completed")
+    except Exception as e:
+        print(f"🔧 CLI Debug - Exception in env.run(): {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 @main.command()
@@ -870,6 +879,8 @@ def runtime_info():
 @main.command()
 def update():
     """Update venvoy to the latest version"""
+    import subprocess
+    
     console.print(Panel.fit("🔄 Updating venvoy", style="bold blue"))
     
     with Progress(
@@ -889,8 +900,6 @@ def update():
             runtime = runtime_info['runtime']
             
             console.print(f"🔧 Using {runtime} to update bootstrap image...")
-            
-            import subprocess
             
             # Format image URI based on container runtime
             if runtime in ['apptainer', 'singularity']:
@@ -922,6 +931,16 @@ def update():
             console.print("   • Improved HPC cluster compatibility")
             console.print("   • Better error handling")
             
+        except RuntimeError as e:
+            progress.remove_task(task)
+            if "No supported container runtime found" in str(e):
+                console.print("ℹ️  Running inside a container - skipping bootstrap image update")
+                console.print("💡 The bootstrap image will be updated when you run venvoy from outside the container")
+                console.print("✅ venvoy source code is already up to date")
+            else:
+                console.print(f"❌ Failed to update venvoy: {e}")
+                console.print("💡 Try running the installer again:")
+                console.print("   curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/install.sh | bash")
         except subprocess.CalledProcessError as e:
             progress.remove_task(task)
             console.print(f"❌ Failed to update venvoy: {e}")
