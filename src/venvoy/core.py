@@ -167,8 +167,9 @@ class VenvoyEnvironment:
         if runtime_info['runtime'] in ['apptainer', 'singularity']:
             # For Apptainer/Singularity, check if SIF file exists
             # Sanitize image name for SIF file (replace / and : with -)
-            sif_file = image_name.replace('/', '-').replace(':', '-') + '.sif'
-            if not Path(sif_file).exists():
+            sif_name = image_name.replace('/', '-').replace(':', '-') + '.sif'
+            sif_file = self.container_manager.sif_dir / sif_name
+            if not sif_file.exists():
                 print(f"⬇️  Downloading environment (one-time setup)...")
                 if self.container_manager.pull_image(image_name):
                     print(f"✅ Environment ready")

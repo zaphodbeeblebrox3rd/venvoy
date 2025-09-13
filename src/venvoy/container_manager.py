@@ -30,6 +30,9 @@ class ContainerManager:
         self.platform = PlatformDetector()
         self.runtime = self._detect_best_runtime()
         self.client = None
+        # Create SIF storage directory in ~/.venvoy
+        self.sif_dir = Path.home() / ".venvoy" / "sif"
+        self.sif_dir.mkdir(parents=True, exist_ok=True)
         
     def _detect_best_runtime(self) -> ContainerRuntime:
         """Detect the best available container runtime for the environment"""
@@ -175,12 +178,14 @@ class ContainerManager:
             elif self.runtime == ContainerRuntime.APPTAINER:
                 # Sanitize image name for SIF file (replace / and : with -)
                 sif_name = image_name.replace('/', '-').replace(':', '-') + '.sif'
-                subprocess.run(['apptainer', 'pull', sif_name, 
+                sif_path = self.sif_dir / sif_name
+                subprocess.run(['apptainer', 'pull', str(sif_path), 
                               f'docker://{image_name}'], check=True)
             elif self.runtime == ContainerRuntime.SINGULARITY:
                 # Sanitize image name for SIF file (replace / and : with -)
                 sif_name = image_name.replace('/', '-').replace(':', '-') + '.sif'
-                subprocess.run(['singularity', 'pull', sif_name, 
+                sif_path = self.sif_dir / sif_name
+                subprocess.run(['singularity', 'pull', str(sif_path), 
                               f'docker://{image_name}'], check=True)
             elif self.runtime == ContainerRuntime.PODMAN:
                 subprocess.run(['podman', 'pull', image_name], check=True)
@@ -302,8 +307,9 @@ class ContainerManager:
         """Build Apptainer run command"""
         # Apptainer uses .sif files, so we need to check if the image exists
         # Sanitize image name for SIF file (replace / and : with -)
-        image_path = image.replace('/', '-').replace(':', '-') + '.sif'
-        if not Path(image_path).exists():
+        sif_name = image.replace('/', '-').replace(':', '-') + '.sif'
+        image_path = self.sif_dir / sif_name
+        if not image_path.exists():
             # Pull the image first
             self.pull_image(image)
         
@@ -317,7 +323,7 @@ class ContainerManager:
             for key, value in environment.items():
                 cmd.extend(['--env', f'{key}={value}'])
         
-        cmd.append(image_path)
+        cmd.append(str(image_path))
         
         if command:
             cmd.extend(['sh', '-c', command])
@@ -331,8 +337,9 @@ class ContainerManager:
                                      detach: bool = False) -> List[str]:
         """Build Singularity run command (similar to Apptainer)"""
         # Sanitize image name for SIF file (replace / and : with -)
-        image_path = image.replace('/', '-').replace(':', '-') + '.sif'
-        if not Path(image_path).exists():
+        sif_name = image.replace('/', '-').replace(':', '-') + '.sif'
+        image_path = self.sif_dir / sif_name
+        if not image_path.exists():
             self.pull_image(image)
         
         cmd = ['singularity', 'run']
@@ -345,7 +352,7 @@ class ContainerManager:
             for key, value in environment.items():
                 cmd.extend(['--env', f'{key}={value}'])
         
-        cmd.append(image_path)
+        cmd.append(str(image_path))
         
         if command:
             cmd.extend(['sh', '-c', command])
