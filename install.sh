@@ -202,10 +202,12 @@ pipx install git+https://github.com/zaphodbeeblebrox3rd/venvoy.git || {
 echo "✅ venvoy installed successfully using pipx"
 
 # Ensure ~/.local/bin is in PATH for user installs
+PATH_UPDATED=false
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     echo "📝 Adding $HOME/.local/bin to PATH in ~/.bashrc"
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
     export PATH="$HOME/.local/bin:$PATH"
+    PATH_UPDATED=true
     
     # Also add to current shell's RC file if different from ~/.bashrc
     if [[ -n "$ZSH_VERSION" ]] || [[ "$SHELL" == *"zsh"* ]]; then
@@ -445,7 +447,7 @@ EOF
 # Make script executable
 chmod +x "$INSTALL_DIR/venvoy"
 
-# Function to reload shell configuration
+# Function to reload shell configuration and verify PATH
 reload_shell_config() {
     local shell_rc="$1"
     if [[ -f "$shell_rc" ]]; then
@@ -458,6 +460,17 @@ reload_shell_config() {
                 echo "   Please run: source $shell_rc"
             }
         fi
+    fi
+}
+
+# Function to verify venvoy is available in PATH
+verify_venvoy_path() {
+    if command -v venvoy &> /dev/null; then
+        echo "✅ venvoy is available in PATH: $(which venvoy)"
+        return 0
+    else
+        echo "⚠️  venvoy not found in PATH"
+        return 1
     fi
 }
 
@@ -512,8 +525,23 @@ case $PLATFORM in
         fi
         
         # Automatically reload shell configuration to make venvoy available immediately
-        echo "🔄 Reloading shell configuration..."
-        reload_shell_config "$SHELL_RC"
+        if [ "$PATH_UPDATED" = true ]; then
+            echo "🔄 Reloading shell configuration..."
+            reload_shell_config "$SHELL_RC"
+            
+            # Verify venvoy is now available
+            if ! verify_venvoy_path; then
+                echo "🔄 Attempting to source shell configuration again..."
+                source "$SHELL_RC" 2>/dev/null || true
+                verify_venvoy_path || {
+                    echo "⚠️  venvoy still not found in PATH"
+                    echo "   This is normal - the PATH will be available in new terminal sessions"
+                    echo "   To use venvoy immediately in this session, run:"
+                    echo "   source $SHELL_RC"
+                    echo "   Or restart your terminal"
+                }
+            fi
+        fi
         ;;
     windows)
         echo "📝 Please add $INSTALL_DIR to your PATH manually"
@@ -554,12 +582,18 @@ if command -v venvoy &> /dev/null; then
     echo "   2. Run: venvoy init --python-version <python-version> --name <environment-name>"
     echo "   3. Start coding with AI-powered environments!"
 else
-    echo "   ⚠️  venvoy not found in PATH"
-    echo "   💡 This might happen if the shell configuration couldn't be reloaded automatically"
-    echo "   🔧 Try running: source $SHELL_RC"
-    echo "   🔄 Or restart your terminal"
-    echo "   🐛 If the problem persists, run the diagnostic script:"
-    echo "      curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/scripts/diagnose-macos-path.sh | bash"
+    echo "   ⚠️  venvoy not found in current PATH"
+    if [ "$PATH_UPDATED" = true ]; then
+        echo "   💡 PATH was updated, but current shell session needs to be refreshed"
+        echo "   🔧 To use venvoy immediately, run:"
+        echo "      source $SHELL_RC"
+        echo "   🔄 Or restart your terminal"
+        echo "   ✅ venvoy will be available in all new terminal sessions"
+    else
+        echo "   💡 venvoy should be available via pipx"
+        echo "   🔧 Try running: pipx run venvoy --help"
+    fi
+    
     if [ "$EXISTING_INSTALL" = true ]; then
         echo "   🆕 New features available:"
         echo "      • Enhanced WSL editor detection"
