@@ -253,14 +253,23 @@ if [[ -d "/workspace" ]]; then
     find /workspace -name "*.pyc" -delete 2>/dev/null || true
 fi
 
+# Format image URI based on container runtime
+if [ "\$CONTAINER_RUNTIME" = "apptainer" ] || [ "\$CONTAINER_RUNTIME" = "singularity" ]; then
+    IMAGE_URI="docker://\$VENVOY_IMAGE"
+    INSPECT_CMD="\$CONTAINER_RUNTIME image inspect"
+else
+    IMAGE_URI="\$VENVOY_IMAGE"
+    INSPECT_CMD="\$CONTAINER_RUNTIME image inspect"
+fi
+
 # Pull venvoy image if it doesn't exist or force update
-if ! $CONTAINER_RUNTIME image inspect "$VENVOY_IMAGE" &> /dev/null; then
+if ! \$INSPECT_CMD "\$IMAGE_URI" &> /dev/null; then
     echo "📦 Downloading venvoy environment..."
-    $CONTAINER_RUNTIME pull "$VENVOY_IMAGE"
+    \$CONTAINER_RUNTIME pull "\$IMAGE_URI"
     echo "✅ Environment ready"
-elif [ "$1" = "update" ] || [ "$1" = "upgrade" ]; then
+elif [ "\$1" = "update" ] || [ "\$1" = "upgrade" ]; then
     echo "🔄 Updating venvoy environment..."
-    $CONTAINER_RUNTIME pull "$VENVOY_IMAGE"
+    \$CONTAINER_RUNTIME pull "\$IMAGE_URI"
     echo "✅ Environment updated"
     
     # Handle upgrade command by converting it to update
