@@ -70,85 +70,127 @@ if [ -f "$INSTALL_DIR/venvoy" ]; then
     echo "🔄 Updating to latest version..."
 fi
 
-# Ensure pip is installed
-if ! command -v pip3 &> /dev/null; then
-    echo "❌ pip3 (Python package manager) is not installed."
-    echo "   venvoy needs pip3 to install its dependencies."
-    echo "   We will now attempt to install pip3 using sudo (you may be prompted for your password)."
-    read -p "Proceed with installing pip3 using sudo? [Y/n]: " yn
-    yn=${yn:-Y}
-    if [[ $yn =~ ^[Yy]$ ]]; then
-        # Check for and fix broken repositories before installing pip3
-        echo "🔧 Checking for broken package repositories..."
-        if sudo apt update 2>&1 | grep -q "404.*kubernetes"; then
-            echo "⚠️  Detected broken Kubernetes repository. Attempting to fix..."
-            sudo rm -f /etc/apt/sources.list.d/kubernetes.list*
-            echo "✅ Removed broken Kubernetes repository"
+# Ensure pip is installed (cross-platform, no sudo required)
+if ! command -v pip3 &> /dev/null && ! command -v pip &> /dev/null; then
+    echo "❌ pip (Python package manager) is not installed."
+    echo "   venvoy needs pip to install its dependencies."
+    
+    # Try multiple methods to install pip
+    PIP_INSTALLED=false
+    
+    # Method 1: Try ensurepip first (fastest if available)
+    if command -v python3 &> /dev/null; then
+        echo "   Attempting to install pip using ensurepip..."
+        python3 -m ensurepip --user --upgrade 2>/dev/null && PIP_INSTALLED=true
+    elif command -v python &> /dev/null; then
+        echo "   Attempting to install pip using ensurepip..."
+        python -m ensurepip --user --upgrade 2>/dev/null && PIP_INSTALLED=true
+    fi
+    
+    # Method 2: Download and run get-pip.py (most reliable)
+    if [ "$PIP_INSTALLED" = false ]; then
+        echo "   ensurepip not available, downloading get-pip.py..."
+        if command -v python3 &> /dev/null; then
+            curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3 --user && PIP_INSTALLED=true
+        elif command -v python &> /dev/null; then
+            curl -fsSL https://bootstrap.pypa.io/get-pip.py | python --user && PIP_INSTALLED=true
         fi
-        
-        # Try to update package lists again
-        echo "📦 Updating package lists..."
-        sudo apt update || {
-            echo "⚠️  Package update had issues, but continuing with pip3 installation..."
-        }
-        
-        # Install pip3
-        echo "📦 Installing pip3..."
-        sudo apt install -y python3-pip
-        
-        if ! command -v pip3 &> /dev/null; then
-            echo "❌ pip3 installation failed. Please install pip3 manually:"
-            echo "   sudo apt update && sudo apt install python3-pip"
-            exit 1
-        fi
-        echo "✅ pip3 installed successfully"
-    else
-        echo "❌ pip3 is required. Please install it manually:"
-        echo "   sudo apt update && sudo apt install python3-pip"
+    fi
+    
+    # Method 3: Try using the system's package manager as last resort
+    if [ "$PIP_INSTALLED" = false ]; then
+        echo "   get-pip.py failed, trying system package manager..."
+        case $PLATFORM in
+            linux)
+                # Try to detect package manager and install pip
+                if command -v dnf &> /dev/null; then
+                    echo "   Found dnf, attempting to install python3-pip..."
+                    sudo dnf install -y python3-pip && PIP_INSTALLED=true
+                elif command -v yum &> /dev/null; then
+                    echo "   Found yum, attempting to install python3-pip..."
+                    sudo yum install -y python3-pip && PIP_INSTALLED=true
+                elif command -v apt &> /dev/null; then
+                    echo "   Found apt, attempting to install python3-pip..."
+                    sudo apt update && sudo apt install -y python3-pip && PIP_INSTALLED=true
+                fi
+                ;;
+            macos)
+                if command -v brew &> /dev/null; then
+                    echo "   Found brew, attempting to install python (includes pip)..."
+                    brew install python && PIP_INSTALLED=true
+                fi
+                ;;
+        esac
+    fi
+    
+    # Final check
+    if [ "$PIP_INSTALLED" = false ]; then
+        echo "❌ Failed to install pip using all methods."
+        echo "   Please install pip manually for your platform:"
+        case $PLATFORM in
+            linux)
+                echo "   RHEL/CentOS: sudo dnf install python3-pip"
+                echo "   Ubuntu/Debian: sudo apt install python3-pip"
+                echo "   Manual: curl https://bootstrap.pypa.io/get-pip.py | python3"
+                ;;
+            macos)
+                echo "   brew install python (includes pip)"
+                echo "   Manual: curl https://bootstrap.pypa.io/get-pip.py | python3"
+                ;;
+            windows)
+                echo "   Download Python from python.org (includes pip)"
+                echo "   Manual: curl https://bootstrap.pypa.io/get-pip.py | python"
+                ;;
+        esac
         exit 1
+    else
+        echo "✅ pip installed successfully"
     fi
 fi
 
-# Install pipx in a cross-platform way
+# Install pipx in a cross-platform way (no sudo required)
 if ! command -v pipx &> /dev/null; then
     echo "📦 pipx (Python application installer) is not installed."
-    if [[ "$PLATFORM" == "linux" ]]; then
-        echo "   Attempting to install pipx using apt (Linux)..."
-        sudo apt install -y pipx || {
-            echo "❌ Failed to install pipx with apt. Please install it manually:"
-            echo "   sudo apt install pipx"
+    echo "   Installing pipx using pip (no sudo required)..."
+    
+    # Try pip3 first, then python3 -m pip, then python -m pip
+    if command -v pip3 &> /dev/null; then
+        pip3 install --user pipx || {
+            echo "❌ Failed to install pipx with pip3. Trying alternative methods..."
             exit 1
         }
-    elif [[ "$PLATFORM" == "macos" ]]; then
-        if command -v brew &> /dev/null; then
-            echo "   Attempting to install pipx using Homebrew (macOS)..."
-            brew install pipx || {
-                echo "❌ Failed to install pipx with Homebrew. Trying pip..."
-                python3 -m pip install --user pipx || {
-                    echo "❌ Failed to install pipx with pip. Please install it manually:"
-                    echo "   brew install pipx   # or: python3 -m pip install --user pipx"
+    elif command -v python3 &> /dev/null; then
+        python3 -m pip install --user pipx || {
+            echo "❌ Failed to install pipx with python3 -m pip. Trying python..."
+            if command -v python &> /dev/null; then
+                python -m pip install --user pipx || {
+                    echo "❌ Failed to install pipx. Please install it manually:"
+                    echo "   python3 -m pip install --user pipx"
                     exit 1
                 }
-            }
-        else
-            echo "   Homebrew not found. Trying pip..."
-            python3 -m pip install --user pipx || {
-                echo "❌ Failed to install pipx with pip. Please install it manually:"
+            else
+                echo "❌ Failed to install pipx. Please install it manually:"
                 echo "   python3 -m pip install --user pipx"
                 exit 1
-            }
-        fi
-    elif [[ "$PLATFORM" == "windows" ]]; then
-        echo "   Attempting to install pipx using pip (Windows)..."
+            fi
+        }
+    elif command -v python &> /dev/null; then
         python -m pip install --user pipx || {
-            echo "❌ Failed to install pipx with pip. Please install it manually:"
+            echo "❌ Failed to install pipx. Please install it manually:"
             echo "   python -m pip install --user pipx"
             exit 1
         }
-        echo "   Please ensure %USERPROFILE%\.local\bin is in your PATH."
     else
-        echo "❌ Unsupported platform for automatic pipx installation. Please install pipx manually."
+        echo "❌ No Python or pip found. Please install Python first."
         exit 1
+    fi
+    
+    echo "✅ pipx installed successfully"
+    
+    # Ensure pipx PATH is available immediately
+    if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+        export PATH="$HOME/.local/bin:$PATH"
+        echo "📝 Added pipx PATH to current session"
     fi
 fi
 
@@ -158,12 +200,6 @@ pipx install git+https://github.com/zaphodbeeblebrox3rd/venvoy.git || {
     exit 1
 }
 echo "✅ venvoy installed successfully using pipx"
-
-# Ensure pipx PATH is available immediately
-if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-    export PATH="$HOME/.local/bin:$PATH"
-    echo "📝 Added pipx PATH to current session"
-fi
 
 # Ensure ~/.local/bin is in PATH for user installs
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
