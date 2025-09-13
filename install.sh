@@ -256,14 +256,12 @@ fi
 # Format image URI based on container runtime
 if [ "\$CONTAINER_RUNTIME" = "apptainer" ] || [ "\$CONTAINER_RUNTIME" = "singularity" ]; then
     IMAGE_URI="docker://\$VENVOY_IMAGE"
-    INSPECT_CMD="\$CONTAINER_RUNTIME image inspect"
 else
     IMAGE_URI="\$VENVOY_IMAGE"
-    INSPECT_CMD="\$CONTAINER_RUNTIME image inspect"
 fi
 
 # Pull venvoy image if it doesn't exist or force update
-if ! \$INSPECT_CMD "\$IMAGE_URI" &> /dev/null; then
+if ! \$CONTAINER_RUNTIME image inspect "\$IMAGE_URI" &> /dev/null; then
     echo "📦 Downloading venvoy environment..."
     \$CONTAINER_RUNTIME pull "\$IMAGE_URI"
     echo "✅ Environment ready"
