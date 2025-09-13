@@ -1,19 +1,20 @@
 name: Build and Publish Docker Images
 
-on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'docker/**'
-      - '.github/workflows/build-images.yml'
-  release:
-    types: [published]
-  workflow_dispatch:
-    inputs:
-      python_versions:
-        description: 'Python versions to build (space-separated)'
-        required: false
-        default: '3.9 3.10 3.11 3.12 3.13'
+# DISABLED: GitHub Actions doesn't have enough resources to build large Docker images
+# on:
+#   push:
+#     branches: [ main ]
+#     paths:
+#       - 'docker/**'
+#       - '.github/workflows/build-images.yml'
+#   release:
+#     types: [published]
+#   workflow_dispatch:
+#     inputs:
+#       python_versions:
+#         description: 'Python versions to build (space-separated)'
+#         required: false
+#         default: '3.9 3.10 3.11 3.12 3.13'
 
 env:
   REGISTRY: docker.io
