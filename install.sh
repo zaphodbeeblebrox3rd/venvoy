@@ -195,7 +195,7 @@ if ! command -v pipx &> /dev/null; then
 fi
 
 echo "📦 Installing venvoy using pipx..."
-pipx install git+https://github.com/zaphodbeeblebrox3rd/venvoy.git || {
+pipx install --force git+https://github.com/zaphodbeeblebrox3rd/venvoy.git || {
     echo "❌ Failed to install venvoy. Please check your Python and pipx installation."
     exit 1
 }
@@ -254,21 +254,42 @@ if [[ -d "/workspace" ]]; then
 fi
 
 # Format image URI based on container runtime
-if [ "\$CONTAINER_RUNTIME" = "apptainer" ] || [ "\$CONTAINER_RUNTIME" = "singularity" ]; then
-    IMAGE_URI="docker://\$VENVOY_IMAGE"
+if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
+    IMAGE_URI="docker://$VENVOY_IMAGE"
 else
-    IMAGE_URI="\$VENVOY_IMAGE"
+    IMAGE_URI="$VENVOY_IMAGE"
 fi
 
 # Pull venvoy image if it doesn't exist or force update
-if ! \$CONTAINER_RUNTIME image inspect "\$IMAGE_URI" &> /dev/null; then
+if ! $CONTAINER_RUNTIME image inspect "$IMAGE_URI" &> /dev/null; then
     echo "📦 Downloading venvoy environment..."
-    \$CONTAINER_RUNTIME pull "\$IMAGE_URI"
+    if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
+        # For Apptainer/Singularity, use --force to overwrite existing SIF files
+        $CONTAINER_RUNTIME pull --force "$IMAGE_URI"
+    else
+        $CONTAINER_RUNTIME pull "$IMAGE_URI"
+    fi
     echo "✅ Environment ready"
 elif [ "\$1" = "update" ] || [ "\$1" = "upgrade" ]; then
     echo "🔄 Updating venvoy environment..."
-    \$CONTAINER_RUNTIME pull "\$IMAGE_URI"
+    if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
+        # For Apptainer/Singularity, use --force to overwrite existing SIF files
+        $CONTAINER_RUNTIME pull --force "$IMAGE_URI"
+    else
+        $CONTAINER_RUNTIME pull "$IMAGE_URI"
+    fi
     echo "✅ Environment updated"
+    
+    # Also update source code
+    echo "📥 Updating venvoy source code..."
+    VENVOY_SOURCE_DIR="$HOME/.venvoy/src"
+    if [[ -d "$VENVOY_SOURCE_DIR" ]]; then
+        rm -rf "$VENVOY_SOURCE_DIR"
+    fi
+    mkdir -p "$VENVOY_SOURCE_DIR"
+    curl -fsSL https://github.com/zaphodbeeblebrox3rd/venvoy/archive/main.tar.gz | \
+        tar -xz -C "$VENVOY_SOURCE_DIR" --strip-components=1
+    echo "✅ Source code updated"
     
     # Handle upgrade command by converting it to update
     if [ "$1" = "upgrade" ]; then
@@ -282,6 +303,20 @@ USE_LOCAL_CODE=false
 if [[ -d "$(pwd)/src/venvoy" ]] && [[ -f "$(pwd)/pyproject.toml" ]]; then
     USE_LOCAL_CODE=true
     echo "🔧 Using local venvoy development code"
+fi
+
+# Also check if we can find the venvoy source in common development locations
+if [[ "$USE_LOCAL_CODE" = false ]]; then
+    # Check if we're in a subdirectory of a venvoy development directory
+    CURRENT_DIR="$(pwd)"
+    while [[ "$CURRENT_DIR" != "/" ]]; do
+        if [[ -d "$CURRENT_DIR/src/venvoy" ]] && [[ -f "$CURRENT_DIR/pyproject.toml" ]]; then
+            USE_LOCAL_CODE=true
+            echo "🔧 Using local venvoy development code from $CURRENT_DIR"
+            break
+        fi
+        CURRENT_DIR="$(dirname "$CURRENT_DIR")"
+    done
 fi
 
 # Handle uninstall command specially
@@ -436,17 +471,50 @@ if [ "$1" = "uninstall" ]; then
     echo "💡 You may need to restart your terminal for PATH changes to take effect."
     exit 0
 else
-    # Run normal venvoy commands
-    if command -v pipx &> /dev/null && pipx list | grep -q venvoy; then
-        # Use pipx installation (preferred)
-        pipx run --spec . venvoy "$@"
-    elif [ "$USE_LOCAL_CODE" = true ]; then
-        # Use local development code (dependencies already installed)
-        cd "$(pwd)"
-        python3 -c "import sys; sys.path.insert(0, 'src'); from venvoy.cli import main; main()" "$@"
+    # Download latest venvoy source code if not available locally
+    VENVOY_SOURCE_DIR="$HOME/.venvoy/src"
+    if [[ ! -d "$VENVOY_SOURCE_DIR" ]] || [[ ! -f "$VENVOY_SOURCE_DIR/src/venvoy/cli.py" ]]; then
+        echo "📥 Downloading latest venvoy source code..."
+        mkdir -p "$VENVOY_SOURCE_DIR"
+        curl -fsSL https://github.com/zaphodbeeblebrox3rd/venvoy/archive/main.tar.gz | \
+            tar -xz -C "$VENVOY_SOURCE_DIR" --strip-components=1
+        echo "✅ Latest venvoy source code ready"
+    fi
+
+    # Run normal venvoy commands inside the container with mounted source
+    if [ "$CONTAINER_RUNTIME" = "docker" ]; then
+        # Docker execution with source code mounted
+        docker run --rm -it \
+            -v "$PWD:/workspace" \
+            -v "$HOME:/host-home" \
+            -v "$VENVOY_SOURCE_DIR:/venvoy-source" \
+            -w /workspace \
+            -e HOME="/host-home" \
+            -e VENVOY_SOURCE_DIR="/venvoy-source" \
+            "$VENVOY_IMAGE" "$@"
+    elif [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
+        # Apptainer/Singularity execution with source code mounted
+        $CONTAINER_RUNTIME exec \
+            --bind "$PWD:/workspace" \
+            --bind "$HOME:/host-home" \
+            --bind "$VENVOY_SOURCE_DIR:/venvoy-source" \
+            --pwd /workspace \
+            --env HOME="/host-home" \
+            --env VENVOY_SOURCE_DIR="/venvoy-source" \
+            "$IMAGE_URI" venvoy "$@"
+    elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
+        # Podman execution with source code mounted
+        podman run --rm -it \
+            -v "$PWD:/workspace" \
+            -v "$HOME:/host-home" \
+            -v "$VENVOY_SOURCE_DIR:/venvoy-source" \
+            -w /workspace \
+            -e HOME="/host-home" \
+            -e VENVOY_SOURCE_DIR="/venvoy-source" \
+            "$VENVOY_IMAGE" "$@"
     else
-        # Use installed package
-        python3 -m venvoy "$@"
+        echo "❌ Unsupported container runtime: $CONTAINER_RUNTIME"
+        exit 1
     fi
 fi
 EOF
@@ -518,6 +586,7 @@ case $PLATFORM in
             fi
             
             echo "📝 Added venvoy to PATH in $SHELL_RC"
+            PATH_UPDATED=true
         else
             echo "📝 venvoy already in PATH"
         fi

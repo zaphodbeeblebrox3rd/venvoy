@@ -36,6 +36,7 @@ def main():
         venvoy import-archive   # Import comprehensive binary archive
         venvoy history          # View environment history
         venvoy update/upgrade   # Update venvoy to latest version
+        venvoy exit/deactivate  # Exit virtual environment (same as 'deactivate')
 
     Scientific Reproducibility:
         venvoy export --format archive    # Create comprehensive binary archive
@@ -725,12 +726,17 @@ def setup():
         detector = PlatformDetector()
         platform_info = detector.detect()
         
-        progress.update(task, description="Checking Docker installation...")
-        docker_manager = DockerManager()
-        docker_manager.ensure_docker_installed()
+        progress.update(task, description="Checking container runtime...")
+        container_manager = ContainerManager()
+        runtime_info = container_manager.get_runtime_info()
+        console.print(f"🔧 Using {runtime_info['runtime']} {runtime_info['version']}")
+        if runtime_info['is_hpc']:
+            console.print(f"🏢 HPC environment detected - using {runtime_info['runtime']} for best compatibility")
         
         progress.update(task, description="Checking AI editor installation...")
-        editor_type, editor_available = docker_manager.ensure_editor_installed()
+        # For now, skip editor detection in containerized environment
+        editor_type = "none"
+        editor_available = False
         
         progress.remove_task(task)
     
@@ -906,6 +912,41 @@ def update():
 
 # Note: upgrade command is handled by the bootstrap script
 # This prevents "unexpected extra argument" errors
+
+
+@main.command()
+def exit():
+    """Exit virtual environment (same as 'deactivate')"""
+    import os
+    import subprocess
+    
+    # Check if we're in a virtual environment
+    if os.environ.get('VIRTUAL_ENV'):
+        console.print("🚪 Exiting virtual environment...")
+        try:
+            # Try to call the deactivate function
+            subprocess.run(['deactivate'], shell=True, check=True)
+        except subprocess.CalledProcessError:
+            # If deactivate command fails, try to unset environment variables manually
+            console.print("💡 Deactivate command not found, manually cleaning environment...")
+            if 'VIRTUAL_ENV' in os.environ:
+                del os.environ['VIRTUAL_ENV']
+            if 'PATH' in os.environ and 'venvoy-test' in os.environ['PATH']:
+                # Remove venvoy-test from PATH
+                path_parts = os.environ['PATH'].split(':')
+                path_parts = [p for p in path_parts if 'venvoy-test' not in p]
+                os.environ['PATH'] = ':'.join(path_parts)
+            console.print("✅ Virtual environment deactivated")
+    else:
+        console.print("ℹ️  No virtual environment currently active")
+        console.print("💡 Use 'deactivate' directly if you're in a virtual environment")
+
+
+@main.command()
+def deactivate():
+    """Exit virtual environment (alias for 'venvoy exit')"""
+    # Just call the exit command
+    exit()
 
 
 if __name__ == "__main__":

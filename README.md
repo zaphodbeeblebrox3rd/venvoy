@@ -6,9 +6,8 @@
 > in order to provide the opportunity to reproduce a data analysis.
 > This will only be possible when the correct tools are offered to be able to freeze an environment
 > and to make it truly repeatable cross-platform.
-{ .is-info }
 
-![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python Versions](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
 ![R Support](https://img.shields.io/badge/R-Supported-brightgreen.svg)
 ![Docker](https://img.shields.io/badge/Docker-Supported-blue.svg)
@@ -77,11 +76,12 @@ Developers, Hobbyists, Researchers, and IT Professionals - have you had these he
 - **HPC clusters** - Work on research computing clusters without root access
 
 ### 🌐 **How Cross-Platform Magic Works:**
+- **🏢 HPC Clusters & Research Computing**: Apptainer/Singularity containers without root access
+- **🏢 Enterprise & Shared Systems**: Secure container execution without admin privileges
 - **🪟 Windows**: Docker Desktop + WSL2 runs Linux containers seamlessly
 - **🍎 macOS**: Docker Desktop virtualizes Linux containers transparently  
-- **🐧 Linux**: Native container execution with zero overhead
-- **🏢 HPC Clusters**: Apptainer/Singularity containers without root access
-- **🎯 Result**: Identical Python environments regardless of your host OS or cluster setup!
+- **🐧 Linux (with root)**: Docker/Podman with full container privileges
+- **🎯 Result**: Identical Python environments regardless of your host OS or privilege level!
 
 **🏗️ Multi-Architecture Support:**
 - **Intel/AMD x86_64**: Full native performance on desktop and server
