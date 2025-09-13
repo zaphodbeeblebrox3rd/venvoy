@@ -10,8 +10,11 @@
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 ![Python Versions](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
-![R Versions](https://img.shields.io/badge/R-4.2%2B-blue.svg)
-![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)
+![R Support](https://img.shields.io/badge/R-Supported-brightgreen.svg)
+![Docker](https://img.shields.io/badge/Docker-Supported-blue.svg)
+![Apptainer](https://img.shields.io/badge/Apptainer-Supported-blue.svg)
+![Singularity](https://img.shields.io/badge/Singularity-Supported-blue.svg)
+![Podman](https://img.shields.io/badge/Podman-Supported-blue.svg)
 ![HPC Compatible](https://img.shields.io/badge/HPC-Compatible-brightgreen.svg)
 ![AI Ready](https://img.shields.io/badge/AI-Ready-brightgreen.svg)
 ![Cross Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)

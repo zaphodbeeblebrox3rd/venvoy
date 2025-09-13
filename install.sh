@@ -21,25 +21,42 @@ fi
 
 echo "🔍 Detected platform: $PLATFORM"
 
-# Check for Docker
-if ! command -v docker &> /dev/null; then
-    echo "❌ Docker not found. Please install Docker first:"
+# Check for any supported container runtime
+CONTAINER_RUNTIME=""
+if command -v docker &> /dev/null; then
+    CONTAINER_RUNTIME="docker"
+elif command -v apptainer &> /dev/null; then
+    CONTAINER_RUNTIME="apptainer"
+elif command -v singularity &> /dev/null; then
+    CONTAINER_RUNTIME="singularity"
+elif command -v podman &> /dev/null; then
+    CONTAINER_RUNTIME="podman"
+else
+    echo "❌ No supported container runtime found."
+    echo "   Please install one of the following:"
     case $PLATFORM in
         linux)
-            echo "   curl -fsSL https://get.docker.com | sh"
+            echo "   Docker: curl -fsSL https://get.docker.com | sh"
+            echo "   Apptainer: https://apptainer.org/docs/user/main/quick_start.html#quick-installation-steps"
+            echo "   Podman: sudo apt install podman (or equivalent for your distro)"
             ;;
         macos)
-            echo "   brew install --cask docker"
-            echo "   Or download from: https://www.docker.com/products/docker-desktop"
+            echo "   Docker: brew install --cask docker"
+            echo "   Podman: brew install podman"
+            echo "   Or download Docker Desktop from: https://www.docker.com/products/docker-desktop"
             ;;
         windows)
-            echo "   Download from: https://www.docker.com/products/docker-desktop"
+            echo "   Docker: Download from https://www.docker.com/products/docker-desktop"
+            echo "   Podman: Download from https://podman.io/getting-started/installation"
             ;;
     esac
+    echo ""
+    echo "💡 For HPC environments, Apptainer/Singularity is recommended"
+    echo "   as it doesn't require root access."
     exit 1
 fi
 
-echo "✅ Docker found"
+echo "✅ Found container runtime: $CONTAINER_RUNTIME"
 
 # Create installation directory
 INSTALL_DIR="$HOME/.venvoy/bin"
@@ -163,11 +180,26 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
 fi
 
 # Download or create venvoy bootstrap script
-cat > "$INSTALL_DIR/venvoy" << 'EOF'
+cat > "$INSTALL_DIR/venvoy" << EOF
 #!/bin/bash
-# venvoy Bootstrap Script - runs venvoy inside Docker
+# venvoy Bootstrap Script - runs venvoy inside container
 
 set -e
+
+# Detect container runtime
+CONTAINER_RUNTIME=""
+if command -v docker &> /dev/null; then
+    CONTAINER_RUNTIME="docker"
+elif command -v apptainer &> /dev/null; then
+    CONTAINER_RUNTIME="apptainer"
+elif command -v singularity &> /dev/null; then
+    CONTAINER_RUNTIME="singularity"
+elif command -v podman &> /dev/null; then
+    CONTAINER_RUNTIME="podman"
+else
+    echo "❌ No supported container runtime found"
+    exit 1
+fi
 
 # Use single multi-architecture bootstrap image
 VENVOY_IMAGE="zaphodbeeblebrox3rd/venvoy:bootstrap"
@@ -184,13 +216,13 @@ if [[ -d "/workspace" ]]; then
 fi
 
 # Pull venvoy image if it doesn't exist or force update
-if ! docker image inspect "$VENVOY_IMAGE" &> /dev/null; then
+if ! $CONTAINER_RUNTIME image inspect "$VENVOY_IMAGE" &> /dev/null; then
     echo "📦 Downloading venvoy environment..."
-    docker pull "$VENVOY_IMAGE"
+    $CONTAINER_RUNTIME pull "$VENVOY_IMAGE"
     echo "✅ Environment ready"
 elif [ "$1" = "update" ] || [ "$1" = "upgrade" ]; then
     echo "🔄 Updating venvoy environment..."
-    docker pull "$VENVOY_IMAGE"
+    $CONTAINER_RUNTIME pull "$VENVOY_IMAGE"
     echo "✅ Environment updated"
     
     # Handle upgrade command by converting it to update
@@ -250,7 +282,7 @@ if [ "$1" = "uninstall" ]; then
     fi
     echo "  🔗 PATH entries from shell configuration files"
     if [ "$KEEP_IMAGES" = false ]; then
-        echo "  🐳 Docker images (venvoy/bootstrap:latest and zaphodbeeblebrox3rd/venvoy:bootstrap)"
+        echo "  🐳 Container images (venvoy/bootstrap:latest and zaphodbeeblebrox3rd/venvoy:bootstrap)"
     fi
     echo ""
     
@@ -339,15 +371,16 @@ if [ "$1" = "uninstall" ]; then
         echo "   Control Panel > System > Advanced System Settings > Environment Variables"
     fi
     
-    # Remove Docker images
+    # Remove container images
     if [ "$KEEP_IMAGES" = false ]; then
         echo ""
-        echo "🐳 Cleaning up Docker images..."
+        echo "🐳 Cleaning up container images..."
         
-        if command -v docker &> /dev/null; then
+        # Try to remove with the detected runtime
+        if command -v "$CONTAINER_RUNTIME" &> /dev/null; then
             # Remove bootstrap image
-            if docker image inspect zaphodbeeblebrox3rd/venvoy:bootstrap &> /dev/null; then
-                docker rmi zaphodbeeblebrox3rd/venvoy:bootstrap &> /dev/null || true
+            if $CONTAINER_RUNTIME image inspect zaphodbeeblebrox3rd/venvoy:bootstrap &> /dev/null; then
+                $CONTAINER_RUNTIME rmi zaphodbeeblebrox3rd/venvoy:bootstrap &> /dev/null || true
                 echo "✅ Removed bootstrap image"
             fi
         fi
@@ -454,8 +487,8 @@ esac
 
 # Force update the bootstrap image to ensure latest features
 echo "🔄 Updating venvoy bootstrap image..."
-if command -v docker &> /dev/null; then
-    docker pull "zaphodbeeblebrox3rd/venvoy:bootstrap" 2>/dev/null || true
+if command -v "$CONTAINER_RUNTIME" &> /dev/null; then
+    $CONTAINER_RUNTIME pull "zaphodbeeblebrox3rd/venvoy:bootstrap" 2>/dev/null || true
     echo "✅ Bootstrap image updated"
 fi
 
