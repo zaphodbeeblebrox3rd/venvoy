@@ -218,7 +218,7 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
 fi
 
 # Download or create venvoy bootstrap script
-cat > "$INSTALL_DIR/venvoy" << EOF
+cat > "$INSTALL_DIR/venvoy" << 'EOF'
 #!/bin/bash
 # venvoy Bootstrap Script - runs venvoy inside container
 

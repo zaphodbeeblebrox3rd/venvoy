@@ -43,6 +43,7 @@ class VenvoyEnvironment:
         # Ensure directories exist
         self.config_dir.mkdir(exist_ok=True)
         (self.config_dir / "environments").mkdir(exist_ok=True)
+        (self.config_dir / "projects").mkdir(exist_ok=True)
         self.projects_dir.mkdir(parents=True, exist_ok=True)
     
     def initialize(self, force: bool = False, editor_type: str = "none", editor_available: bool = False):
