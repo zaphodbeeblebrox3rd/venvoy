@@ -881,26 +881,45 @@ def update():
         
         # Update bootstrap image
         progress.update(task, description="Updating bootstrap image...")
-        docker_manager = DockerManager()
         
         try:
-            # Pull latest bootstrap image
+            # Use ContainerManager to update with the correct runtime
+            container_manager = ContainerManager()
+            runtime_info = container_manager.get_runtime_info()
+            runtime = runtime_info['runtime']
+            
+            console.print(f"🔧 Using {runtime} to update bootstrap image...")
+            
             import subprocess
-            result = subprocess.run(
-                ["docker", "pull", "zaphodbeeblebrox3rd/venvoy:bootstrap"],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            
+            # Format image URI based on container runtime
+            if runtime in ['apptainer', 'singularity']:
+                image_uri = "docker://zaphodbeeblebrox3rd/venvoy:bootstrap"
+                # For Apptainer/Singularity, use --force to overwrite existing SIF files
+                result = subprocess.run(
+                    [runtime, "pull", "--force", image_uri],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+            else:
+                image_uri = "zaphodbeeblebrox3rd/venvoy:bootstrap"
+                result = subprocess.run(
+                    [runtime, "pull", image_uri],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+            
             progress.remove_task(task)
             
             console.print("✅ venvoy updated successfully!")
             console.print("✨ All new features are now active")
             console.print("")
             console.print("🆕 New features available:")
-            console.print("   • Enhanced WSL editor detection")
-            console.print("   • Working uninstall command")
-            console.print("   • Improved platform detection")
+            console.print("   • Dynamic code updates without container rebuilds")
+            console.print("   • Enhanced container runtime support")
+            console.print("   • Improved HPC cluster compatibility")
             console.print("   • Better error handling")
             
         except subprocess.CalledProcessError as e:

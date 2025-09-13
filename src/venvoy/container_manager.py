@@ -45,12 +45,13 @@ class ContainerManager:
                 return ContainerRuntime.PODMAN
         
         # Check for all runtimes in order of preference
-        if self._check_runtime_available(ContainerRuntime.DOCKER):
-            return ContainerRuntime.DOCKER
-        elif self._check_runtime_available(ContainerRuntime.APPTAINER):
+        # Prefer Apptainer > Singularity > Docker > Podman
+        if self._check_runtime_available(ContainerRuntime.APPTAINER):
             return ContainerRuntime.APPTAINER
         elif self._check_runtime_available(ContainerRuntime.SINGULARITY):
             return ContainerRuntime.SINGULARITY
+        elif self._check_runtime_available(ContainerRuntime.DOCKER):
+            return ContainerRuntime.DOCKER
         elif self._check_runtime_available(ContainerRuntime.PODMAN):
             return ContainerRuntime.PODMAN
             
