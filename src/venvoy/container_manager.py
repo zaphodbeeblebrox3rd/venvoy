@@ -36,6 +36,19 @@ class ContainerManager:
         
     def _detect_best_runtime(self) -> ContainerRuntime:
         """Detect the best available container runtime for the environment"""
+        # First, check if we're running inside a container and have host runtime info
+        host_runtime = os.environ.get('VENVOY_HOST_RUNTIME')
+        if host_runtime:
+            # Map host runtime string to ContainerRuntime enum
+            runtime_map = {
+                'docker': ContainerRuntime.DOCKER,
+                'apptainer': ContainerRuntime.APPTAINER,
+                'singularity': ContainerRuntime.SINGULARITY,
+                'podman': ContainerRuntime.PODMAN
+            }
+            if host_runtime in runtime_map:
+                return runtime_map[host_runtime]
+        
         is_hpc = self._is_hpc_environment()
         
         # Check for HPC-specific runtimes first (in HPC environments)
@@ -138,6 +151,16 @@ class ContainerManager:
     
     def get_runtime_info(self) -> Dict[str, str]:
         """Get information about the current runtime"""
+        # Check if we're using host runtime info
+        host_runtime = os.environ.get('VENVOY_HOST_RUNTIME')
+        if host_runtime:
+            # We're running inside a container with host runtime info
+            return {
+                'runtime': self.runtime.value,
+                'version': f'Host: {host_runtime}',
+                'is_hpc': self._is_hpc_environment()
+            }
+        
         try:
             if self.runtime == ContainerRuntime.DOCKER:
                 result = subprocess.run(['docker', '--version'], 

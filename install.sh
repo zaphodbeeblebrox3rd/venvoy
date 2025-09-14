@@ -542,6 +542,7 @@ else
             -w /workspace \
             -e HOME="/host-home" \
             -e VENVOY_SOURCE_DIR="/venvoy-source" \
+            -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
             "$VENVOY_IMAGE" "$@"
     elif [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
         # Apptainer/Singularity execution with source code mounted
@@ -552,6 +553,7 @@ else
             --pwd /workspace \
             --env HOME="/host-home" \
             --env VENVOY_SOURCE_DIR="/venvoy-source" \
+            --env VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
             "$IMAGE_URI" venvoy "$@"
     elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
         # Podman execution with source code mounted
@@ -562,6 +564,7 @@ else
             -w /workspace \
             -e HOME="/host-home" \
             -e VENVOY_SOURCE_DIR="/venvoy-source" \
+            -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
             "$VENVOY_IMAGE" "$@"
     else
         echo "❌ Unsupported container runtime: $CONTAINER_RUNTIME"
