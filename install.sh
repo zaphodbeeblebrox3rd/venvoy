@@ -554,7 +554,7 @@ else
             --env HOME="/host-home" \
             --env VENVOY_SOURCE_DIR="/venvoy-source" \
             --env VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
-            "$VENVOY_IMAGE" "$@"
+            "$IMAGE_URI" "$@"
     elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
         # Podman execution with source code mounted
         podman run --rm -it \
