@@ -214,17 +214,40 @@ def run(name: str, command: str, mount: tuple):
     """Launch the portable Python environment"""
     console.print(Panel.fit("🏃 Launching environment - RUN COMMAND", style="bold magenta"))
     
-    print(f"🔧 CLI Debug - command: {command}")
-    env = VenvoyEnvironment(name=name)
-    print(f"🔧 CLI Debug - about to call env.run()")
+    print("🔧 NEW CLI CODE - Using bootstrap script approach")
+    
+    # Use the bootstrap script approach for consistency
+    import subprocess
+    import sys
+    from pathlib import Path
+    
+    # Get the bootstrap script path
+    bootstrap_script = Path.home() / ".venvoy" / "bin" / "venvoy"
+    
+    if not bootstrap_script.exists():
+        console.print("❌ venvoy bootstrap script not found. Please run 'venvoy update' first.", style="red")
+        sys.exit(1)
+    
+    # Build the command to pass to the bootstrap script
+    cmd_args = ["run"]
+    if name != "venvoy-env":  # Only add --name if it's not the default
+        cmd_args.extend(["--name", name])
+    if command:
+        cmd_args.extend(["--command", command])
+    if mount:
+        for m in mount:
+            cmd_args.extend(["--mount", m])
+    
+    # Execute the bootstrap script with the run command
     try:
-        env.run(command=command, additional_mounts=list(mount))
-        print(f"🔧 CLI Debug - env.run() completed")
-    except Exception as e:
-        print(f"🔧 CLI Debug - Exception in env.run(): {e}")
-        import traceback
-        traceback.print_exc()
-        raise
+        result = subprocess.run([str(bootstrap_script)] + cmd_args, check=True)
+        return result.returncode
+    except subprocess.CalledProcessError as e:
+        console.print(f"❌ Failed to run environment: {e}", style="red")
+        sys.exit(e.returncode)
+    except FileNotFoundError:
+        console.print("❌ venvoy bootstrap script not found. Please run 'venvoy update' first.", style="red")
+        sys.exit(1)
 
 
 @main.command()

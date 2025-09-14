@@ -250,6 +250,8 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
 fi
 
 # Download or create venvoy bootstrap script
+# Remove existing bootstrap script to ensure clean update
+rm -f "$INSTALL_DIR/venvoy"
 cat > "$INSTALL_DIR/venvoy" << 'EOF'
 #!/bin/bash
 # venvoy Bootstrap Script - runs venvoy inside container
@@ -349,6 +351,100 @@ if [[ "$USE_LOCAL_CODE" = false ]]; then
         fi
         CURRENT_DIR="$(dirname "$CURRENT_DIR")"
     done
+fi
+
+# Handle run command specially
+if [ "$1" = "run" ]; then
+    # Parse run command arguments
+    shift  # Remove 'run' from arguments
+    RUN_NAME="venvoy-env"
+    RUN_COMMAND=""
+    RUN_MOUNTS=""
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --name)
+                RUN_NAME="$2"
+                shift 2
+                ;;
+            --command)
+                RUN_COMMAND="$2"
+                shift 2
+                ;;
+            --mount)
+                RUN_MOUNTS="$RUN_MOUNTS -v $2"
+                shift 2
+                ;;
+            *)
+                echo "Unknown option: $1"
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Run the environment using the bootstrap script approach
+    echo "🏃 Launching environment: $RUN_NAME"
+    
+    # Check if environment exists
+    if [ ! -d "$HOME/.venvoy/environments/$RUN_NAME" ]; then
+        echo "❌ Environment '$RUN_NAME' not found. Run 'venvoy init --name $RUN_NAME' first."
+        exit 1
+    fi
+    
+    # Load environment configuration
+    if [ -f "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" ]; then
+        PYTHON_VERSION=$(grep "python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | cut -d' ' -f2)
+        IMAGE_NAME="zaphodbeeblebrox3rd/venvoy:python$PYTHON_VERSION"
+    else
+        echo "❌ Environment configuration not found for '$RUN_NAME'"
+        exit 1
+    fi
+    
+    # Ensure image is available
+    if ! $CONTAINER_RUNTIME image inspect "$IMAGE_URI" &> /dev/null; then
+        echo "📦 Downloading environment image..."
+        if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
+            $CONTAINER_RUNTIME pull --force "$IMAGE_URI"
+        else
+            $CONTAINER_RUNTIME pull "$IMAGE_URI"
+        fi
+        echo "✅ Environment image ready"
+    fi
+    
+    # Run the environment
+    if [ "$CONTAINER_RUNTIME" = "docker" ]; then
+        docker run --rm -it \
+            -v "$PWD:/workspace" \
+            -v "$HOME:/host-home" \
+            -w /workspace \
+            -e HOME="/host-home" \
+            -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
+            $RUN_MOUNTS \
+            "$IMAGE_NAME" ${RUN_COMMAND:+sh -c "$RUN_COMMAND"}
+    elif [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
+        $CONTAINER_RUNTIME exec \
+            --bind "$PWD:/workspace" \
+            --bind "$HOME:/host-home" \
+            --pwd /workspace \
+            --env HOME="/host-home" \
+            --env VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
+            $RUN_MOUNTS \
+            "$IMAGE_URI" /usr/local/bin/venvoy-entrypoint ${RUN_COMMAND:+sh -c "$RUN_COMMAND"}
+    elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
+        podman run --rm -it \
+            -v "$PWD:/workspace" \
+            -v "$HOME:/host-home" \
+            -w /workspace \
+            -e HOME="/host-home" \
+            -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
+            $RUN_MOUNTS \
+            "$IMAGE_NAME" ${RUN_COMMAND:+sh -c "$RUN_COMMAND"}
+    else
+        echo "❌ Unsupported container runtime: $CONTAINER_RUNTIME"
+        exit 1
+    fi
+    
+    exit 0
 fi
 
 # Handle uninstall command specially
