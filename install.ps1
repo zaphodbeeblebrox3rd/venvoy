@@ -161,11 +161,18 @@ if "%1"=="uninstall" (
         :: Create backup
         echo !CURRENT_PATH! > "%TEMP%\venvoy-path-backup-%RANDOM%.txt"
         
-        :: Remove venvoy from PATH
+        :: Remove venvoy from PATH more thoroughly
         set NEW_PATH=!CURRENT_PATH!
         set NEW_PATH=!NEW_PATH:!InstallDir!;=!
         set NEW_PATH=!NEW_PATH:;!InstallDir!=!
         set NEW_PATH=!NEW_PATH:!InstallDir!=!
+        
+        :: Clean up any double semicolons
+        set NEW_PATH=!NEW_PATH:;;=;!
+        
+        :: Remove leading/trailing semicolons
+        if "!NEW_PATH:~0,1!"==";" set NEW_PATH=!NEW_PATH:~1!
+        if "!NEW_PATH:~-1!"==";" set NEW_PATH=!NEW_PATH:~0,-1!
         
         reg add "HKCU\Environment" /v PATH /t REG_EXPAND_SZ /d "!NEW_PATH!" /f >nul
         echo ✅ Removed venvoy from user PATH
@@ -217,26 +224,46 @@ param([Parameter(ValueFromRemainingArguments=`$true)]`$Arguments)
 
 $PowerShellScript | Out-File -FilePath "$InstallDir\venvoy.ps1" -Encoding UTF8
 
-# Add to PATH with better handling
-$CurrentUserPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-$CurrentSystemPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
-
-# Check if already in PATH
-$InUserPath = $CurrentUserPath -like "*$InstallDir*"
-$InSystemPath = $CurrentSystemPath -like "*$InstallDir*"
-$InCurrentSession = $env:PATH -like "*$InstallDir*"
-
-if (-not $InUserPath -and -not $InSystemPath) {
-    # Add to user PATH
-    $NewPath = "$InstallDir;$CurrentUserPath"
-    [Environment]::SetEnvironmentVariable("PATH", $NewPath, "User")
-    Write-Host "📝 Added venvoy to user PATH" -ForegroundColor Green
+# Function to manage PATH entries properly
+function Add-ToPath {
+    param(
+        [string]$PathToAdd,
+        [string]$Scope = "User"
+    )
     
-    # Also add to current session
+    $CurrentPath = [Environment]::GetEnvironmentVariable("PATH", $Scope)
+    
+    # Check if already in PATH
+    if ($CurrentPath -like "*$PathToAdd*") {
+        Write-Host "📝 $PathToAdd already in $Scope PATH" -ForegroundColor Yellow
+        return $false
+    }
+    
+    # Add to PATH
+    if ([string]::IsNullOrEmpty($CurrentPath)) {
+        $NewPath = $PathToAdd
+    } else {
+        $NewPath = "$PathToAdd;$CurrentPath"
+    }
+    
+    [Environment]::SetEnvironmentVariable("PATH", $NewPath, $Scope)
+    Write-Host "📝 Added $PathToAdd to $Scope PATH" -ForegroundColor Green
+    return $true
+}
+
+# Add to PATH with better handling
+$PathUpdated = $false
+
+# Try user PATH first
+if (Add-ToPath -PathToAdd $InstallDir -Scope "User") {
+    $PathUpdated = $true
+}
+
+# Also add to current session
+if ($env:PATH -notlike "*$InstallDir*") {
     $env:PATH = "$InstallDir;$env:PATH"
     Write-Host "📝 Added venvoy to current session PATH" -ForegroundColor Green
-} else {
-    Write-Host "📝 venvoy already in PATH" -ForegroundColor Yellow
+    $PathUpdated = $true
 }
 
 Write-Host ""

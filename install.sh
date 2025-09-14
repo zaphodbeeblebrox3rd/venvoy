@@ -21,14 +21,14 @@ fi
 
 echo "🔍 Detected platform: $PLATFORM"
 
-# Check for any supported container runtime
+# Check for any supported container runtime (prioritize HPC runtimes)
 CONTAINER_RUNTIME=""
-if command -v docker &> /dev/null; then
-    CONTAINER_RUNTIME="docker"
-elif command -v apptainer &> /dev/null; then
+if command -v apptainer &> /dev/null; then
     CONTAINER_RUNTIME="apptainer"
 elif command -v singularity &> /dev/null; then
     CONTAINER_RUNTIME="singularity"
+elif command -v docker &> /dev/null; then
+    CONTAINER_RUNTIME="docker"
 elif command -v podman &> /dev/null; then
     CONTAINER_RUNTIME="podman"
 else
@@ -201,18 +201,50 @@ pipx install --force git+https://github.com/zaphodbeeblebrox3rd/venvoy.git || {
 }
 echo "✅ venvoy installed successfully using pipx"
 
+# Function to manage PATH entries in shell configuration files
+manage_path_entry() {
+    local shell_rc="$1"
+    local path_entry="$2"
+    local description="$3"
+    
+    if [[ ! -f "$shell_rc" ]]; then
+        touch "$shell_rc"
+    fi
+    
+    # Check if PATH entry already exists
+    if grep -q "export PATH.*$path_entry" "$shell_rc" 2>/dev/null; then
+        echo "📝 $description already in PATH"
+        return 0
+    fi
+    
+    # Check if there's an existing PATH export line
+    if grep -q "^export PATH=" "$shell_rc" 2>/dev/null; then
+        # Update existing PATH line to include new entry
+        sed -i.bak "s|^export PATH=\"\(.*\)\"|export PATH=\"$path_entry:\1\"|" "$shell_rc"
+        echo "📝 Added $description to existing PATH in $(basename "$shell_rc")"
+    else
+        # Add new PATH export line
+        echo "" >> "$shell_rc"
+        echo "# Added by venvoy installer" >> "$shell_rc"
+        echo "export PATH=\"$path_entry:\$PATH\"" >> "$shell_rc"
+        echo "📝 Added $description to PATH in $(basename "$shell_rc")"
+    fi
+    
+    # Clean up backup file
+    rm -f "$shell_rc.bak" 2>/dev/null || true
+}
+
 # Ensure ~/.local/bin is in PATH for user installs
 PATH_UPDATED=false
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-    echo "📝 Adding $HOME/.local/bin to PATH in ~/.bashrc"
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+    manage_path_entry "$HOME/.bashrc" "$HOME/.local/bin" "pipx directory"
     export PATH="$HOME/.local/bin:$PATH"
     PATH_UPDATED=true
     
     # Also add to current shell's RC file if different from ~/.bashrc
     if [[ -n "$ZSH_VERSION" ]] || [[ "$SHELL" == *"zsh"* ]]; then
         if [[ "$HOME/.zshrc" != "$HOME/.bashrc" ]]; then
-            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc"
+            manage_path_entry "$HOME/.zshrc" "$HOME/.local/bin" "pipx directory"
         fi
     fi
 fi
@@ -224,14 +256,14 @@ cat > "$INSTALL_DIR/venvoy" << 'EOF'
 
 set -e
 
-# Detect container runtime
+# Detect container runtime (prioritize HPC runtimes)
 CONTAINER_RUNTIME=""
-if command -v docker &> /dev/null; then
-    CONTAINER_RUNTIME="docker"
-elif command -v apptainer &> /dev/null; then
+if command -v apptainer &> /dev/null; then
     CONTAINER_RUNTIME="apptainer"
 elif command -v singularity &> /dev/null; then
     CONTAINER_RUNTIME="singularity"
+elif command -v docker &> /dev/null; then
+    CONTAINER_RUNTIME="docker"
 elif command -v podman &> /dev/null; then
     CONTAINER_RUNTIME="podman"
 else
@@ -428,10 +460,18 @@ if [ "$1" = "uninstall" ]; then
                     # Create backup
                     cp "$shell_file" "$shell_file.venvoy-backup"
                     
-                    # Remove venvoy-related lines
-                    sed -i.bak '/# Added by venvoy installer/,+2d' "$shell_file"
+                    # Remove venvoy-related lines more carefully
+                    # Remove the installer comment and the following export line
+                    sed -i.bak '/# Added by venvoy installer/,+1d' "$shell_file"
+                    
+                    # Remove venvoy installation directory from existing PATH entries
                     sed -i.bak "s|$INSTALL_DIR:||g" "$shell_file"
                     sed -i.bak "s|:$INSTALL_DIR||g" "$shell_file"
+                    sed -i.bak "s|$INSTALL_DIR||g" "$shell_file"
+                    
+                    # Clean up any empty PATH exports
+                    sed -i.bak '/^export PATH=":\$PATH"$/d' "$shell_file"
+                    sed -i.bak '/^export PATH="\$PATH"$/d' "$shell_file"
                     
                     echo "✅ Cleaned PATH from $(basename "$shell_file")"
                     echo "   📋 Backup saved as: $(basename "$shell_file").venvoy-backup"
@@ -456,12 +496,19 @@ if [ "$1" = "uninstall" ]; then
         echo ""
         echo "🐳 Cleaning up container images..."
         
-        # Try to remove with the detected runtime
+        # Try to remove with the detected runtime using correct commands
         if command -v "$CONTAINER_RUNTIME" &> /dev/null; then
-            # Remove bootstrap image
-            if $CONTAINER_RUNTIME image inspect zaphodbeeblebrox3rd/venvoy:bootstrap &> /dev/null; then
-                $CONTAINER_RUNTIME rmi zaphodbeeblebrox3rd/venvoy:bootstrap &> /dev/null || true
-                echo "✅ Removed bootstrap image"
+            if [ "$CONTAINER_RUNTIME" = "docker" ] || [ "$CONTAINER_RUNTIME" = "podman" ]; then
+                # Docker/Podman use 'rmi' command
+                if $CONTAINER_RUNTIME image inspect zaphodbeeblebrox3rd/venvoy:bootstrap &> /dev/null; then
+                    $CONTAINER_RUNTIME rmi zaphodbeeblebrox3rd/venvoy:bootstrap &> /dev/null || true
+                    echo "✅ Removed bootstrap image"
+                fi
+            elif [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
+                # Apptainer/Singularity use cache clean instead of rmi
+                echo "🧹 Cleaning Apptainer/Singularity cache..."
+                $CONTAINER_RUNTIME cache clean --force &> /dev/null || true
+                echo "✅ Cleaned container cache"
             fi
         fi
     fi
@@ -573,26 +620,24 @@ case $PLATFORM in
         # Create shell RC file if it doesn't exist
         touch "$SHELL_RC"
         
-        # Check if PATH is already set
-        PATH_ALREADY_SET=false
-        if [[ -f "$SHELL_RC" ]] && grep -q "$INSTALL_DIR" "$SHELL_RC" 2>/dev/null; then
-            PATH_ALREADY_SET=true
-        fi
-        
-        if [[ "$PATH_ALREADY_SET" == false ]]; then
-            echo "" >> "$SHELL_RC"
-            echo "# Added by venvoy installer" >> "$SHELL_RC"
-            
-            if [[ "$SHELL_RC" == *"fish"* ]]; then
+        # Add venvoy installation directory to PATH using the management function
+        if [[ "$SHELL_RC" == *"fish"* ]]; then
+            # Fish shell has different syntax
+            if ! grep -q "set -gx PATH.*$INSTALL_DIR" "$SHELL_RC" 2>/dev/null; then
+                echo "" >> "$SHELL_RC"
+                echo "# Added by venvoy installer" >> "$SHELL_RC"
                 echo "set -gx PATH \"$INSTALL_DIR\" \$PATH" >> "$SHELL_RC"
+                echo "📝 Added venvoy to PATH in $(basename "$SHELL_RC")"
+                PATH_UPDATED=true
             else
-                echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "$SHELL_RC"
+                echo "📝 venvoy already in PATH"
             fi
-            
-            echo "📝 Added venvoy to PATH in $SHELL_RC"
-            PATH_UPDATED=true
         else
-            echo "📝 venvoy already in PATH"
+            # Use the PATH management function for bash/zsh
+            manage_path_entry "$SHELL_RC" "$INSTALL_DIR" "venvoy installation directory"
+            if [[ $? -eq 0 ]]; then
+                PATH_UPDATED=true
+            fi
         fi
         
         # Also try to add to current session PATH

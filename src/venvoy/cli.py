@@ -630,82 +630,100 @@ def uninstall(force: bool, keep_projects: bool, keep_images: bool):
         except Exception as e:
             console.print(f"⚠️  Warning: Could not clean Windows PATH: {e}", style="yellow")
     
-    # Remove Docker images
+    # Remove container images
     if not keep_images:
         console.print("")
-        console.print("🐳 Cleaning up Docker images...", style="cyan")
+        console.print("🐳 Cleaning up container images...", style="cyan")
         
-        try:
-            # Check if Docker is available
-            subprocess.run(["docker", "--version"], capture_output=True, check=True)
-            
-            # Remove bootstrap image
+        # Detect container runtime
+        container_runtime = None
+        for runtime in ["docker", "apptainer", "singularity", "podman"]:
             try:
-                subprocess.run(["docker", "image", "inspect", "venvoy/bootstrap:latest"], 
-                             capture_output=True, check=True)
-                subprocess.run(["docker", "rmi", "venvoy/bootstrap:latest"], 
-                             capture_output=True, check=True)
-                console.print("✅ Removed bootstrap image", style="green")
-            except subprocess.CalledProcessError:
-                pass  # Image doesn't exist
-            
-            # Remove venvoy environment images
-            try:
-                result = subprocess.run(["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"], 
-                                      capture_output=True, text=True, check=True)
-                venvoy_images = [line for line in result.stdout.strip().split('\n') 
-                               if line.startswith('venvoy/') and 'bootstrap' not in line]
+                subprocess.run([runtime, "--version"], capture_output=True, check=True)
+                container_runtime = runtime
+                break
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                continue
+        
+        if container_runtime:
+            if container_runtime in ["docker", "podman"]:
+                # Docker/Podman use 'rmi' command
+                try:
+                    # Remove bootstrap image
+                    subprocess.run([container_runtime, "image", "inspect", "zaphodbeeblebrox3rd/venvoy:bootstrap"], 
+                                 capture_output=True, check=True)
+                    subprocess.run([container_runtime, "rmi", "zaphodbeeblebrox3rd/venvoy:bootstrap"], 
+                                 capture_output=True, check=True)
+                    console.print("✅ Removed bootstrap image", style="green")
+                except subprocess.CalledProcessError:
+                    pass  # Image doesn't exist
                 
-                if venvoy_images:
-                    console.print("Found venvoy environment images:", style="yellow")
-                    for image in venvoy_images:
-                        console.print(f"  {image}")
+                # Remove venvoy environment images
+                try:
+                    result = subprocess.run([container_runtime, "images", "--format", "{{.Repository}}:{{.Tag}}"], 
+                                          capture_output=True, text=True, check=True)
+                    venvoy_images = [line for line in result.stdout.strip().split('\n') 
+                                   if line.startswith('zaphodbeeblebrox3rd/venvoy') and 'bootstrap' not in line]
                     
-                    if not force:
-                        remove_images = click.confirm("Remove all venvoy environment images?")
-                        if remove_images:
+                    if venvoy_images:
+                        console.print("Found venvoy environment images:", style="yellow")
+                        for image in venvoy_images:
+                            console.print(f"  {image}")
+                        
+                        if not force:
+                            remove_images = click.confirm("Remove all venvoy environment images?")
+                            if remove_images:
+                                for image in venvoy_images:
+                                    try:
+                                        subprocess.run([container_runtime, "rmi", image], 
+                                                     capture_output=True, check=True)
+                                    except subprocess.CalledProcessError:
+                                        pass  # Ignore errors
+                                console.print("✅ Removed venvoy environment images", style="green")
+                        else:
                             for image in venvoy_images:
                                 try:
-                                    subprocess.run(["docker", "rmi", image], 
+                                    subprocess.run([container_runtime, "rmi", image], 
                                                  capture_output=True, check=True)
                                 except subprocess.CalledProcessError:
                                     pass  # Ignore errors
                             console.print("✅ Removed venvoy environment images", style="green")
-                    else:
-                        for image in venvoy_images:
+                            
+                except subprocess.CalledProcessError:
+                    pass  # No images or command failed
+                
+                # Remove stopped containers (Docker/Podman only)
+                try:
+                    result = subprocess.run([container_runtime, "ps", "-a", "--format", "{{.Names}}"], 
+                                          capture_output=True, text=True, check=True)
+                    venvoy_containers = [line for line in result.stdout.strip().split('\n') 
+                                       if 'venvoy' in line.lower() or 'bootstrap' in line.lower()]
+                    
+                    for container in venvoy_containers:
+                        if container and container != "NAMES":
                             try:
-                                subprocess.run(["docker", "rmi", image], 
+                                subprocess.run([container_runtime, "rm", container], 
                                              capture_output=True, check=True)
                             except subprocess.CalledProcessError:
                                 pass  # Ignore errors
-                        console.print("✅ Removed venvoy environment images", style="green")
-                        
-            except subprocess.CalledProcessError:
-                pass  # No images or docker command failed
-            
-            # Remove stopped containers
-            try:
-                result = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"], 
-                                      capture_output=True, text=True, check=True)
-                venvoy_containers = [line for line in result.stdout.strip().split('\n') 
-                                   if 'venvoy' in line.lower() or 'bootstrap' in line.lower()]
-                
-                for container in venvoy_containers:
-                    if container and container != "NAMES":
-                        try:
-                            subprocess.run(["docker", "rm", container], 
-                                         capture_output=True, check=True)
-                        except subprocess.CalledProcessError:
-                            pass  # Ignore errors
-                
-                if venvoy_containers:
-                    console.print("✅ Removed venvoy containers", style="green")
                     
-            except subprocess.CalledProcessError:
-                pass  # No containers or docker command failed
-                
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            console.print("⚠️  Docker not available, skipping image cleanup", style="yellow")
+                    if venvoy_containers:
+                        console.print("✅ Removed venvoy containers", style="green")
+                        
+                except subprocess.CalledProcessError:
+                    pass  # No containers or command failed
+                    
+            elif container_runtime in ["apptainer", "singularity"]:
+                # Apptainer/Singularity use cache clean instead of rmi
+                console.print("🧹 Cleaning Apptainer/Singularity cache...", style="cyan")
+                try:
+                    subprocess.run([container_runtime, "cache", "clean", "--force"], 
+                                 capture_output=True, check=True)
+                    console.print("✅ Cleaned container cache", style="green")
+                except subprocess.CalledProcessError:
+                    console.print("⚠️  Could not clean cache", style="yellow")
+        else:
+            console.print("⚠️  No container runtime available, skipping image cleanup", style="yellow")
     
     console.print("")
     console.print("🎉 venvoy uninstalled successfully!", style="bold green")
