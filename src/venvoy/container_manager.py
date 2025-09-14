@@ -359,13 +359,10 @@ class ContainerManager:
                                      environment: Optional[Dict[str, str]] = None,
                                      detach: bool = False) -> List[str]:
         """Build Singularity run command (similar to Apptainer)"""
-        # Sanitize image name for SIF file (replace / and : with -)
-        sif_name = image.replace('/', '-').replace(':', '-') + '.sif'
-        image_path = self.sif_dir / sif_name
-        if not image_path.exists():
-            self.pull_image(image)
+        # Use docker:// reference for Singularity
+        docker_image = f"docker://{image}"
         
-        cmd = ['singularity', 'run']
+        cmd = ['singularity', 'exec']
         
         if volumes:
             for host_path, container_path in volumes.items():
@@ -375,10 +372,13 @@ class ContainerManager:
             for key, value in environment.items():
                 cmd.extend(['--env', f'{key}={value}'])
         
-        cmd.append(str(image_path))
+        cmd.append(docker_image)
         
         if command:
-            cmd.extend(['sh', '-c', command])
+            cmd.extend(['/bin/bash', '-c', command])
+        else:
+            # Use the container's entrypoint
+            cmd.append('/usr/local/bin/venvoy-entrypoint')
         
         return cmd
     
