@@ -4,8 +4,9 @@
 if [[ -n "$VENVOY_SOURCE_DIR" ]] && [[ -d "$VENVOY_SOURCE_DIR/src/venvoy" ]]; then
     # Use mounted source code
     echo "🔧 Using mounted venvoy source code"
+    export PYTHONPATH="$VENVOY_SOURCE_DIR/src:$PYTHONPATH"
     cd "$VENVOY_SOURCE_DIR"
-    python3 -c "import sys; sys.path.insert(0, 'src'); from venvoy.cli import main; main()" "$@"
+    python3 -m venvoy.cli "$@"
 else
     # Use installed package
     venvoy "$@"

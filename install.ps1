@@ -35,42 +35,19 @@ $BatchScript = @"
 @echo off
 setlocal enabledelayedexpansion
 
-set VENVOY_IMAGE=venvoy/bootstrap:latest
+set VENVOY_IMAGE=zaphodbeeblebrox3rd/venvoy:bootstrap
 set VENVOY_DIR=%USERPROFILE%\.venvoy
 set InstallDir=%USERPROFILE%\.venvoy\bin
 
 :: Ensure venvoy directory exists
 if not exist "%VENVOY_DIR%" mkdir "%VENVOY_DIR%"
 
-:: Build bootstrap image if it doesn't exist
+:: Pull bootstrap image if it doesn't exist
 docker image inspect %VENVOY_IMAGE% >nul 2>&1
 if errorlevel 1 (
-    echo 🔨 Building venvoy bootstrap image...
-    
-    :: Create temporary Dockerfile
-    set TEMP_DIR=%TEMP%\venvoy_%RANDOM%
-    mkdir "%TEMP_DIR%"
-    
-    echo FROM python:3.11-slim > "%TEMP_DIR%\Dockerfile"
-    echo. >> "%TEMP_DIR%\Dockerfile"
-    echo # Install system dependencies >> "%TEMP_DIR%\Dockerfile"
-    echo RUN apt-get update ^&^& apt-get install -y \ >> "%TEMP_DIR%\Dockerfile"
-    echo     git \ >> "%TEMP_DIR%\Dockerfile"
-    echo     curl \ >> "%TEMP_DIR%\Dockerfile"
-    echo     ^&^& rm -rf /var/lib/apt/lists/* >> "%TEMP_DIR%\Dockerfile"
-    echo. >> "%TEMP_DIR%\Dockerfile"
-    echo # Install venvoy from git >> "%TEMP_DIR%\Dockerfile"
-    echo RUN pip install git+https://github.com/zaphodbeeblebrox3rd/venvoy.git >> "%TEMP_DIR%\Dockerfile"
-    echo. >> "%TEMP_DIR%\Dockerfile"
-    echo # Set up entrypoint >> "%TEMP_DIR%\Dockerfile"
-    echo WORKDIR /workspace >> "%TEMP_DIR%\Dockerfile"
-    echo ENTRYPOINT ["venvoy"] >> "%TEMP_DIR%\Dockerfile"
-    
-    :: Build the image
-    docker build -t %VENVOY_IMAGE% "%TEMP_DIR%"
-    rmdir /s /q "%TEMP_DIR%"
-    
-    echo ✅ Bootstrap image built successfully
+    echo 🔨 Pulling venvoy bootstrap image...
+    docker pull %VENVOY_IMAGE%
+    echo ✅ Bootstrap image pulled successfully
 )
 
 :: Convert Windows paths to Unix-style for Docker
@@ -208,6 +185,7 @@ if "%1"=="uninstall" (
         -v "%CD%:/workspace" ^
         -w /workspace ^
         -e HOME="/host-home" ^
+        -e VENVOY_HOST_RUNTIME="docker" ^
         %VENVOY_IMAGE% %*
 )
 "@
