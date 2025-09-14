@@ -214,8 +214,6 @@ def run(name: str, command: str, mount: tuple):
     """Launch the portable Python environment"""
     console.print(Panel.fit("🏃 Launching environment - RUN COMMAND", style="bold magenta"))
     
-    print("🔧 NEW CLI CODE - Using bootstrap script approach")
-    
     # Use the bootstrap script approach for consistency
     import subprocess
     import sys

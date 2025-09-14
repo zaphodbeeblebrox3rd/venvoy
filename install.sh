@@ -420,7 +420,7 @@ if [ "$1" = "run" ]; then
             -e HOME="/host-home" \
             -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
             $RUN_MOUNTS \
-            "$IMAGE_NAME" ${RUN_COMMAND:+sh -c "$RUN_COMMAND"}
+            "$IMAGE_NAME" ${RUN_COMMAND:-bash}
     elif [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
         $CONTAINER_RUNTIME exec \
             --bind "$PWD:/workspace" \
@@ -429,7 +429,7 @@ if [ "$1" = "run" ]; then
             --env HOME="/host-home" \
             --env VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
             $RUN_MOUNTS \
-            "$IMAGE_URI" /usr/local/bin/venvoy-entrypoint ${RUN_COMMAND:+sh -c "$RUN_COMMAND"}
+            "$IMAGE_URI" ${RUN_COMMAND:-bash}
     elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
         podman run --rm -it \
             -v "$PWD:/workspace" \
@@ -438,7 +438,7 @@ if [ "$1" = "run" ]; then
             -e HOME="/host-home" \
             -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
             $RUN_MOUNTS \
-            "$IMAGE_NAME" ${RUN_COMMAND:+sh -c "$RUN_COMMAND"}
+            "$IMAGE_NAME" ${RUN_COMMAND:-bash}
     else
         echo "❌ Unsupported container runtime: $CONTAINER_RUNTIME"
         exit 1
