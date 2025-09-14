@@ -1,0 +1,186 @@
+name: ✨ Feature Request
+description: Suggest a new feature or enhancement for venvoy
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! Please fill out the form below to help us understand your request and its potential impact on the scientific computing community.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true
+
+  - type: textarea
+    id: feature-description
+    attributes:
+      label: ✨ Feature Description
+      description: A clear and concise description of the feature you'd like to see.
+      placeholder: Describe the feature and how it would work.
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: 🎯 Problem Statement
+      description: What problem does this feature solve? What is the current limitation?
+      placeholder: |
+        - What specific problem are you trying to solve?
+        - What limitations in the current venvoy functionality are you encountering?
+        - How does this relate to scientific reproducibility?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: 💡 Proposed Solution
+      description: Describe your proposed solution in detail.
+      placeholder: |
+        - How should this feature work?
+        - What would the user interface look like?
+        - What commands or options would be involved?
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-cases
+    attributes:
+      label: 🔬 Use Cases
+      description: Describe specific use cases where this feature would be valuable.
+      placeholder: |
+        - What type of research or analysis would benefit from this?
+        - How would this improve scientific reproducibility?
+        - What workflows would this enable?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: feature-category
+    attributes:
+      label: 📂 Feature Category
+      description: What category does this feature fall into?
+      options:
+        - Container Runtime Support
+        - Package Management
+        - Environment Export/Import
+        - HPC Integration
+        - Cross-Platform Compatibility
+        - AI/ML Integration
+        - Scientific Computing Tools
+        - User Interface/Experience
+        - Performance Optimization
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target-audience
+    attributes:
+      label: 👥 Target Audience
+      description: Who would primarily benefit from this feature?
+      options:
+        - Data Scientists
+        - Research Scientists
+        - HPC Users
+        - Academic Researchers
+        - Industry Researchers
+        - Students
+        - All venvoy users
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scientific-impact
+    attributes:
+      label: 🔬 Scientific Impact
+      description: How would this feature impact scientific computing?
+      options:
+        - label: Improves reproducibility of research results
+        - label: Enables better collaboration between researchers
+        - label: Supports long-term archival of research environments
+        - label: Facilitates cross-platform research workflows
+        - label: Enhances HPC cluster compatibility
+        - label: Improves accessibility for researchers with limited technical resources
+        - label: Supports regulatory compliance requirements
+        - label: Other scientific computing benefit
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 🔄 Alternatives Considered
+      description: Describe any alternative solutions or workarounds you've considered.
+      placeholder: |
+        - What other approaches have you tried?
+        - Are there existing tools or methods that partially solve this problem?
+        - What are the limitations of current workarounds?
+
+  - type: textarea
+    id: implementation-ideas
+    attributes:
+      label: 🛠️ Implementation Ideas
+      description: Do you have any ideas about how this could be implemented?
+      placeholder: |
+        - Any technical approaches you think would work well?
+        - Dependencies or integrations that might be needed?
+        - Potential challenges or considerations?
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: ⭐ Priority Level
+      description: How important is this feature to your work?
+      options:
+        - Critical - This is essential for my research/work
+        - High - This would significantly improve my workflow
+        - Medium - This would be nice to have
+        - Low - This is a minor improvement
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: 🤝 Contribution
+      description: Are you interested in contributing to this feature?
+      options:
+        - label: I would like to help implement this feature
+        - label: I can help with testing and validation
+        - label: I can provide feedback during development
+        - label: I can help with documentation
+        - label: I'm not able to contribute at this time
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 📚 Additional Context
+      description: Add any other context, screenshots, or examples about the feature request.
+      placeholder: |
+        - Any relevant research papers or documentation?
+        - Examples from other tools that do something similar?
+        - Screenshots or mockups if applicable?
+        - Any other context that would help us understand the request?
+
+  - type: checkboxes
+    id: research-context
+    attributes:
+      label: 🔬 Research Context
+      description: Help us understand the research context
+      options:
+        - label: This feature would help with peer review and reproducibility
+        - label: This feature would improve collaboration across institutions
+        - label: This feature would support regulatory compliance (FDA, clinical trials, etc.)
+        - label: This feature would help with long-term research archival
+        - label: This feature would improve accessibility for diverse research communities
+        - label: This feature is not specifically related to research

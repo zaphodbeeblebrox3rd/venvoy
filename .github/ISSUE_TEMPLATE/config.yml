@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/zaphodbeeblebrox3rd/venvoy/discussions
+    about: Ask questions, share ideas, and discuss venvoy with the community
+  - name: 📚 Documentation
+    url: https://github.com/zaphodbeeblebrox3rd/venvoy#readme
+    about: Check the README and documentation for common questions
+  - name: 🔬 Scientific Computing Support
+    url: https://github.com/zaphodbeeblebrox3rd/venvoy/discussions/categories/scientific-computing
+    about: Get help with scientific reproducibility and HPC workflows
+  - name: 🐳 Container Runtime Issues
+    url: https://github.com/zaphodbeeblebrox3rd/venvoy/discussions/categories/container-runtimes
+    about: Discuss Docker, Apptainer, Singularity, and Podman integration
