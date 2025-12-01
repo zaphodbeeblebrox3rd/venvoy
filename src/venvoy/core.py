@@ -163,6 +163,23 @@ class VenvoyEnvironment:
     def _ensure_image_available(self, image_name: str):
         """Ensure the venvoy image is available locally"""
         runtime_info = self.container_manager.get_runtime_info()
+        host_runtime = os.environ.get('VENVOY_HOST_RUNTIME')
+        
+        # Check if we're running inside a container and the runtime isn't available
+        # In this case, assume the bootstrap script on the host has handled image availability
+        if host_runtime:
+            runtime_available = False
+            if runtime_info['runtime'] == 'docker':
+                runtime_available = shutil.which('docker') is not None
+            elif runtime_info['runtime'] == 'podman':
+                runtime_available = shutil.which('podman') is not None
+            elif runtime_info['runtime'] in ['apptainer', 'singularity']:
+                runtime_available = shutil.which(runtime_info['runtime']) is not None
+            
+            if not runtime_available:
+                # Running inside container without runtime available - assume host handles it
+                print(f"✅ Environment availability handled by host runtime")
+                return
         
         if runtime_info['runtime'] in ['apptainer', 'singularity']:
             # For Apptainer/Singularity, check if SIF file exists
@@ -189,8 +206,8 @@ class VenvoyEnvironment:
                         'podman', 'image', 'inspect', image_name
                     ], capture_output=True, check=True)
                     
-            except subprocess.CalledProcessError:
-                # Image doesn't exist, pull it
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # Image doesn't exist or runtime not available, pull it
                 print(f"⬇️  Downloading environment (one-time setup)...")
                 if self.container_manager.pull_image(image_name):
                     print(f"✅ Environment ready")

@@ -213,7 +213,7 @@ class ContainerManager:
             elif self.runtime == ContainerRuntime.PODMAN:
                 subprocess.run(['podman', 'pull', image_name], check=True)
             return True
-        except subprocess.CalledProcessError as e:
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
             print(f"Failed to pull image {image_name}: {e}")
             return False
     

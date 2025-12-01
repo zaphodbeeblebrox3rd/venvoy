@@ -455,18 +455,69 @@ if [ "$1" = "run" ]; then
         esac
     done
     
-    # Run the environment using the bootstrap script approach
-    echo "🏃 Launching environment: $RUN_NAME"
-    
-    # Check if environment exists
-    if [ ! -d "$HOME/.venvoy/environments/$RUN_NAME" ]; then
-        echo "❌ Environment '$RUN_NAME' not found. Run 'venvoy init --name $RUN_NAME' first."
-        exit 1
+    # Check if environment exists and is valid, auto-detect if default not found
+    ENV_DIR="$HOME/.venvoy/environments"
+    if [ ! -d "$HOME/.venvoy/environments/$RUN_NAME" ] || [ ! -f "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" ]; then
+        # Try to auto-detect if there's only one valid environment
+        if [ -d "$ENV_DIR" ]; then
+            # Count valid environments (those with config.yaml)
+            VALID_ENVS=()
+            for env_path in "$ENV_DIR"/*; do
+                if [ -d "$env_path" ] && [ -f "$env_path/config.yaml" ]; then
+                    VALID_ENVS+=("$(basename "$env_path")")
+                fi
+            done
+            
+            VALID_COUNT=${#VALID_ENVS[@]}
+            if [ "$VALID_COUNT" -eq 1 ]; then
+                # Only one valid environment exists, use it
+                AUTO_DETECTED_NAME="${VALID_ENVS[0]}"
+                echo "⚠️  Environment '$RUN_NAME' not found or incomplete, but found one valid environment: '$AUTO_DETECTED_NAME'"
+                RUN_NAME="$AUTO_DETECTED_NAME"
+            elif [ "$VALID_COUNT" -gt 1 ]; then
+                # Multiple valid environments exist, list them
+                echo "❌ Environment '$RUN_NAME' not found or incomplete."
+                echo ""
+                echo "📋 Available environments:"
+                for env_name in "${VALID_ENVS[@]}"; do
+                    echo "   • $env_name"
+                done
+                echo ""
+                echo "💡 Use: venvoy run --name <environment-name>"
+                exit 1
+            else
+                # No valid environments found
+                echo "❌ Environment '$RUN_NAME' not found. No valid environments exist."
+                echo "💡 Create one with: venvoy init --name $RUN_NAME"
+                exit 1
+            fi
+        else
+            echo "❌ Environment '$RUN_NAME' not found. No environments exist."
+            echo "💡 Create one with: venvoy init --name $RUN_NAME"
+            exit 1
+        fi
     fi
+    
+    echo "🏃 Launching environment: $RUN_NAME"
     
     # Load environment configuration
     if [ -f "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" ]; then
-        PYTHON_VERSION=$(grep "python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | cut -d' ' -f2)
+        # Extract python_version from YAML, handling quotes and whitespace
+        # Try multiple methods to extract the version
+        PYTHON_VERSION=$(grep "^python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | sed -E 's/^python_version:[[:space:]]*"?([0-9]+\.[0-9]+)"?[[:space:]]*$/\1/' | tr -d '[:space:]')
+        
+        # If that didn't work, try without the anchor
+        if [ -z "$PYTHON_VERSION" ]; then
+            PYTHON_VERSION=$(grep "python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | sed -E 's/.*python_version:[[:space:]]*"?([0-9]+\.[0-9]+)"?.*/\1/' | tr -d '[:space:]')
+        fi
+        
+        # Validate that we got a version
+        if [ -z "$PYTHON_VERSION" ]; then
+            echo "❌ Could not extract python_version from config.yaml"
+            echo "💡 Try reinitializing the environment: venvoy init --name $RUN_NAME --force"
+            exit 1
+        fi
+        
         if [ "$CONTAINER_RUNTIME" = "podman" ]; then
             # Podman requires fully qualified image names
             IMAGE_NAME="docker.io/zaphodbeeblebrox3rd/venvoy:python$PYTHON_VERSION"
@@ -475,6 +526,23 @@ if [ "$1" = "run" ]; then
         fi
     else
         echo "❌ Environment configuration not found for '$RUN_NAME'"
+        echo ""
+        ENV_DIR="$HOME/.venvoy/environments"
+        if [ -d "$ENV_DIR" ]; then
+            ENV_COUNT=$(find "$ENV_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+            if [ "$ENV_COUNT" -gt 0 ]; then
+                echo "📋 Available environments:"
+                for env_path in "$ENV_DIR"/*; do
+                    if [ -d "$env_path" ] && [ -f "$env_path/config.yaml" ]; then
+                        env_name=$(basename "$env_path")
+                        echo "   • $env_name"
+                    fi
+                done
+                echo ""
+            fi
+        fi
+        echo "💡 Use: venvoy run --name <environment-name>"
+        echo "   Or create a new environment: venvoy init --name $RUN_NAME"
         exit 1
     fi
     
@@ -486,6 +554,14 @@ if [ "$1" = "run" ]; then
         PULL_IMAGE_URI="$IMAGE_NAME"  # Already has docker.io prefix
     else
         PULL_IMAGE_URI="$IMAGE_NAME"
+    fi
+    
+    # Validate image name format
+    if [ -z "$IMAGE_NAME" ] || [ "$IMAGE_NAME" = "docker.io/zaphodbeeblebrox3rd/venvoy:python" ] || [ "$IMAGE_NAME" = "zaphodbeeblebrox3rd/venvoy:python" ]; then
+        echo "❌ Invalid image name format: '$IMAGE_NAME'"
+        echo "   Python version: '$PYTHON_VERSION'"
+        echo "💡 Try reinitializing the environment: venvoy init --name $RUN_NAME --force"
+        exit 1
     fi
     
     if ! $CONTAINER_RUNTIME image inspect "$PULL_IMAGE_URI" &> /dev/null; then
