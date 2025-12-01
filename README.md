@@ -2,11 +2,11 @@
 
 > This project is in beta.  It requires extensive testing but is in a working state.
 > I want to be able to establish some reasonable guarantee that this will provide
-> cross-platform compatibility beyond reproach.
+> cross-platform and cross-architecture compatibility beyond reproach.
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python Versions](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
-![R Support](https://img.shields.io/badge/R-Supported-brightgreen.svg)
+![R Versions](https://img.shields.io/badge/R-4.2%2B-blue.svg)
 ![Docker](https://img.shields.io/badge/Docker-Supported-blue.svg)
 ![Apptainer](https://img.shields.io/badge/Apptainer-Supported-blue.svg)
 ![Singularity](https://img.shields.io/badge/Singularity-Supported-blue.svg)
@@ -14,6 +14,7 @@
 ![HPC Compatible](https://img.shields.io/badge/HPC-Compatible-brightgreen.svg)
 ![AI Ready](https://img.shields.io/badge/AI-Ready-brightgreen.svg)
 ![Cross Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)
+![Cross Architecture](https://img.shields.io/badge/Architecture-amd64%20%7C%20arm64-blue.svg)
 
 **Scientifically reproducible, containerized Python and R environments for data science**
 
