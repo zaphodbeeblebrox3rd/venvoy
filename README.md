@@ -296,13 +296,10 @@ The uninstaller will:
 
 ## 🎯 Quick Start
 
-### 0. Initial Setup (First time only)
+### 0. Verify Your Setup (Optional)
 ```bash
 # Check your container runtime (especially important for HPC)
 venvoy runtime-info
-
-# Run initial setup to configure AI editors (optional)
-venvoy setup
 ```
 
 **💡 Pro Tip**: The `venvoy runtime-info` command is especially useful on HPC clusters to verify that venvoy will use Apptainer/Singularity instead of Docker.

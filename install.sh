@@ -367,6 +367,60 @@ test_container_access() {
     fi
 }
 
+# Function to check if Cursor is available
+check_cursor_available() {
+    command -v cursor &> /dev/null || \
+    [ -f "/Applications/Cursor.app/Contents/Resources/app/bin/cursor" ] || \
+    [ -f "$HOME/Applications/Cursor.app/Contents/Resources/app/bin/cursor" ] || \
+    [ -f "/usr/bin/cursor" ] || \
+    [ -f "/usr/local/bin/cursor" ] || \
+    [ -f "$HOME/.local/bin/cursor" ]
+}
+
+# Function to check if VSCode is available
+check_vscode_available() {
+    command -v code &> /dev/null || \
+    [ -f "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" ] || \
+    [ -f "$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" ] || \
+    [ -f "/usr/bin/code" ] || \
+    [ -f "/usr/local/bin/code" ] || \
+    [ -f "$HOME/.local/bin/code" ]
+}
+
+# Function to get editor command path
+get_editor_command() {
+    local editor="$1"
+    if [ "$editor" = "cursor" ]; then
+        if command -v cursor &> /dev/null; then
+            echo "cursor"
+        elif [ -f "/Applications/Cursor.app/Contents/Resources/app/bin/cursor" ]; then
+            echo "/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
+        elif [ -f "$HOME/Applications/Cursor.app/Contents/Resources/app/bin/cursor" ]; then
+            echo "$HOME/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
+        elif [ -f "/usr/bin/cursor" ]; then
+            echo "/usr/bin/cursor"
+        elif [ -f "/usr/local/bin/cursor" ]; then
+            echo "/usr/local/bin/cursor"
+        elif [ -f "$HOME/.local/bin/cursor" ]; then
+            echo "$HOME/.local/bin/cursor"
+        fi
+    elif [ "$editor" = "vscode" ]; then
+        if command -v code &> /dev/null; then
+            echo "code"
+        elif [ -f "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" ]; then
+            echo "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+        elif [ -f "$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" ]; then
+            echo "$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+        elif [ -f "/usr/bin/code" ]; then
+            echo "/usr/bin/code"
+        elif [ -f "/usr/local/bin/code" ]; then
+            echo "/usr/local/bin/code"
+        elif [ -f "$HOME/.local/bin/code" ]; then
+            echo "$HOME/.local/bin/code"
+        fi
+    fi
+}
+
 # Pull venvoy image if it doesn't exist or force update
 if ! $CONTAINER_RUNTIME image inspect "$IMAGE_URI" &> /dev/null; then
     echo "📦 Downloading venvoy bootstrap environment..."
@@ -605,15 +659,139 @@ if [ "$1" = "run" ]; then
         echo "✅ Environment image already available"
     fi
     
-    echo "🚀 Starting container..."
-    echo "   You'll see an interactive shell prompt shortly..."
-    echo ""
-    
     # Get host user's UID and GID for permission mapping
     HOST_UID=$(id -u)
     HOST_GID=$(id -g)
     
-    # Run the environment
+    # Check for available editors
+    CURSOR_AVAILABLE=false
+    VSCODE_AVAILABLE=false
+    if check_cursor_available; then
+        CURSOR_AVAILABLE=true
+    elif check_vscode_available; then
+        VSCODE_AVAILABLE=true
+    fi
+    
+    # Determine container name for editor connection (use $$ for process ID to ensure uniqueness)
+    CONTAINER_NAME="venvoy-${RUN_NAME}-$$"
+    
+    # If editor is available and no custom command specified, launch editor
+    if [ -z "$RUN_COMMAND" ] && { [ "$CURSOR_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; }; then
+        # Determine which editor to use (prefer Cursor)
+        if [ "$CURSOR_AVAILABLE" = true ]; then
+            EDITOR_TYPE="cursor"
+            EDITOR_CMD=$(get_editor_command "cursor")
+        else
+            EDITOR_TYPE="vscode"
+            EDITOR_CMD=$(get_editor_command "vscode")
+        fi
+        
+        echo "🚀 Starting container in background..."
+        echo "🧠 Launching $EDITOR_TYPE connected to container..."
+        echo ""
+        
+        # Start container in detached mode
+        if [ "$CONTAINER_RUNTIME" = "docker" ]; then
+            test_container_access "$CONTAINER_RUNTIME"
+            docker run -d --name "$CONTAINER_NAME" \
+                --user "$HOST_UID:$HOST_GID" \
+                -v "$PWD:/workspace" \
+                -v "$HOME:/host-home" \
+                -w /home/venvoy \
+                -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
+                -e VENVOY_HOST_HOME="/host-home" \
+                $RUN_MOUNTS \
+                "$IMAGE_NAME" sleep infinity || {
+                    echo "❌ Failed to start container"
+                    exit 1
+                }
+            
+            # Wait a moment for container to be ready
+            sleep 2
+            
+            # Launch editor connected to container
+            if [ "$EDITOR_TYPE" = "cursor" ]; then
+                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
+                    echo "⚠️  Failed to launch Cursor. Stopping container and falling back to shell..."
+                    docker stop "$CONTAINER_NAME" >/dev/null 2>&1
+                    docker rm "$CONTAINER_NAME" >/dev/null 2>&1
+                    CURSOR_AVAILABLE=false
+                    VSCODE_AVAILABLE=false
+                }
+            else
+                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
+                    echo "⚠️  Failed to launch VSCode. Stopping container and falling back to shell..."
+                    docker stop "$CONTAINER_NAME" >/dev/null 2>&1
+                    docker rm "$CONTAINER_NAME" >/dev/null 2>&1
+                    CURSOR_AVAILABLE=false
+                    VSCODE_AVAILABLE=false
+                }
+            fi
+            
+            if [ "$CURSOR_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; then
+                echo "✅ $EDITOR_TYPE connected to container!"
+                echo "💡 Container is running in background: $CONTAINER_NAME"
+                echo "💡 When you're done, stop the container with: $CONTAINER_RUNTIME stop $CONTAINER_NAME"
+                echo "💡 Or use: $CONTAINER_RUNTIME rm -f $CONTAINER_NAME"
+                exit 0
+            fi
+        elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
+            podman run -d --name "$CONTAINER_NAME" \
+                --userns=keep-id \
+                -v "$PWD:/workspace" \
+                -v "$HOME:/host-home" \
+                -w /home/venvoy \
+                -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
+                -e VENVOY_HOST_HOME="/host-home" \
+                ${RUN_MOUNTS} \
+                "$PULL_IMAGE_URI" sleep infinity || {
+                    echo "❌ Failed to start container"
+                    exit 1
+                }
+            
+            # Wait a moment for container to be ready
+            sleep 2
+            
+            # Launch editor connected to container
+            if [ "$EDITOR_TYPE" = "cursor" ]; then
+                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
+                    echo "⚠️  Failed to launch Cursor. Stopping container and falling back to shell..."
+                    podman stop "$CONTAINER_NAME" >/dev/null 2>&1
+                    podman rm "$CONTAINER_NAME" >/dev/null 2>&1
+                    CURSOR_AVAILABLE=false
+                    VSCODE_AVAILABLE=false
+                }
+            else
+                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
+                    echo "⚠️  Failed to launch VSCode. Stopping container and falling back to shell..."
+                    podman stop "$CONTAINER_NAME" >/dev/null 2>&1
+                    podman rm "$CONTAINER_NAME" >/dev/null 2>&1
+                    CURSOR_AVAILABLE=false
+                    VSCODE_AVAILABLE=false
+                }
+            fi
+            
+            if [ "$CURSOR_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; then
+                echo "✅ $EDITOR_TYPE connected to container!"
+                echo "💡 Container is running in background: $CONTAINER_NAME"
+                echo "💡 When you're done, stop the container with: $CONTAINER_RUNTIME stop $CONTAINER_NAME"
+                echo "💡 Or use: $CONTAINER_RUNTIME rm -f $CONTAINER_NAME"
+                exit 0
+            fi
+        fi
+        # If we get here, editor launch failed, fall through to shell
+    fi
+    
+    # No editor available or editor launch failed - use interactive shell
+    echo "🚀 Starting container..."
+    if [ "$CURSOR_AVAILABLE" = false ] && [ "$VSCODE_AVAILABLE" = false ]; then
+        echo "   No editor detected - launching interactive shell..."
+    else
+        echo "   Editor launch failed - falling back to interactive shell..."
+    fi
+    echo ""
+    
+    # Run the environment with interactive shell
     # Start in /home/venvoy (container's home) - users can cd to /workspace for their project
     if [ "$CONTAINER_RUNTIME" = "docker" ]; then
         test_container_access "$CONTAINER_RUNTIME"
@@ -634,6 +812,7 @@ if [ "$1" = "run" ]; then
             }
     elif [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
         # Apptainer/Singularity: User namespace is handled automatically, mount as read/write
+        # Note: Editor connection not supported for Apptainer/Singularity, use shell
         $CONTAINER_RUNTIME exec \
             --bind "$PWD:/workspace" \
             --bind "$HOME:/host-home" \
@@ -1042,8 +1221,9 @@ if command -v venvoy &> /dev/null; then
         echo "      • Working uninstall command"
         echo "      • Improved platform detection"
     fi
-    echo "   1. (Optional) Run: venvoy setup (to configure AI editors)"
-    echo "   2. Run: venvoy init --python-version <python-version> --name <environment-name>"
+    echo "   1. Run: venvoy init --python-version <python-version> --name <environment-name>"
+    echo "   2. Run: venvoy run --name <environment-name>"
+    echo "      (This will automatically launch Cursor/VSCode if available)"
     echo "   3. Start coding with AI-powered environments!"
 else
     echo "   ⚠️  venvoy not found in current PATH"
@@ -1064,8 +1244,9 @@ else
         echo "      • Working uninstall command"
         echo "      • Improved platform detection"
     fi
-    echo "   1. (Optional) Run: venvoy setup (to configure AI editors)"
-    echo "   2. Run: venvoy init"
+    echo "   1. Run: venvoy init --python-version <python-version> --name <environment-name>"
+    echo "   2. Run: venvoy run --name <environment-name>"
+    echo "      (This will automatically launch Cursor/VSCode if available)"
     echo "   3. Start coding with AI-powered environments!"
 fi
 

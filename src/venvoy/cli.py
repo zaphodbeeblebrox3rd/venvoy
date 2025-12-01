@@ -782,9 +782,16 @@ def setup():
             console.print(f"🏢 HPC environment detected - using {runtime_info['runtime']} for best compatibility")
         
         progress.update(task, description="Checking AI editor installation...")
-        # For now, skip editor detection in containerized environment
-        editor_type = "none"
-        editor_available = False
+        # Try to detect editors (may not work if running inside container)
+        vscode_available = container_manager.platform._check_vscode_available()
+        cursor_available = container_manager.platform._check_cursor_available()
+        
+        if cursor_available:
+            editor_type, editor_available = "cursor", True
+        elif vscode_available:
+            editor_type, editor_available = "vscode", True
+        else:
+            editor_type, editor_available = "none", False
         
         progress.remove_task(task)
     
@@ -796,11 +803,15 @@ def setup():
         elif editor_type == "vscode":
             console.print("🔧 VSCode detected and configured")
     else:
-        console.print("🐚 No AI editor detected - venvoy will use interactive shell mode")
+        console.print("🐚 No AI editor detected in this environment")
+        console.print("   💡 Editor detection will happen when you run 'venvoy run'")
+        console.print("   💡 If you have Cursor or VSCode installed, 'venvoy run' will automatically launch it")
     
     console.print("\n📋 Next steps:")
     console.print("   1. Run: venvoy init --python-version <version> --name <environment-name>")
-    console.print("   2. Start coding with AI-powered environments!")
+    console.print("   2. Run: venvoy run --name <environment-name>")
+    console.print("      (This will automatically launch Cursor/VSCode if available)")
+    console.print("   3. Start coding with AI-powered environments!")
 
 
 @main.command()
