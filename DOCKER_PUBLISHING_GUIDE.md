@@ -17,7 +17,7 @@ venvoy now uses **pre-built Docker images** instead of building locally. This ma
 ### **Bootstrap Image** (for installer)
 - `zaphodbeeblebrox3rd/venvoy:bootstrap` (contains venvoy CLI)
 
-## 🚀 **Publishing Steps**
+## 🚀 **My Publishing Steps**
 
 ### **1. Set up Docker Hub Repository**
 
@@ -30,7 +30,7 @@ venvoy now uses **pre-built Docker images** instead of building locally. This ma
 Add these secrets to your GitHub repository:
 
 ```
-DOCKER_USERNAME=zaphodbeeblebrox3rd
+DOCKER_USERNAME=your_docker_user_name
 DOCKER_PASSWORD=your_docker_hub_token
 ```
 

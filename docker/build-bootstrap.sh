@@ -88,6 +88,8 @@ RUN ARCH=\$(dpkg --print-architecture) && \\
     wget "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-\${CONDA_ARCH}.sh" -O /tmp/miniconda.sh && \\
     bash /tmp/miniconda.sh -b -p /opt/conda && \\
     rm /tmp/miniconda.sh && \\
+    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || echo "ToS acceptance for main channel failed, continuing" && \\
+    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || echo "ToS acceptance for r channel failed, continuing" && \\
     /opt/conda/bin/conda install -n base -c conda-forge mamba -y
 
 # Add conda to PATH

@@ -59,10 +59,33 @@ RUN /opt/conda/bin/conda --version && \
     (/opt/conda/bin/conda init bash || /opt/conda/bin/conda init || echo "conda init not supported on this platform")
 
 # Update conda first to ensure compatibility
-RUN /opt/conda/bin/conda update -n base -c defaults conda -y || echo "conda update failed, continuing"
+# For older conda versions with SSL issues, temporarily disable SSL verification to update conda
+RUN (/opt/conda/bin/conda config --set ssl_verify false 2>/dev/null || true) && \
+    (/opt/conda/bin/conda update -n base -c defaults conda -y || \
+     /opt/conda/bin/conda update -n base -c conda-forge conda -y || \
+     echo "conda update failed, continuing") && \
+    (/opt/conda/bin/conda config --set ssl_verify true 2>/dev/null || true)
+
+# Update certifi and openssl to fix SSL issues on older conda versions
+# Temporarily disable SSL verification if needed
+RUN (/opt/conda/bin/conda config --set ssl_verify false 2>/dev/null || true) && \
+    (/opt/conda/bin/conda update -n base -c defaults certifi openssl ca-certificates -y || \
+     /opt/conda/bin/conda update -n base -c conda-forge certifi openssl ca-certificates -y || \
+     echo "certificate update failed, continuing") && \
+    (/opt/conda/bin/conda config --set ssl_verify true 2>/dev/null || true)
+
+# Accept Conda Terms of Service for required channels
+RUN /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>/dev/null || echo "ToS acceptance for main channel skipped" && \
+    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || echo "ToS acceptance for r channel skipped"
 
 # Install mamba for faster dependency resolution
-RUN /opt/conda/bin/conda install -n base -c conda-forge mamba -y
+# Try conda-forge first, fall back to defaults if that fails
+# Temporarily disable SSL verification if needed for older conda versions
+RUN (/opt/conda/bin/conda config --set ssl_verify false 2>/dev/null || true) && \
+    (/opt/conda/bin/conda install -n base -c conda-forge mamba -y || \
+     /opt/conda/bin/conda install -n base -c defaults mamba -y || \
+     echo "mamba install failed") && \
+    (/opt/conda/bin/conda config --set ssl_verify true 2>/dev/null || true)
 
 # Create venvoy environment using mamba (much faster than conda)
 RUN /opt/conda/bin/mamba create -n venvoy python=${PYTHON_VERSION} -c conda-forge -y

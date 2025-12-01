@@ -23,12 +23,12 @@ docker run --rm -it -v $(pwd):/workspace zaphodbeeblebrox3rd/venvoy:python3.11
 
 | Tag | Python Version | Architecture | Description |
 |-----|----------------|--------------|-------------|
-| `latest` | 3.11 | amd64, arm64, arm/v7 | Default Python 3.11 environment |
-| `python3.9` | 3.9 | amd64, arm64, arm/v7 | Python 3.9 environment |
-| `python3.10` | 3.10 | amd64, arm64, arm/v7 | Python 3.10 environment |
-| `python3.11` | 3.11 | amd64, arm64, arm/v7 | Python 3.11 environment |
-| `python3.12` | 3.12 | amd64, arm64, arm/v7 | Python 3.12 environment |
-| `python3.13` | 3.13 | amd64, arm64, arm/v7 | Python 3.13 environment |
+| `latest` | 3.11 | amd64, arm64 | Default Python 3.11 environment |
+| `python3.9` | 3.9 | amd64, arm64 | Python 3.9 environment |
+| `python3.10` | 3.10 | amd64, arm64 | Python 3.10 environment |
+| `python3.11` | 3.11 | amd64, arm64 | Python 3.11 environment |
+| `python3.12` | 3.12 | amd64, arm64 | Python 3.12 environment |
+| `python3.13` | 3.13 | amd64, arm64 | Python 3.13 environment |
 
 ### 🚫 **Legacy Python Versions (Not Supported)**
 venvoy focuses on **actively supported Python versions** only. We do not provide images for:
@@ -133,7 +133,6 @@ pip install requests beautifulsoup4
 ### **Supported Architectures:**
 - **linux/amd64** - Intel/AMD 64-bit (Windows PCs, Intel Macs, most servers)
 - **linux/arm64** - ARM 64-bit (Apple Silicon Macs, ARM servers, AWS Graviton)
-- **linux/arm/v7** - ARM 32-bit (Raspberry Pi 3/4, IoT devices)
 
 Docker automatically pulls the correct architecture for your system.
 

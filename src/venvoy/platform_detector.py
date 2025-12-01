@@ -45,7 +45,6 @@ class PlatformDetector:
             'amd64': 'amd64',
             'i386': '386',
             'i686': '386',
-            'armv7l': 'arm/v7',
             'aarch64': 'arm64',
             'arm64': 'arm64',
         }
