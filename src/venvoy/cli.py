@@ -279,10 +279,11 @@ def export(name: str, format: str, output: str):
     regulatory compliance. Use this for scientific reproducibility when
     package abandonment or PyPI changes are a concern.
     
-    The 'wheelhouse' format creates a cross-architecture package cache containing
-    source distributions (architecture-independent) and wheels for multiple architectures
-    (amd64, arm64). This allows installation on any architecture without depending on
-    PyPI availability, while remaining compatible across different CPU architectures.
+    The 'wheelhouse' format creates a cross-architecture package cache containing:
+    - Python: Source distributions (architecture-independent) and wheels for multiple architectures
+    - R: Source packages and binary packages for multiple architectures
+    This allows installation on any architecture (amd64, arm64) without depending on
+    repository availability (PyPI/CRAN), while remaining compatible across different CPU architectures.
     """
     if format == "archive":
         console.print(Panel.fit("📦 Creating Comprehensive Binary Archive", style="bold red"))
@@ -327,8 +328,8 @@ def export(name: str, format: str, output: str):
     elif format == "wheelhouse":
         console.print(f"✅ [green]Cross-architecture wheelhouse created:[/green] {output_path}")
         console.print("🌐 [cyan]Compatible across architectures (amd64, arm64)[/cyan]")
-        console.print("📦 [dim]Contains source distributions and multi-arch wheels[/dim]")
-        console.print("💡 [dim]Install on any architecture without PyPI dependency[/dim]")
+        console.print("📦 [dim]Contains source distributions and multi-arch packages (Python + R)[/dim]")
+        console.print("💡 [dim]Install on any architecture without repository dependency[/dim]")
     else:
         console.print(f"✅ Environment exported: {output_path}")
 
@@ -906,6 +907,52 @@ def import_archive(archive_path: str, force: bool):
         console.print(f"📦 Environment: {env_name}")
         console.print(f"🚀 Run with: [cyan]venvoy run --name {env_name}[/cyan]")
         console.print(f"📋 View history: [cyan]venvoy history --name {env_name}[/cyan]")
+        
+    except Exception as e:
+        console.print(f"❌ [red]Import failed:[/red] {str(e)}")
+        if "already exists" in str(e):
+            console.print("💡 Use --force to overwrite existing environment")
+
+
+@main.command()
+@click.argument("wheelhouse_path", type=click.Path(exists=True))
+@click.option(
+    "--force", 
+    is_flag=True, 
+    help="Overwrite existing environment"
+)
+def import_wheelhouse(wheelhouse_path: str, force: bool):
+    """Import environment from a cross-architecture wheelhouse"""
+    console.print(Panel.fit("📦 Importing Cross-Architecture Wheelhouse", style="bold cyan"))
+    console.print(f"📁 Wheelhouse: {wheelhouse_path}")
+    
+    if not force:
+        console.print("🌐 [cyan]This will restore packages for cross-architecture compatibility[/cyan]")
+        if not click.confirm("Continue with import?"):
+            console.print("🚫 Import cancelled")
+            return
+    
+    try:
+        # Create temporary environment for import
+        temp_env = VenvoyEnvironment()
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Importing wheelhouse...", total=None)
+            
+            progress.update(task, description="Extracting and analyzing wheelhouse...")
+            env_name = temp_env.import_wheelhouse(wheelhouse_path, force=force)
+            
+            progress.remove_task(task)
+        
+        console.print(f"✅ [green]Wheelhouse imported successfully![/green]")
+        console.print(f"📦 Environment: {env_name}")
+        console.print(f"🌐 [cyan]Packages are cross-architecture compatible (amd64, arm64)[/cyan]")
+        console.print(f"🚀 To build and use: [cyan]venvoy init --name {env_name} --force[/cyan]")
+        console.print(f"💡 [dim]Packages will be installed from local cache (no repository access needed)[/dim]")
         
     except Exception as e:
         console.print(f"❌ [red]Import failed:[/red] {str(e)}")

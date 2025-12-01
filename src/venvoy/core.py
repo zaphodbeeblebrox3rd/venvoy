@@ -465,6 +465,35 @@ CMD ["/bin/bash"]
         except subprocess.CalledProcessError:
             return []
     
+    def _get_installed_r_packages(self, image_name: str) -> List[Dict]:
+        """Get list of installed R packages from the container"""
+        try:
+            # Get R packages using installed.packages()
+            result = subprocess.run([
+                'docker', 'run', '--rm', image_name,
+                'bash', '-c', '''
+                R --slave -e "pkgs <- installed.packages(); cat(paste(pkgs[,1], pkgs[,3], sep='=='), sep='\\n')"
+                '''
+            ], capture_output=True, text=True, check=True)
+            
+            packages = []
+            for line in result.stdout.strip().split('\n'):
+                if line and '==' in line:
+                    name, version = line.split('==', 1)
+                    # Filter out base R packages (they come with R itself)
+                    base_packages = {'base', 'compiler', 'datasets', 'graphics', 'grDevices', 
+                                   'grid', 'methods', 'parallel', 'splines', 'stats', 'stats4', 
+                                   'tcltk', 'tools', 'utils', 'Matrix', 'lattice', 'nlme', 
+                                   'mgcv', 'rpart', 'survival', 'MASS', 'class', 'nnet', 
+                                   'spatial', 'boot', 'cluster', 'codetools', 'foreign', 
+                                   'KernSmooth', 'rpart', 'class', 'nnet', 'spatial'}
+                    if name not in base_packages:
+                        packages.append({'name': name, 'version': version})
+            
+            return packages
+        except subprocess.CalledProcessError:
+            return []
+    
     def setup_buildx(self):
         """Setup Docker BuildX for multi-arch builds"""
         # Only available for Docker runtime
@@ -809,10 +838,14 @@ CMD ["/bin/bash"]
         """
         Export cross-architecture wheelhouse containing source distributions and multi-arch wheels.
         
+        Supports both Python and R environments:
+        - Python: Source distributions (sdists) + wheels for multiple architectures
+        - R: Source packages + binary packages for multiple architectures
+        
         This creates a package cache that:
-        - Contains source distributions (architecture-independent)
-        - Contains wheels for multiple architectures (amd64, arm64)
-        - Can be installed on any architecture without PyPI dependency
+        - Contains source distributions/packages (architecture-independent)
+        - Contains wheels/binaries for multiple architectures (amd64, arm64)
+        - Can be installed on any architecture without repository dependency
         - Is self-contained and doesn't require package availability
         
         Args:
@@ -827,29 +860,53 @@ CMD ["/bin/bash"]
         
         output_file = Path(output_path)
         print(f"📦 Creating cross-architecture wheelhouse...")
-        print(f"🌐 This will download source distributions and wheels for multiple architectures")
+        print(f"🌐 This will download source distributions and binaries for multiple architectures")
         print(f"⚠️  This may take several minutes and create a large file (500MB-2GB)")
         
-        # Load configuration to get image name
+        # Load configuration to get image name and runtime
         if not self.config_file.exists():
             raise RuntimeError(f"Environment '{self.name}' not found. Run 'venvoy init' first.")
         
         with open(self.config_file, 'r') as f:
             config = yaml.safe_load(f)
         
-        image_name = config.get('image_name', f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}")
+        runtime = config.get('runtime', self.runtime)
+        image_name = config.get('image_name')
+        if not image_name:
+            if runtime == 'r':
+                image_name = f"zaphodbeeblebrox3rd/venvoy:r{self.r_version}"
+            else:
+                image_name = f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}"
         
         # Ensure image is available
         self._ensure_image_available(image_name)
         
-        # Get installed packages
+        # Get installed packages based on runtime
         print("🔍 Gathering installed packages...")
-        packages = self._get_installed_packages()
+        python_packages = []
+        r_packages = []
         
-        if not packages:
+        if runtime in ['python', 'mixed']:
+            try:
+                python_packages = self._get_installed_packages()
+                if python_packages:
+                    print(f"🐍 Found {len(python_packages)} Python packages")
+            except Exception as e:
+                print(f"⚠️  Warning: Could not get Python packages: {e}")
+        
+        if runtime in ['r', 'mixed']:
+            try:
+                r_packages = self._get_installed_r_packages(image_name)
+                if r_packages:
+                    print(f"📊 Found {len(r_packages)} R packages")
+            except Exception as e:
+                print(f"⚠️  Warning: Could not get R packages: {e}")
+        
+        if not python_packages and not r_packages:
             raise RuntimeError("No packages found in environment. Install some packages first.")
         
-        print(f"📦 Found {len(packages)} packages to export")
+        total_packages = len(python_packages) + len(r_packages)
+        print(f"📦 Total packages to export: {total_packages} ({len(python_packages)} Python, {len(r_packages)} R)")
         
         # Create temporary directory for wheelhouse contents
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -860,83 +917,151 @@ CMD ["/bin/bash"]
             # Create subdirectories
             sdists_dir = wheelhouse_dir / "sdists"
             wheels_dir = wheelhouse_dir / "wheels"
-            sdists_dir.mkdir()
-            wheels_dir.mkdir()
+            r_source_dir = wheelhouse_dir / "r-packages" / "source"
+            r_binaries_dir = wheelhouse_dir / "r-packages" / "binaries"
+            sdists_dir.mkdir(parents=True)
+            wheels_dir.mkdir(parents=True)
+            r_source_dir.mkdir(parents=True)
+            r_binaries_dir.mkdir(parents=True)
             
-            # Create requirements file for downloading
-            requirements_file = wheelhouse_dir / "requirements.txt"
-            with open(requirements_file, 'w') as f:
-                for pkg in packages:
-                    f.write(f"{pkg['name']}=={pkg['version']}\n")
-            
-            # Download source distributions (architecture-independent)
-            print("📥 Downloading source distributions (architecture-independent)...")
-            try:
-                self._run_docker_command([
-                    'run', '--rm',
-                    '-v', f"{sdists_dir}:/workspace/sdists",
-                    '-v', f"{requirements_file}:/workspace/requirements.txt:ro",
-                    image_name,
-                    'bash', '-c', '''
-                    source /opt/conda/bin/activate venvoy
-                    pip download -r /workspace/requirements.txt -d /workspace/sdists --no-binary :all: --no-deps || true
-                    '''
-                ], check=False)
-                print(f"✅ Source distributions downloaded")
-            except Exception as e:
-                print(f"⚠️  Warning: Some source distributions may not be available: {e}")
-            
-            # Download wheels for multiple architectures
-            # We'll download for the current architecture and try to get others
-            architectures = ['linux_x86_64', 'linux_aarch64', 'manylinux1_x86_64', 'manylinux2014_x86_64', 
-                           'manylinux2014_aarch64', 'manylinux_2_17_x86_64', 'manylinux_2_17_aarch64']
-            
-            print("📥 Downloading wheels for multiple architectures...")
-            for arch in architectures:
+            # Handle Python packages
+            if python_packages:
+                print("\n🐍 Processing Python packages...")
+                # Create requirements file for downloading
+                requirements_file = wheelhouse_dir / "requirements.txt"
+                with open(requirements_file, 'w') as f:
+                    for pkg in python_packages:
+                        f.write(f"{pkg['name']}=={pkg['version']}\n")
+                
+                # Download source distributions (architecture-independent)
+                print("📥 Downloading Python source distributions (architecture-independent)...")
                 try:
-                    # Try to download wheels for this architecture
+                    self._run_docker_command([
+                        'run', '--rm',
+                        '-v', f"{sdists_dir}:/workspace/sdists",
+                        '-v', f"{requirements_file}:/workspace/requirements.txt:ro",
+                        image_name,
+                        'bash', '-c', '''
+                        source /opt/conda/bin/activate venvoy 2>/dev/null || true
+                        pip download -r /workspace/requirements.txt -d /workspace/sdists --no-binary :all: --no-deps || true
+                        '''
+                    ], check=False)
+                    print(f"✅ Python source distributions downloaded")
+                except Exception as e:
+                    print(f"⚠️  Warning: Some Python source distributions may not be available: {e}")
+                
+                # Download wheels for multiple architectures
+                architectures = ['linux_x86_64', 'linux_aarch64', 'manylinux1_x86_64', 'manylinux2014_x86_64', 
+                               'manylinux2014_aarch64', 'manylinux_2_17_x86_64', 'manylinux_2_17_aarch64']
+                
+                print("📥 Downloading Python wheels for multiple architectures...")
+                for arch in architectures:
+                    try:
+                        self._run_docker_command([
+                            'run', '--rm',
+                            '-v', f"{wheels_dir}:/workspace/wheels",
+                            '-v', f"{requirements_file}:/workspace/requirements.txt:ro",
+                            image_name,
+                            'bash', '-c', f'''
+                            source /opt/conda/bin/activate venvoy 2>/dev/null || true
+                            pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --platform {arch} --no-deps || true
+                            '''
+                        ], check=False)
+                    except Exception:
+                        pass  # Some architectures may not have wheels available
+                
+                # Also download any available wheels (will get current architecture)
+                try:
                     self._run_docker_command([
                         'run', '--rm',
                         '-v', f"{wheels_dir}:/workspace/wheels",
                         '-v', f"{requirements_file}:/workspace/requirements.txt:ro",
                         image_name,
-                        'bash', '-c', f'''
-                        source /opt/conda/bin/activate venvoy
-                        pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --platform {arch} --no-deps || true
+                        'bash', '-c', '''
+                        source /opt/conda/bin/activate venvoy 2>/dev/null || true
+                        pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --no-deps || true
                         '''
                     ], check=False)
-                except Exception:
-                    pass  # Some architectures may not have wheels available
+                    print(f"✅ Python wheels downloaded")
+                except Exception as e:
+                    print(f"⚠️  Warning: Some Python wheels may not be available: {e}")
             
-            # Also download any available wheels (will get current architecture)
-            try:
-                self._run_docker_command([
-                    'run', '--rm',
-                    '-v', f"{wheels_dir}:/workspace/wheels",
-                    '-v', f"{requirements_file}:/workspace/requirements.txt:ro",
-                    image_name,
-                    'bash', '-c', '''
-                    source /opt/conda/bin/activate venvoy
-                    pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --no-deps || true
-                    '''
-                ], check=False)
-                print(f"✅ Wheels downloaded")
-            except Exception as e:
-                print(f"⚠️  Warning: Some wheels may not be available: {e}")
+            # Handle R packages
+            if r_packages:
+                print("\n📊 Processing R packages...")
+                # Create R package list file
+                r_packages_file = wheelhouse_dir / "r-packages.txt"
+                with open(r_packages_file, 'w') as f:
+                    for pkg in r_packages:
+                        f.write(f"{pkg['name']}\n")
+                
+                # Download R source packages (architecture-independent)
+                print("📥 Downloading R source packages (architecture-independent)...")
+                try:
+                    pkg_names = [pkg['name'] for pkg in r_packages]
+                    pkg_list_str = ', '.join([f'"{pkg}"' for pkg in pkg_names])
+                    
+                    self._run_docker_command([
+                        'run', '--rm',
+                        '-v', f"{r_source_dir}:/workspace/r-source",
+                        image_name,
+                        'bash', '-c', f'''
+                        R --slave -e "
+                        options(repos = c(CRAN = 'https://cran.rstudio.com/'));
+                        download.packages(c({pkg_list_str}), destdir='/workspace/r-source', type='source', repos='https://cran.rstudio.com/');
+                        " || true
+                        '''
+                    ], check=False)
+                    print(f"✅ R source packages downloaded")
+                except Exception as e:
+                    print(f"⚠️  Warning: Some R source packages may not be available: {e}")
+                
+                # Download R binary packages for multiple architectures
+                # Note: CRAN provides binaries mainly for x86_64, so we'll try both
+                print("📥 Downloading R binary packages for multiple architectures...")
+                
+                # Try to download binaries for x86_64 (most common)
+                try:
+                    pkg_names = [pkg['name'] for pkg in r_packages]
+                    pkg_list_str = ', '.join([f'"{pkg}"' for pkg in pkg_names])
+                    
+                    self._run_docker_command([
+                        'run', '--rm',
+                        '-v', f"{r_binaries_dir}:/workspace/r-binaries",
+                        image_name,
+                        'bash', '-c', f'''
+                        R --slave -e "
+                        options(repos = c(CRAN = 'https://cran.rstudio.com/'));
+                        download.packages(c({pkg_list_str}), destdir='/workspace/r-binaries', type='binary', repos='https://cran.rstudio.com/');
+                        " || true
+                        '''
+                    ], check=False)
+                    print(f"✅ R binary packages downloaded")
+                except Exception as e:
+                    print(f"⚠️  Warning: Some R binary packages may not be available: {e}")
             
             # Create package manifest
-            print("📋 Creating package manifest...")
+            print("\n📋 Creating package manifest...")
             manifest = {
                 'created': datetime.now().isoformat(),
                 'venvoy_version': '0.1.0',
                 'wheelhouse_version': '1.0',
                 'environment': {
                     'name': self.name,
-                    'python_version': self.python_version,
+                    'runtime': runtime,
+                    'python_version': self.python_version if runtime in ['python', 'mixed'] else None,
+                    'r_version': self.r_version if runtime in ['r', 'mixed'] else None,
                     'platform': self.platform.detect(),
                 },
-                'packages': packages,
-                'package_count': len(packages),
+                'packages': {
+                    'python': python_packages,
+                    'r': r_packages,
+                },
+                'package_count': {
+                    'python': len(python_packages),
+                    'r': len(r_packages),
+                    'total': total_packages,
+                },
             }
             
             manifest_file = wheelhouse_dir / "manifest.json"
@@ -955,13 +1080,19 @@ CMD ["/bin/bash"]
             # Count files
             sdist_count = len(list(sdists_dir.glob("*"))) if sdists_dir.exists() else 0
             wheel_count = len(list(wheels_dir.glob("*"))) if wheels_dir.exists() else 0
+            r_source_count = len(list(r_source_dir.glob("*"))) if r_source_dir.exists() else 0
+            r_binary_count = len(list(r_binaries_dir.glob("*"))) if r_binaries_dir.exists() else 0
             
-            print(f"📊 Package cache contents:")
-            print(f"   - Source distributions: {sdist_count}")
-            print(f"   - Wheels: {wheel_count}")
+            print(f"\n📊 Package cache contents:")
+            if python_packages:
+                print(f"   - Python source distributions: {sdist_count}")
+                print(f"   - Python wheels: {wheel_count}")
+            if r_packages:
+                print(f"   - R source packages: {r_source_count}")
+                print(f"   - R binary packages: {r_binary_count}")
             
             # Create final compressed archive
-            print("🗜️  Compressing wheelhouse...")
+            print("\n🗜️  Compressing wheelhouse...")
             with tarfile.open(output_file, 'w:gz') as tar:
                 tar.add(wheelhouse_dir, arcname=f"{self.name}-wheelhouse")
             
@@ -971,19 +1102,187 @@ CMD ["/bin/bash"]
         
         return str(output_file)
     
+    def import_wheelhouse(self, wheelhouse_path: str, force: bool = False) -> str:
+        """
+        Import and restore environment from a wheelhouse archive.
+        
+        Args:
+            wheelhouse_path: Path to the wheelhouse archive file
+            force: Whether to overwrite existing environment
+            
+        Returns:
+            Name of the restored environment
+        """
+        wheelhouse_file = Path(wheelhouse_path)
+        if not wheelhouse_file.exists():
+            raise FileNotFoundError(f"Wheelhouse file not found: {wheelhouse_path}")
+        
+        print(f"📦 Importing venvoy wheelhouse: {wheelhouse_file.name}")
+        
+        # Extract wheelhouse to temporary directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            print("📂 Extracting wheelhouse...")
+            with tarfile.open(wheelhouse_file, 'r:gz') as tar:
+                tar.extractall(temp_path)
+            
+            # Find wheelhouse directory (should be only subdirectory)
+            wheelhouse_dirs = [d for d in temp_path.iterdir() if d.is_dir()]
+            if not wheelhouse_dirs:
+                raise RuntimeError("Invalid wheelhouse: no directories found")
+            
+            wheelhouse_dir = wheelhouse_dirs[0]
+            
+            # Read manifest
+            manifest_file = wheelhouse_dir / "manifest.json"
+            if not manifest_file.exists():
+                raise RuntimeError("Invalid wheelhouse: missing manifest.json")
+            
+            with open(manifest_file, 'r') as f:
+                manifest = json.load(f)
+            
+            env_info = manifest['environment']
+            env_name = env_info['name']
+            runtime = env_info.get('runtime', 'python')
+            python_version = env_info.get('python_version')
+            r_version = env_info.get('r_version')
+            
+            print(f"🔍 Wheelhouse contains environment: {env_name}")
+            print(f"   Runtime: {runtime}")
+            if python_version:
+                print(f"   Python: {python_version}")
+            if r_version:
+                print(f"   R: {r_version}")
+            print(f"   Packages: {manifest['package_count'].get('total', 0)} total")
+            print(f"📅 Created: {manifest['created']}")
+            
+            # Check if environment already exists
+            target_env_dir = self.config_dir / "environments" / env_name
+            if target_env_dir.exists() and not force:
+                raise RuntimeError(
+                    f"Environment '{env_name}' already exists. Use --force to overwrite."
+                )
+            
+            # Create environment directory
+            if target_env_dir.exists():
+                shutil.rmtree(target_env_dir)
+            target_env_dir.mkdir(parents=True)
+            
+            # Copy Python packages to vendor directory
+            vendor_dir = target_env_dir / "vendor"
+            vendor_dir.mkdir(parents=True, exist_ok=True)
+            
+            if (wheelhouse_dir / "sdists").exists():
+                print("📦 Copying Python source distributions...")
+                for sdist in (wheelhouse_dir / "sdists").glob("*"):
+                    if sdist.is_file():
+                        shutil.copy2(sdist, vendor_dir)
+            
+            if (wheelhouse_dir / "wheels").exists():
+                print("📦 Copying Python wheels...")
+                for wheel in (wheelhouse_dir / "wheels").glob("*"):
+                    if wheel.is_file():
+                        shutil.copy2(wheel, vendor_dir)
+            
+            # Copy R packages
+            r_packages_dir = target_env_dir / "r-packages"
+            if (wheelhouse_dir / "r-packages").exists():
+                r_packages_dir.mkdir(parents=True, exist_ok=True)
+                
+                if (wheelhouse_dir / "r-packages" / "source").exists():
+                    print("📦 Copying R source packages...")
+                    r_source_dir = r_packages_dir / "source"
+                    r_source_dir.mkdir(parents=True, exist_ok=True)
+                    for pkg in (wheelhouse_dir / "r-packages" / "source").glob("*"):
+                        if pkg.is_file():
+                            shutil.copy2(pkg, r_source_dir)
+                
+                if (wheelhouse_dir / "r-packages" / "binaries").exists():
+                    print("📦 Copying R binary packages...")
+                    r_binaries_dir = r_packages_dir / "binaries"
+                    r_binaries_dir.mkdir(parents=True, exist_ok=True)
+                    for pkg in (wheelhouse_dir / "r-packages" / "binaries").glob("*"):
+                        if pkg.is_file():
+                            shutil.copy2(pkg, r_binaries_dir)
+            
+            # Create requirements.txt from manifest (Python)
+            python_packages = manifest['packages'].get('python', [])
+            if python_packages:
+                print("📝 Creating requirements.txt...")
+                requirements_file = target_env_dir / "requirements.txt"
+                with open(requirements_file, 'w') as f:
+                    for pkg in python_packages:
+                        f.write(f"{pkg['name']}=={pkg['version']}\n")
+            
+            # Create r-packages.txt from manifest (R)
+            r_packages = manifest['packages'].get('r', [])
+            if r_packages:
+                print("📝 Creating r-packages.txt...")
+                r_packages_file = target_env_dir / "r-packages.txt"
+                with open(r_packages_file, 'w') as f:
+                    for pkg in r_packages:
+                        f.write(f"{pkg['name']}\n")
+            
+            # Create config.yaml
+            config = {
+                'name': env_name,
+                'runtime': runtime,
+                'python_version': python_version,
+                'r_version': r_version,
+                'created': manifest['created'],
+                'imported_from': str(wheelhouse_file),
+                'imported_at': datetime.now().isoformat(),
+            }
+            
+            config_file = target_env_dir / "config.yaml"
+            with open(config_file, 'w') as f:
+                yaml.safe_dump(config, f, default_flow_style=False)
+            
+            print(f"\n✅ Wheelhouse imported successfully!")
+            print(f"🚀 To build and use the environment:")
+            print(f"   venvoy init --name {env_name} --force")
+            print(f"\n💡 Packages will be installed from local cache (no repository access needed)")
+            
+            return env_name
+    
     def _create_wheelhouse_restore_script(self, script_path: Path, manifest: Dict):
         """Create restore script for the wheelhouse"""
-        packages_list = '\n'.join([f"{pkg['name']}=={pkg['version']}" for pkg in manifest['packages']])
+        env_info = manifest['environment']
+        runtime = env_info.get('runtime', 'python')
+        python_version = env_info.get('python_version')
+        r_version = env_info.get('r_version')
+        
+        python_packages = manifest['packages'].get('python', [])
+        r_packages = manifest['packages'].get('r', [])
+        
+        # Create Python requirements list
+        python_packages_list = '\n'.join([f"{pkg['name']}=={pkg['version']}" for pkg in python_packages]) if python_packages else ""
+        
+        # Create R packages list
+        r_packages_list = ', '.join([f'"{pkg["name"]}"' for pkg in r_packages]) if r_packages else ""
+        
+        # Determine init command based on runtime
+        if runtime == 'r':
+            init_cmd = f"venvoy init --runtime r --r-version {r_version} --name {env_info['name']}"
+            version_info = f"📊 R: {r_version}"
+        elif runtime == 'mixed':
+            init_cmd = f"venvoy init --runtime mixed --python-version {python_version} --r-version {r_version} --name {env_info['name']}"
+            version_info = f"🐍 Python: {python_version}, 📊 R: {r_version}"
+        else:
+            init_cmd = f"venvoy init --name {env_info['name']} --python-version {python_version}"
+            version_info = f"🐍 Python: {python_version}"
+        
         script_content = f'''#!/bin/bash
 # venvoy Wheelhouse Restore Script
 # Generated: {manifest['created']}
-# Environment: {manifest['environment']['name']}
+# Environment: {env_info['name']}
 
 set -e
 
 echo "🔄 Restoring venvoy environment from wheelhouse..."
-echo "📦 Environment: {manifest['environment']['name']}"
-echo "🐍 Python: {manifest['environment']['python_version']}"
+echo "📦 Environment: {env_info['name']}"
+echo "{version_info}"
 echo "📅 Archived: {manifest['created']}"
 
 # Check prerequisites
@@ -995,40 +1294,79 @@ if ! command -v venvoy &> /dev/null; then
 fi
 
 # Initialize environment if it doesn't exist
-if ! venvoy list 2>/dev/null | grep -q "{manifest['environment']['name']}"; then
+if ! venvoy list 2>/dev/null | grep -q "{env_info['name']}"; then
     echo "🔧 Creating environment..."
-    venvoy init --name {manifest['environment']['name']} --python-version {manifest['environment']['python_version']}
+    {init_cmd}
 fi
 
 # Get the environment directory
-ENV_DIR="$HOME/.venvoy/environments/{manifest['environment']['name']}"
+ENV_DIR="$HOME/.venvoy/environments/{env_info['name']}"
 VENDOR_DIR="$ENV_DIR/vendor"
+R_PACKAGES_DIR="$ENV_DIR/r-packages"
 
-# Create vendor directory
+# Create vendor directories
 mkdir -p "$VENDOR_DIR"
+mkdir -p "$R_PACKAGES_DIR/source"
+mkdir -p "$R_PACKAGES_DIR/binaries"
 
-# Copy packages to vendor directory
-echo "📦 Copying packages to vendor directory..."
+# Copy Python packages to vendor directory
 if [ -d "sdists" ]; then
+    echo "📦 Copying Python source distributions..."
     cp -r sdists/* "$VENDOR_DIR/" 2>/dev/null || true
 fi
 if [ -d "wheels" ]; then
+    echo "📦 Copying Python wheels..."
     cp -r wheels/* "$VENDOR_DIR/" 2>/dev/null || true
 fi
 
-# Create requirements.txt from manifest
-echo "📝 Creating requirements.txt..."
-REQUIREMENTS_FILE="$ENV_DIR/requirements.txt"
-cat > "$REQUIREMENTS_FILE" <<EOF
-{packages_list}
-EOF
+# Copy R packages
+if [ -d "r-packages/source" ]; then
+    echo "📦 Copying R source packages..."
+    cp -r r-packages/source/* "$R_PACKAGES_DIR/source/" 2>/dev/null || true
+fi
+if [ -d "r-packages/binaries" ]; then
+    echo "📦 Copying R binary packages..."
+    cp -r r-packages/binaries/* "$R_PACKAGES_DIR/binaries/" 2>/dev/null || true
+fi
 
+# Create requirements.txt from manifest (Python)
+'''
+        
+        if python_packages:
+            script_content += f'''if [ ! -z "{python_packages_list}" ]; then
+    echo "📝 Creating requirements.txt..."
+    REQUIREMENTS_FILE="$ENV_DIR/requirements.txt"
+    cat > "$REQUIREMENTS_FILE" <<PYEOF
+{python_packages_list}
+PYEOF
+fi
+'''
+        
+        if r_packages:
+            script_content += f'''
+# Create R packages list
+if [ ! -z "{r_packages_list}" ]; then
+    echo "📝 Creating r-packages.txt..."
+    R_PACKAGES_FILE="$ENV_DIR/r-packages.txt"
+    cat > "$R_PACKAGES_FILE" <<REOF
+{chr(10).join([pkg['name'] for pkg in r_packages])}
+REOF
+fi
+'''
+        
+        script_content += f'''
+echo ""
 echo "✅ Wheelhouse restored successfully!"
 echo ""
 echo "🚀 To rebuild environment with packages:"
-echo "   venvoy init --name {manifest['environment']['name']} --force"
+echo "   venvoy init --name {env_info['name']} --force"
 echo ""
-echo "💡 Packages will be installed from local vendor directory (no PyPI needed)"
+if [ ! -z "{python_packages_list}" ]; then
+    echo "💡 Python packages will be installed from local vendor directory (no PyPI needed)"
+fi
+if [ ! -z "{r_packages_list}" ]; then
+    echo "💡 R packages will be installed from local r-packages directory (no CRAN needed)"
+fi
 '''
         
         with open(script_path, 'w') as f:
@@ -1036,53 +1374,95 @@ echo "💡 Packages will be installed from local vendor directory (no PyPI neede
     
     def _create_wheelhouse_readme(self, readme_path: Path, manifest: Dict):
         """Create README for the wheelhouse"""
+        env_info = manifest['environment']
+        runtime = env_info.get('runtime', 'python')
+        pkg_counts = manifest.get('package_count', {})
+        
+        # Build version info
+        version_parts = []
+        if env_info.get('python_version'):
+            version_parts.append(f"Python {env_info['python_version']}")
+        if env_info.get('r_version'):
+            version_parts.append(f"R {env_info['r_version']}")
+        version_info = ", ".join(version_parts) if version_parts else "Unknown"
+        
+        # Build contents section
+        contents_list = []
+        if pkg_counts.get('python', 0) > 0:
+            contents_list.append("- **Python Source Distributions (sdists/)**: Architecture-independent source packages")
+            contents_list.append("- **Python Wheels (wheels/)**: Pre-built packages for multiple architectures")
+        if pkg_counts.get('r', 0) > 0:
+            contents_list.append("- **R Source Packages (r-packages/source/)**: Architecture-independent R source packages")
+            contents_list.append("- **R Binary Packages (r-packages/binaries/)**: Pre-built R packages for multiple architectures")
+        contents_list.append("- **Manifest (manifest.json)**: Package specifications and metadata")
+        contents_list.append("- **Restore Script (restore.sh)**: Automated restoration script")
+        contents_section = "\n".join(contents_list)
+        
+        # Build restore instructions
+        restore_instructions = []
+        if pkg_counts.get('python', 0) > 0:
+            restore_instructions.append("```bash")
+            restore_instructions.append("# Copy Python packages")
+            restore_instructions.append("mkdir -p ~/.venvoy/environments/{}/vendor".format(env_info['name']))
+            restore_instructions.append("cp -r sdists/* ~/.venvoy/environments/{}/vendor/".format(env_info['name']))
+            restore_instructions.append("cp -r wheels/* ~/.venvoy/environments/{}/vendor/".format(env_info['name']))
+            restore_instructions.append("```")
+        if pkg_counts.get('r', 0) > 0:
+            restore_instructions.append("```bash")
+            restore_instructions.append("# Copy R packages")
+            restore_instructions.append("mkdir -p ~/.venvoy/environments/{}/r-packages/{{source,binaries}}".format(env_info['name']))
+            restore_instructions.append("cp -r r-packages/source/* ~/.venvoy/environments/{}/r-packages/source/".format(env_info['name']))
+            restore_instructions.append("cp -r r-packages/binaries/* ~/.venvoy/environments/{}/r-packages/binaries/".format(env_info['name']))
+            restore_instructions.append("```")
+        
+        restore_section = "\n".join(restore_instructions)
+        
+        # Build architecture compatibility section
+        arch_section = """When you restore on a different architecture:
+1. **Python packages**: Pip will use wheels for the target architecture if available, otherwise build from source
+2. **R packages**: R will use binary packages for the target architecture if available, otherwise build from source
+3. All packages are self-contained - no repository access needed"""
+        
         readme_content = f'''# venvoy Cross-Architecture Wheelhouse
 
 ## Wheelhouse Information
 
-- **Environment Name**: {manifest['environment']['name']}
-- **Python Version**: {manifest['environment']['python_version']}
+- **Environment Name**: {env_info['name']}
+- **Runtime**: {runtime.title()}
+- **Versions**: {version_info}
 - **Created**: {manifest['created']}
-- **Package Count**: {manifest['package_count']}
+- **Package Count**: {pkg_counts.get('total', 0)} total ({pkg_counts.get('python', 0)} Python, {pkg_counts.get('r', 0)} R)
 
 ## Purpose
 
 This wheelhouse contains a **cross-architecture package cache** that allows you to:
 - ✅ Install packages on **any architecture** (amd64, arm64)
-- ✅ Work **offline** without PyPI dependency
-- ✅ Protect against **package abandonment** (packages removed from PyPI)
+- ✅ Work **offline** without repository dependency (PyPI/CRAN)
+- ✅ Protect against **package abandonment** (packages removed from repositories)
 - ✅ Ensure **reproducible installations** across different systems
 
 ## Contents
 
-- **Source Distributions (sdists/)**: Architecture-independent source packages
-- **Wheels (wheels/)**: Pre-built packages for multiple architectures
-- **Manifest (manifest.json)**: Package specifications and metadata
-- **Restore Script (restore.sh)**: Automated restoration script
+{contents_section}
 
 ## Restoration
 
 ### Quick Restore
 ```bash
 bash restore.sh
-venvoy init --name {manifest['environment']['name']} --force
+venvoy init --name {env_info['name']} --force
 ```
 
 ### Manual Restore
 ```bash
 # 1. Extract wheelhouse
-tar -xzf {manifest['environment']['name']}-wheelhouse-*.tar.gz
+tar -xzf {env_info['name']}-wheelhouse-*.tar.gz
 
-# 2. Copy packages to environment vendor directory
-mkdir -p ~/.venvoy/environments/{manifest['environment']['name']}/vendor
-cp -r sdists/* ~/.venvoy/environments/{manifest['environment']['name']}/vendor/
-cp -r wheels/* ~/.venvoy/environments/{manifest['environment']['name']}/vendor/
+# 2. Copy packages to environment directories
+{restore_section}
 
-# 3. Create requirements.txt from manifest
-# (see manifest.json for package list)
-
-# 4. Rebuild environment
-venvoy init --name {manifest['environment']['name']} --force
+# 3. Rebuild environment
+venvoy init --name {env_info['name']} --force
 ```
 
 ## Cross-Architecture Compatibility
@@ -1091,27 +1471,32 @@ This wheelhouse works on:
 - **linux/amd64** (Intel/AMD x86_64)
 - **linux/arm64** (Apple Silicon, ARM servers)
 
-When you restore on a different architecture:
-1. Pip will use wheels for the target architecture if available
-2. If no wheel is available, it will build from source distribution
-3. All packages are self-contained - no PyPI access needed
+{arch_section}
 
 ## Advantages Over Binary Archives
 
 - ✅ **Cross-architecture**: Works on amd64 and arm64
 - ✅ **Smaller size**: Only packages, not full Docker images
 - ✅ **Flexible**: Can rebuild for target architecture
-- ✅ **Self-contained**: No dependency on PyPI availability
+- ✅ **Self-contained**: No dependency on repository availability
 
 ## Advantages Over YAML Exports
 
-- ✅ **Offline**: No need for PyPI access
-- ✅ **Package protection**: Works even if packages are removed from PyPI
+- ✅ **Offline**: No need for PyPI/CRAN access
+- ✅ **Package protection**: Works even if packages are removed from repositories
 - ✅ **Faster**: Pre-downloaded packages, no network needed
+
+## R Package Notes
+
+R packages are distributed differently than Python:
+- **Source packages** (`.tar.gz`) are architecture-independent and can be built on any platform
+- **Binary packages** are architecture-specific (`.tar.gz` on Linux, `.tgz` on macOS)
+- CRAN provides binaries mainly for x86_64 Linux, so ARM systems often need to build from source
+- This wheelhouse includes both source and binaries for maximum compatibility
 
 ---
 
-Generated by venvoy - Scientific Python Environment Management
+Generated by venvoy - Scientific Python and R Environment Management
 https://github.com/zaphodbeeblebrox3rd/venvoy
 '''
         

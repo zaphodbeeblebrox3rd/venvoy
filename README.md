@@ -84,7 +84,6 @@ Developers, Hobbyists, Researchers, and IT Professionals - have you had these he
 - **Intel/AMD x86_64**: Full native performance on desktop and server
 - **Apple Silicon (M1/M2)**: Optimized ARM64 containers for maximum performance
 - **ARM64 Servers**: Cloud-native support for ARM-based infrastructure
-- **ARM32 Devices**: Support for embedded and IoT devices
 - **Automatic Selection**: Docker automatically pulls the correct architecture for your system
 
 *Enterprise platforms (IBM Power/mainframes) available on consulting basis.*
@@ -380,11 +379,13 @@ venvoy export --format dockerfile --output Dockerfile
 # Export as tarball for offline use
 venvoy export --format tarball --output project.tar.gz
 
-# Export as comprehensive binary archive (for scientific reproducibility)
-venvoy export --format archive --output research-archive.tar.gz
-```
+# Export as comprehensive binary archive (for reproducibility on the same CPU Architecture)
+export --format archive --output research.tar.gz
 
-#### 📦 Comprehensive Binary Archives
+# Export as wheelhouse archive for cross-architecture reproducibility
+venvoy export --format wheelhouse --output research.tar.gz
+
+#### 📦 Wheelhouse Binary Archives
 
 For **scientific reproducibility** and **long-term archival**, venvoy supports comprehensive binary archives:
 
