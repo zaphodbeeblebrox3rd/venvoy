@@ -31,14 +31,24 @@ if command -v git &> /dev/null; then
     fi
 fi
 
-# Check for any supported container runtime (prioritize HPC runtimes)
+# Check for any supported container runtime (prioritize HPC runtimes, then check accessibility)
 CONTAINER_RUNTIME=""
 if command -v apptainer &> /dev/null; then
     CONTAINER_RUNTIME="apptainer"
 elif command -v singularity &> /dev/null; then
     CONTAINER_RUNTIME="singularity"
 elif command -v docker &> /dev/null; then
-    CONTAINER_RUNTIME="docker"
+    # Check if Docker is accessible (not just installed)
+    if docker info &> /dev/null; then
+        CONTAINER_RUNTIME="docker"
+    elif command -v podman &> /dev/null; then
+        # Docker is installed but not accessible, use Podman instead
+        CONTAINER_RUNTIME="podman"
+        echo "⚠️  Docker found but not accessible, using Podman instead"
+    else
+        # Docker is installed but not accessible, and Podman not available
+        CONTAINER_RUNTIME="docker"
+    fi
 elif command -v podman &> /dev/null; then
     CONTAINER_RUNTIME="podman"
 else
@@ -268,14 +278,24 @@ cat > "$INSTALL_DIR/venvoy" << 'EOF'
 
 set -e
 
-# Detect container runtime (prioritize HPC runtimes)
+# Detect container runtime (prioritize HPC runtimes, then check accessibility)
 CONTAINER_RUNTIME=""
 if command -v apptainer &> /dev/null; then
     CONTAINER_RUNTIME="apptainer"
 elif command -v singularity &> /dev/null; then
     CONTAINER_RUNTIME="singularity"
 elif command -v docker &> /dev/null; then
-    CONTAINER_RUNTIME="docker"
+    # Check if Docker is accessible (not just installed)
+    if docker info &> /dev/null; then
+        CONTAINER_RUNTIME="docker"
+    elif command -v podman &> /dev/null; then
+        # Docker is installed but not accessible, use Podman instead
+        CONTAINER_RUNTIME="podman"
+        echo "⚠️  Docker found but not accessible, using Podman instead"
+    else
+        # Docker is installed but not accessible, and Podman not available
+        CONTAINER_RUNTIME="docker"
+    fi
 elif command -v podman &> /dev/null; then
     CONTAINER_RUNTIME="podman"
 else
@@ -300,27 +320,70 @@ fi
 # Format image URI based on container runtime
 if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
     IMAGE_URI="docker://$VENVOY_IMAGE"
+elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
+    # Podman requires fully qualified image names
+    IMAGE_URI="docker.io/$VENVOY_IMAGE"
 else
     IMAGE_URI="$VENVOY_IMAGE"
 fi
+
+# Function to handle container runtime errors
+handle_container_error() {
+    local error_output="$1"
+    local runtime="$2"
+    
+    if echo "$error_output" | grep -qi "permission denied\|docker.sock"; then
+        echo ""
+        echo "❌ Permission denied: Cannot access $runtime"
+        echo ""
+        if [ "$runtime" = "docker" ]; then
+            echo "💡 Solutions:"
+            echo "   1. Add your user to the docker group (recommended):"
+            echo "      sudo usermod -aG docker \$USER"
+            echo "      Then log out and back in, or run: newgrp docker"
+            echo ""
+            echo "   2. Use Podman instead (rootless, no permissions needed):"
+            echo "      sudo apt install podman  # or equivalent for your distro"
+            echo ""
+            echo "   3. Use Apptainer/Singularity (HPC-friendly, no root needed):"
+            echo "      See: https://apptainer.org/docs/user/main/quick_start.html"
+            echo ""
+            echo "   4. Start Docker service (if not running):"
+            echo "      sudo systemctl start docker"
+        fi
+        exit 1
+    fi
+}
+
+# Function to test container runtime access
+test_container_access() {
+    local runtime="$1"
+    if [ "$runtime" = "docker" ]; then
+        # Test docker access by trying to run a simple command
+        if ! docker info &> /dev/null; then
+            ERROR_OUTPUT=$(docker info 2>&1)
+            handle_container_error "$ERROR_OUTPUT" "$runtime"
+        fi
+    fi
+}
 
 # Pull venvoy image if it doesn't exist or force update
 if ! $CONTAINER_RUNTIME image inspect "$IMAGE_URI" &> /dev/null; then
     echo "📦 Downloading venvoy environment..."
     if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
         # For Apptainer/Singularity, use --force to overwrite existing SIF files
-        $CONTAINER_RUNTIME pull --force "$IMAGE_URI"
+        ERROR_OUTPUT=$($CONTAINER_RUNTIME pull --force "$IMAGE_URI" 2>&1) || handle_container_error "$ERROR_OUTPUT" "$CONTAINER_RUNTIME"
     else
-        $CONTAINER_RUNTIME pull "$IMAGE_URI"
+        ERROR_OUTPUT=$($CONTAINER_RUNTIME pull "$IMAGE_URI" 2>&1) || handle_container_error "$ERROR_OUTPUT" "$CONTAINER_RUNTIME"
     fi
     echo "✅ Environment ready"
 elif [ "\$1" = "update" ] || [ "\$1" = "upgrade" ]; then
     echo "🔄 Updating venvoy environment..."
     if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
         # For Apptainer/Singularity, use --force to overwrite existing SIF files
-        $CONTAINER_RUNTIME pull --force "$IMAGE_URI"
+        ERROR_OUTPUT=$($CONTAINER_RUNTIME pull --force "$IMAGE_URI" 2>&1) || handle_container_error "$ERROR_OUTPUT" "$CONTAINER_RUNTIME"
     else
-        $CONTAINER_RUNTIME pull "$IMAGE_URI"
+        ERROR_OUTPUT=$($CONTAINER_RUNTIME pull "$IMAGE_URI" 2>&1) || handle_container_error "$ERROR_OUTPUT" "$CONTAINER_RUNTIME"
     fi
     echo "✅ Environment updated"
     
@@ -404,25 +467,40 @@ if [ "$1" = "run" ]; then
     # Load environment configuration
     if [ -f "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" ]; then
         PYTHON_VERSION=$(grep "python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | cut -d' ' -f2)
-        IMAGE_NAME="zaphodbeeblebrox3rd/venvoy:python$PYTHON_VERSION"
+        if [ "$CONTAINER_RUNTIME" = "podman" ]; then
+            # Podman requires fully qualified image names
+            IMAGE_NAME="docker.io/zaphodbeeblebrox3rd/venvoy:python$PYTHON_VERSION"
+        else
+            IMAGE_NAME="zaphodbeeblebrox3rd/venvoy:python$PYTHON_VERSION"
+        fi
     else
         echo "❌ Environment configuration not found for '$RUN_NAME'"
         exit 1
     fi
     
     # Ensure image is available
-    if ! $CONTAINER_RUNTIME image inspect "$IMAGE_URI" &> /dev/null; then
+    # Format image URI for pulling based on runtime
+    if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
+        PULL_IMAGE_URI="docker://$IMAGE_NAME"
+    elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
+        PULL_IMAGE_URI="$IMAGE_NAME"  # Already has docker.io prefix
+    else
+        PULL_IMAGE_URI="$IMAGE_NAME"
+    fi
+    
+    if ! $CONTAINER_RUNTIME image inspect "$PULL_IMAGE_URI" &> /dev/null; then
         echo "📦 Downloading environment image..."
         if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
-            $CONTAINER_RUNTIME pull --force "$IMAGE_URI"
+            ERROR_OUTPUT=$($CONTAINER_RUNTIME pull --force "$PULL_IMAGE_URI" 2>&1) || handle_container_error "$ERROR_OUTPUT" "$CONTAINER_RUNTIME"
         else
-            $CONTAINER_RUNTIME pull "$IMAGE_URI"
+            ERROR_OUTPUT=$($CONTAINER_RUNTIME pull "$PULL_IMAGE_URI" 2>&1) || handle_container_error "$ERROR_OUTPUT" "$CONTAINER_RUNTIME"
         fi
         echo "✅ Environment image ready"
     fi
     
     # Run the environment
     if [ "$CONTAINER_RUNTIME" = "docker" ]; then
+        test_container_access "$CONTAINER_RUNTIME"
         docker run --rm -it \
             -v "$PWD:/workspace" \
             -v "$HOME:/host-home" \
@@ -430,7 +508,12 @@ if [ "$1" = "run" ]; then
             -e HOME="/host-home" \
             -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
             $RUN_MOUNTS \
-            "$IMAGE_NAME" ${RUN_COMMAND:-bash}
+            "$IMAGE_NAME" ${RUN_COMMAND:-bash} || {
+                echo ""
+                echo "❌ Failed to run Docker container"
+                echo "💡 Check Docker permissions or try: sudo usermod -aG docker \$USER"
+                exit 1
+            }
     elif [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
         $CONTAINER_RUNTIME exec \
             --bind "$PWD:/workspace" \
@@ -641,6 +724,7 @@ else
     # Run normal venvoy commands inside the container with mounted source
     if [ "$CONTAINER_RUNTIME" = "docker" ]; then
         # Docker execution with source code mounted
+        test_container_access "$CONTAINER_RUNTIME"
         docker run --rm -it \
             -v "$PWD:/workspace" \
             -v "$HOME:/host-home" \
@@ -649,7 +733,12 @@ else
             -e HOME="/host-home" \
             -e VENVOY_SOURCE_DIR="/venvoy-source" \
             -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
-            "$VENVOY_IMAGE" "$@"
+            "$VENVOY_IMAGE" "$@" || {
+                echo ""
+                echo "❌ Failed to run Docker container"
+                echo "💡 Check Docker permissions or try: sudo usermod -aG docker \$USER"
+                exit 1
+            }
     elif [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
         # Apptainer/Singularity execution with source code mounted
         $CONTAINER_RUNTIME exec \
@@ -671,7 +760,7 @@ else
             -e HOME="/host-home" \
             -e VENVOY_SOURCE_DIR="/venvoy-source" \
             -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
-            "$VENVOY_IMAGE" "$@"
+            "$IMAGE_URI" "$@"
     else
         echo "❌ Unsupported container runtime: $CONTAINER_RUNTIME"
         exit 1
@@ -786,7 +875,12 @@ esac
 # Force update the bootstrap image to ensure latest features
 echo "🔄 Updating venvoy bootstrap image..."
 if command -v "$CONTAINER_RUNTIME" &> /dev/null; then
-    $CONTAINER_RUNTIME pull "zaphodbeeblebrox3rd/venvoy:bootstrap" 2>/dev/null || true
+    if [ "$CONTAINER_RUNTIME" = "podman" ]; then
+        # Podman requires fully qualified image names
+        $CONTAINER_RUNTIME pull "docker.io/zaphodbeeblebrox3rd/venvoy:bootstrap" 2>/dev/null || true
+    else
+        $CONTAINER_RUNTIME pull "zaphodbeeblebrox3rd/venvoy:bootstrap" 2>/dev/null || true
+    fi
     echo "✅ Bootstrap image updated"
 fi
 
