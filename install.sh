@@ -21,6 +21,16 @@ fi
 
 echo "🔍 Detected platform: $PLATFORM"
 
+# Clone repository to temporary directory for usage analytics (non-blocking)
+if command -v git &> /dev/null; then
+    TEMP_CLONE_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'venvoy-install')
+    if [ -n "$TEMP_CLONE_DIR" ]; then
+        echo "📊 Tracking installation for analytics..."
+        git clone --depth 1 --quiet https://github.com/zaphodbeeblebrox3rd/venvoy.git "$TEMP_CLONE_DIR" 2>/dev/null || true
+        rm -rf "$TEMP_CLONE_DIR" 2>/dev/null || true
+    fi
+fi
+
 # Check for any supported container runtime (prioritize HPC runtimes)
 CONTAINER_RUNTIME=""
 if command -v apptainer &> /dev/null; then
