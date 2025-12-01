@@ -369,21 +369,33 @@ test_container_access() {
 
 # Pull venvoy image if it doesn't exist or force update
 if ! $CONTAINER_RUNTIME image inspect "$IMAGE_URI" &> /dev/null; then
-    echo "📦 Downloading venvoy environment..."
+    echo "📦 Downloading venvoy bootstrap environment..."
+    echo "   This may take a few minutes on first run..."
     if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
         # For Apptainer/Singularity, use --force to overwrite existing SIF files
-        ERROR_OUTPUT=$($CONTAINER_RUNTIME pull --force "$IMAGE_URI" 2>&1) || handle_container_error "$ERROR_OUTPUT" "$CONTAINER_RUNTIME"
+        # Progress is shown by default
+        if ! $CONTAINER_RUNTIME pull --force "$IMAGE_URI"; then
+            handle_container_error "Failed to pull bootstrap image" "$CONTAINER_RUNTIME"
+        fi
     else
-        ERROR_OUTPUT=$($CONTAINER_RUNTIME pull "$IMAGE_URI" 2>&1) || handle_container_error "$ERROR_OUTPUT" "$CONTAINER_RUNTIME"
+        # Docker/Podman show progress by default - let it display
+        if ! $CONTAINER_RUNTIME pull "$IMAGE_URI"; then
+            handle_container_error "Failed to pull bootstrap image" "$CONTAINER_RUNTIME"
+        fi
     fi
-    echo "✅ Environment ready"
+    echo "✅ Bootstrap environment ready"
 elif [ "\$1" = "update" ] || [ "\$1" = "upgrade" ]; then
     echo "🔄 Updating venvoy environment..."
     if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
         # For Apptainer/Singularity, use --force to overwrite existing SIF files
-        ERROR_OUTPUT=$($CONTAINER_RUNTIME pull --force "$IMAGE_URI" 2>&1) || handle_container_error "$ERROR_OUTPUT" "$CONTAINER_RUNTIME"
+        if ! $CONTAINER_RUNTIME pull --force "$IMAGE_URI"; then
+            handle_container_error "Failed to update bootstrap image" "$CONTAINER_RUNTIME"
+        fi
     else
-        ERROR_OUTPUT=$($CONTAINER_RUNTIME pull "$IMAGE_URI" 2>&1) || handle_container_error "$ERROR_OUTPUT" "$CONTAINER_RUNTIME"
+        # Docker/Podman show progress by default
+        if ! $CONTAINER_RUNTIME pull "$IMAGE_URI"; then
+            handle_container_error "Failed to update bootstrap image" "$CONTAINER_RUNTIME"
+        fi
     fi
     echo "✅ Environment updated"
     
@@ -445,7 +457,11 @@ if [ "$1" = "run" ]; then
                 shift 2
                 ;;
             --mount)
-                RUN_MOUNTS="$RUN_MOUNTS -v $2"
+                if [ -z "$RUN_MOUNTS" ]; then
+                    RUN_MOUNTS="-v $2"
+                else
+                    RUN_MOUNTS="$RUN_MOUNTS -v $2"
+                fi
                 shift 2
                 ;;
             *)
@@ -502,18 +518,22 @@ if [ "$1" = "run" ]; then
     
     # Load environment configuration
     if [ -f "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" ]; then
-        # Extract python_version from YAML, handling quotes and whitespace
-        # Try multiple methods to extract the version
-        PYTHON_VERSION=$(grep "^python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | sed -E 's/^python_version:[[:space:]]*"?([0-9]+\.[0-9]+)"?[[:space:]]*$/\1/' | tr -d '[:space:]')
+        # Extract python_version from YAML, handling single quotes, double quotes, and no quotes
+        # Use head -1 to get only the first match (top-level python_version, not nested ones)
+        PYTHON_VERSION_RAW=$(grep "^python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | head -1)
+        PYTHON_VERSION=$(echo "$PYTHON_VERSION_RAW" | sed -E "s/^python_version:[[:space:]]*['\"]?([0-9]+\.[0-9]+)['\"]?[[:space:]]*$/\1/" | tr -d '[:space:]')
         
-        # If that didn't work, try without the anchor
-        if [ -z "$PYTHON_VERSION" ]; then
-            PYTHON_VERSION=$(grep "python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | sed -E 's/.*python_version:[[:space:]]*"?([0-9]+\.[0-9]+)"?.*/\1/' | tr -d '[:space:]')
+        # If that didn't work, try a more flexible pattern (but still get first match)
+        if [ -z "$PYTHON_VERSION" ] || [ "$PYTHON_VERSION" = "python_version" ] || ! echo "$PYTHON_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
+            PYTHON_VERSION_RAW=$(grep "python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | grep -v "^[[:space:]]" | head -1)
+            PYTHON_VERSION=$(echo "$PYTHON_VERSION_RAW" | sed -E "s/.*python_version:[[:space:]]*['\"]?([0-9]+\.[0-9]+)['\"]?.*/\1/" | tr -d '[:space:]')
         fi
         
-        # Validate that we got a version
-        if [ -z "$PYTHON_VERSION" ]; then
+        # Final validation - must be in format X.Y and not contain any non-digit characters
+        if [ -z "$PYTHON_VERSION" ] || ! echo "$PYTHON_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
             echo "❌ Could not extract python_version from config.yaml"
+            echo "   Raw line: '$PYTHON_VERSION_RAW'"
+            echo "   Extracted value: '$PYTHON_VERSION'"
             echo "💡 Try reinitializing the environment: venvoy init --name $RUN_NAME --force"
             exit 1
         fi
@@ -566,23 +586,45 @@ if [ "$1" = "run" ]; then
     
     if ! $CONTAINER_RUNTIME image inspect "$PULL_IMAGE_URI" &> /dev/null; then
         echo "📦 Downloading environment image..."
+        echo "   This may take a few minutes on first run..."
         if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
-            ERROR_OUTPUT=$($CONTAINER_RUNTIME pull --force "$PULL_IMAGE_URI" 2>&1) || handle_container_error "$ERROR_OUTPUT" "$CONTAINER_RUNTIME"
+            # Apptainer/Singularity shows progress by default
+            if ! $CONTAINER_RUNTIME pull --force "$PULL_IMAGE_URI"; then
+                echo "❌ Failed to download image"
+                exit 1
+            fi
         else
-            ERROR_OUTPUT=$($CONTAINER_RUNTIME pull "$PULL_IMAGE_URI" 2>&1) || handle_container_error "$ERROR_OUTPUT" "$CONTAINER_RUNTIME"
+            # Docker/Podman show progress by default - let it display
+            if ! $CONTAINER_RUNTIME pull "$PULL_IMAGE_URI"; then
+                echo "❌ Failed to download image"
+                exit 1
+            fi
         fi
         echo "✅ Environment image ready"
+    else
+        echo "✅ Environment image already available"
     fi
     
+    echo "🚀 Starting container..."
+    echo "   You'll see an interactive shell prompt shortly..."
+    echo ""
+    
+    # Get host user's UID and GID for permission mapping
+    HOST_UID=$(id -u)
+    HOST_GID=$(id -g)
+    
     # Run the environment
+    # Start in /home/venvoy (container's home) - users can cd to /workspace for their project
     if [ "$CONTAINER_RUNTIME" = "docker" ]; then
         test_container_access "$CONTAINER_RUNTIME"
+        # Docker: Use --user to map host UID/GID for read/write access
         docker run --rm -it \
+            --user "$HOST_UID:$HOST_GID" \
             -v "$PWD:/workspace" \
             -v "$HOME:/host-home" \
-            -w /workspace \
-            -e HOME="/host-home" \
+            -w /home/venvoy \
             -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
+            -e VENVOY_HOST_HOME="/host-home" \
             $RUN_MOUNTS \
             "$IMAGE_NAME" ${RUN_COMMAND:-bash} || {
                 echo ""
@@ -591,23 +633,33 @@ if [ "$1" = "run" ]; then
                 exit 1
             }
     elif [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
+        # Apptainer/Singularity: User namespace is handled automatically, mount as read/write
         $CONTAINER_RUNTIME exec \
             --bind "$PWD:/workspace" \
             --bind "$HOME:/host-home" \
-            --pwd /workspace \
-            --env HOME="/host-home" \
+            --pwd /home/venvoy \
             --env VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
+            --env VENVOY_HOST_HOME="/host-home" \
             $RUN_MOUNTS \
             "$IMAGE_URI" ${RUN_COMMAND:-bash}
     elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
+        # Podman: Use --userns=keep-id to map host UID/GID automatically for read/write access
+        # Mount host home to /host-home but use container's home as HOME to avoid .bashrc permission issues
         podman run --rm -it \
+            --userns=keep-id \
             -v "$PWD:/workspace" \
             -v "$HOME:/host-home" \
-            -w /workspace \
-            -e HOME="/host-home" \
+            -w /home/venvoy \
             -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
-            $RUN_MOUNTS \
-            "$IMAGE_NAME" ${RUN_COMMAND:-bash}
+            -e VENVOY_HOST_HOME="/host-home" \
+            ${RUN_MOUNTS} \
+            "$PULL_IMAGE_URI" ${RUN_COMMAND:-bash} || {
+                echo ""
+                echo "❌ Failed to run Podman container"
+                echo "   Image: $PULL_IMAGE_URI"
+                echo "💡 Check Podman installation and image availability"
+                exit 1
+            }
     else
         echo "❌ Unsupported container runtime: $CONTAINER_RUNTIME"
         exit 1
@@ -797,18 +849,23 @@ else
         echo "✅ Latest venvoy source code ready"
     fi
 
+    # Get host user's UID and GID for permission mapping
+    HOST_UID=$(id -u)
+    HOST_GID=$(id -g)
+    
     # Run normal venvoy commands inside the container with mounted source
     if [ "$CONTAINER_RUNTIME" = "docker" ]; then
         # Docker execution with source code mounted
         test_container_access "$CONTAINER_RUNTIME"
         docker run --rm -it \
+            --user "$HOST_UID:$HOST_GID" \
             -v "$PWD:/workspace" \
             -v "$HOME:/host-home" \
             -v "$VENVOY_SOURCE_DIR:/venvoy-source" \
             -w /workspace \
-            -e HOME="/host-home" \
             -e VENVOY_SOURCE_DIR="/venvoy-source" \
             -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
+            -e VENVOY_HOST_HOME="/host-home" \
             "$VENVOY_IMAGE" "$@" || {
                 echo ""
                 echo "❌ Failed to run Docker container"
@@ -817,25 +874,28 @@ else
             }
     elif [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
         # Apptainer/Singularity execution with source code mounted
+        # User namespace is handled automatically, mount as read/write
         $CONTAINER_RUNTIME exec \
             --bind "$PWD:/workspace" \
             --bind "$HOME:/host-home" \
             --bind "$VENVOY_SOURCE_DIR:/venvoy-source" \
             --pwd /workspace \
-            --env HOME="/host-home" \
             --env VENVOY_SOURCE_DIR="/venvoy-source" \
             --env VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
+            --env VENVOY_HOST_HOME="/host-home" \
             "$IMAGE_URI" /usr/local/bin/venvoy-entrypoint "$@"
     elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
         # Podman execution with source code mounted
+        # Use --userns=keep-id to map host UID/GID automatically for read/write access
         podman run --rm -it \
+            --userns=keep-id \
             -v "$PWD:/workspace" \
             -v "$HOME:/host-home" \
             -v "$VENVOY_SOURCE_DIR:/venvoy-source" \
             -w /workspace \
-            -e HOME="/host-home" \
             -e VENVOY_SOURCE_DIR="/venvoy-source" \
             -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
+            -e VENVOY_HOST_HOME="/host-home" \
             "$IMAGE_URI" "$@"
     else
         echo "❌ Unsupported container runtime: $CONTAINER_RUNTIME"
