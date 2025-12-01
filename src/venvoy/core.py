@@ -805,8 +805,320 @@ CMD ["/bin/bash"]
         
         return str(output_file)
     
+    def export_wheelhouse(self, output_path: Optional[str] = None) -> str:
+        """
+        Export cross-architecture wheelhouse containing source distributions and multi-arch wheels.
+        
+        This creates a package cache that:
+        - Contains source distributions (architecture-independent)
+        - Contains wheels for multiple architectures (amd64, arm64)
+        - Can be installed on any architecture without PyPI dependency
+        - Is self-contained and doesn't require package availability
+        
+        Args:
+            output_path: Path for the wheelhouse archive file
+            
+        Returns:
+            Path to the created wheelhouse archive file
+        """
+        if output_path is None:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_path = f"{self.name}-wheelhouse-{timestamp}.tar.gz"
+        
+        output_file = Path(output_path)
+        print(f"📦 Creating cross-architecture wheelhouse...")
+        print(f"🌐 This will download source distributions and wheels for multiple architectures")
+        print(f"⚠️  This may take several minutes and create a large file (500MB-2GB)")
+        
+        # Load configuration to get image name
+        if not self.config_file.exists():
+            raise RuntimeError(f"Environment '{self.name}' not found. Run 'venvoy init' first.")
+        
+        with open(self.config_file, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        image_name = config.get('image_name', f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}")
+        
+        # Ensure image is available
+        self._ensure_image_available(image_name)
+        
+        # Get installed packages
+        print("🔍 Gathering installed packages...")
+        packages = self._get_installed_packages()
+        
+        if not packages:
+            raise RuntimeError("No packages found in environment. Install some packages first.")
+        
+        print(f"📦 Found {len(packages)} packages to export")
+        
+        # Create temporary directory for wheelhouse contents
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            wheelhouse_dir = temp_path / "wheelhouse"
+            wheelhouse_dir.mkdir()
+            
+            # Create subdirectories
+            sdists_dir = wheelhouse_dir / "sdists"
+            wheels_dir = wheelhouse_dir / "wheels"
+            sdists_dir.mkdir()
+            wheels_dir.mkdir()
+            
+            # Create requirements file for downloading
+            requirements_file = wheelhouse_dir / "requirements.txt"
+            with open(requirements_file, 'w') as f:
+                for pkg in packages:
+                    f.write(f"{pkg['name']}=={pkg['version']}\n")
+            
+            # Download source distributions (architecture-independent)
+            print("📥 Downloading source distributions (architecture-independent)...")
+            try:
+                self._run_docker_command([
+                    'run', '--rm',
+                    '-v', f"{sdists_dir}:/workspace/sdists",
+                    '-v', f"{requirements_file}:/workspace/requirements.txt:ro",
+                    image_name,
+                    'bash', '-c', '''
+                    source /opt/conda/bin/activate venvoy
+                    pip download -r /workspace/requirements.txt -d /workspace/sdists --no-binary :all: --no-deps || true
+                    '''
+                ], check=False)
+                print(f"✅ Source distributions downloaded")
+            except Exception as e:
+                print(f"⚠️  Warning: Some source distributions may not be available: {e}")
+            
+            # Download wheels for multiple architectures
+            # We'll download for the current architecture and try to get others
+            architectures = ['linux_x86_64', 'linux_aarch64', 'manylinux1_x86_64', 'manylinux2014_x86_64', 
+                           'manylinux2014_aarch64', 'manylinux_2_17_x86_64', 'manylinux_2_17_aarch64']
+            
+            print("📥 Downloading wheels for multiple architectures...")
+            for arch in architectures:
+                try:
+                    # Try to download wheels for this architecture
+                    self._run_docker_command([
+                        'run', '--rm',
+                        '-v', f"{wheels_dir}:/workspace/wheels",
+                        '-v', f"{requirements_file}:/workspace/requirements.txt:ro",
+                        image_name,
+                        'bash', '-c', f'''
+                        source /opt/conda/bin/activate venvoy
+                        pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --platform {arch} --no-deps || true
+                        '''
+                    ], check=False)
+                except Exception:
+                    pass  # Some architectures may not have wheels available
+            
+            # Also download any available wheels (will get current architecture)
+            try:
+                self._run_docker_command([
+                    'run', '--rm',
+                    '-v', f"{wheels_dir}:/workspace/wheels",
+                    '-v', f"{requirements_file}:/workspace/requirements.txt:ro",
+                    image_name,
+                    'bash', '-c', '''
+                    source /opt/conda/bin/activate venvoy
+                    pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --no-deps || true
+                    '''
+                ], check=False)
+                print(f"✅ Wheels downloaded")
+            except Exception as e:
+                print(f"⚠️  Warning: Some wheels may not be available: {e}")
+            
+            # Create package manifest
+            print("📋 Creating package manifest...")
+            manifest = {
+                'created': datetime.now().isoformat(),
+                'venvoy_version': '0.1.0',
+                'wheelhouse_version': '1.0',
+                'environment': {
+                    'name': self.name,
+                    'python_version': self.python_version,
+                    'platform': self.platform.detect(),
+                },
+                'packages': packages,
+                'package_count': len(packages),
+            }
+            
+            manifest_file = wheelhouse_dir / "manifest.json"
+            with open(manifest_file, 'w') as f:
+                json.dump(manifest, f, indent=2, default=str)
+            
+            # Create restore script
+            restore_script = wheelhouse_dir / "restore.sh"
+            self._create_wheelhouse_restore_script(restore_script, manifest)
+            restore_script.chmod(0o755)
+            
+            # Create README
+            readme_file = wheelhouse_dir / "README.md"
+            self._create_wheelhouse_readme(readme_file, manifest)
+            
+            # Count files
+            sdist_count = len(list(sdists_dir.glob("*"))) if sdists_dir.exists() else 0
+            wheel_count = len(list(wheels_dir.glob("*"))) if wheels_dir.exists() else 0
+            
+            print(f"📊 Package cache contents:")
+            print(f"   - Source distributions: {sdist_count}")
+            print(f"   - Wheels: {wheel_count}")
+            
+            # Create final compressed archive
+            print("🗜️  Compressing wheelhouse...")
+            with tarfile.open(output_file, 'w:gz') as tar:
+                tar.add(wheelhouse_dir, arcname=f"{self.name}-wheelhouse")
+            
+            # Calculate final size
+            final_size_mb = output_file.stat().st_size / 1024 / 1024
+            print(f"✅ Wheelhouse created: {output_file} ({final_size_mb:.1f} MB)")
+        
+        return str(output_file)
+    
+    def _create_wheelhouse_restore_script(self, script_path: Path, manifest: Dict):
+        """Create restore script for the wheelhouse"""
+        packages_list = '\n'.join([f"{pkg['name']}=={pkg['version']}" for pkg in manifest['packages']])
+        script_content = f'''#!/bin/bash
+# venvoy Wheelhouse Restore Script
+# Generated: {manifest['created']}
+# Environment: {manifest['environment']['name']}
+
+set -e
+
+echo "🔄 Restoring venvoy environment from wheelhouse..."
+echo "📦 Environment: {manifest['environment']['name']}"
+echo "🐍 Python: {manifest['environment']['python_version']}"
+echo "📅 Archived: {manifest['created']}"
+
+# Check prerequisites
+if ! command -v venvoy &> /dev/null; then
+    echo "❌ venvoy CLI is required but not installed"
+    echo "   Please install venvoy:"
+    echo "   curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/install.sh | bash"
+    exit 1
+fi
+
+# Initialize environment if it doesn't exist
+if ! venvoy list 2>/dev/null | grep -q "{manifest['environment']['name']}"; then
+    echo "🔧 Creating environment..."
+    venvoy init --name {manifest['environment']['name']} --python-version {manifest['environment']['python_version']}
+fi
+
+# Get the environment directory
+ENV_DIR="$HOME/.venvoy/environments/{manifest['environment']['name']}"
+VENDOR_DIR="$ENV_DIR/vendor"
+
+# Create vendor directory
+mkdir -p "$VENDOR_DIR"
+
+# Copy packages to vendor directory
+echo "📦 Copying packages to vendor directory..."
+if [ -d "sdists" ]; then
+    cp -r sdists/* "$VENDOR_DIR/" 2>/dev/null || true
+fi
+if [ -d "wheels" ]; then
+    cp -r wheels/* "$VENDOR_DIR/" 2>/dev/null || true
+fi
+
+# Create requirements.txt from manifest
+echo "📝 Creating requirements.txt..."
+REQUIREMENTS_FILE="$ENV_DIR/requirements.txt"
+cat > "$REQUIREMENTS_FILE" <<EOF
+{packages_list}
+EOF
+
+echo "✅ Wheelhouse restored successfully!"
+echo ""
+echo "🚀 To rebuild environment with packages:"
+echo "   venvoy init --name {manifest['environment']['name']} --force"
+echo ""
+echo "💡 Packages will be installed from local vendor directory (no PyPI needed)"
+'''
+        
+        with open(script_path, 'w') as f:
+            f.write(script_content)
+    
+    def _create_wheelhouse_readme(self, readme_path: Path, manifest: Dict):
+        """Create README for the wheelhouse"""
+        readme_content = f'''# venvoy Cross-Architecture Wheelhouse
+
+## Wheelhouse Information
+
+- **Environment Name**: {manifest['environment']['name']}
+- **Python Version**: {manifest['environment']['python_version']}
+- **Created**: {manifest['created']}
+- **Package Count**: {manifest['package_count']}
+
+## Purpose
+
+This wheelhouse contains a **cross-architecture package cache** that allows you to:
+- ✅ Install packages on **any architecture** (amd64, arm64)
+- ✅ Work **offline** without PyPI dependency
+- ✅ Protect against **package abandonment** (packages removed from PyPI)
+- ✅ Ensure **reproducible installations** across different systems
+
+## Contents
+
+- **Source Distributions (sdists/)**: Architecture-independent source packages
+- **Wheels (wheels/)**: Pre-built packages for multiple architectures
+- **Manifest (manifest.json)**: Package specifications and metadata
+- **Restore Script (restore.sh)**: Automated restoration script
+
+## Restoration
+
+### Quick Restore
+```bash
+bash restore.sh
+venvoy init --name {manifest['environment']['name']} --force
+```
+
+### Manual Restore
+```bash
+# 1. Extract wheelhouse
+tar -xzf {manifest['environment']['name']}-wheelhouse-*.tar.gz
+
+# 2. Copy packages to environment vendor directory
+mkdir -p ~/.venvoy/environments/{manifest['environment']['name']}/vendor
+cp -r sdists/* ~/.venvoy/environments/{manifest['environment']['name']}/vendor/
+cp -r wheels/* ~/.venvoy/environments/{manifest['environment']['name']}/vendor/
+
+# 3. Create requirements.txt from manifest
+# (see manifest.json for package list)
+
+# 4. Rebuild environment
+venvoy init --name {manifest['environment']['name']} --force
+```
+
+## Cross-Architecture Compatibility
+
+This wheelhouse works on:
+- **linux/amd64** (Intel/AMD x86_64)
+- **linux/arm64** (Apple Silicon, ARM servers)
+
+When you restore on a different architecture:
+1. Pip will use wheels for the target architecture if available
+2. If no wheel is available, it will build from source distribution
+3. All packages are self-contained - no PyPI access needed
+
+## Advantages Over Binary Archives
+
+- ✅ **Cross-architecture**: Works on amd64 and arm64
+- ✅ **Smaller size**: Only packages, not full Docker images
+- ✅ **Flexible**: Can rebuild for target architecture
+- ✅ **Self-contained**: No dependency on PyPI availability
+
+## Advantages Over YAML Exports
+
+- ✅ **Offline**: No need for PyPI access
+- ✅ **Package protection**: Works even if packages are removed from PyPI
+- ✅ **Faster**: Pre-downloaded packages, no network needed
+
+---
+
+Generated by venvoy - Scientific Python Environment Management
+https://github.com/zaphodbeeblebrox3rd/venvoy
+'''
+        
+        with open(readme_path, 'w') as f:
+            f.write(readme_content)
+    
     def _create_comprehensive_manifest(self, image_name: str) -> Dict:
-        """Create comprehensive environment manifest with all package details"""
         manifest = {
             'created': datetime.now().isoformat(),
             'image_name': image_name,

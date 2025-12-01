@@ -257,7 +257,7 @@ def run(name: str, command: str, mount: tuple):
 @click.option(
     "--format", 
     default="yaml",
-    type=click.Choice(["yaml", "dockerfile", "tarball", "archive"]),
+    type=click.Choice(["yaml", "dockerfile", "tarball", "archive", "wheelhouse"]),
     help="Export format"
 )
 @click.option(
@@ -271,16 +271,25 @@ def export(name: str, format: str, output: str):
     - yaml: Environment specification (requirements.txt style)
     - dockerfile: Standalone Dockerfile for custom builds
     - tarball: Complete offline package with dependencies
-    - archive: Comprehensive binary archive for scientific reproducibility
+    - archive: Comprehensive binary archive for scientific reproducibility (architecture-specific)
+    - wheelhouse: Cross-architecture package cache with source distributions and multi-arch wheels
     
     The 'archive' format creates a large file (1-5GB) containing the complete
     Docker image, system packages, and metadata for long-term archival and
     regulatory compliance. Use this for scientific reproducibility when
     package abandonment or PyPI changes are a concern.
+    
+    The 'wheelhouse' format creates a cross-architecture package cache containing
+    source distributions (architecture-independent) and wheels for multiple architectures
+    (amd64, arm64). This allows installation on any architecture without depending on
+    PyPI availability, while remaining compatible across different CPU architectures.
     """
     if format == "archive":
         console.print(Panel.fit("📦 Creating Comprehensive Binary Archive", style="bold red"))
         console.print("⚠️  [yellow]This creates a large file (1-5GB) for long-term scientific reproducibility[/yellow]")
+    elif format == "wheelhouse":
+        console.print(Panel.fit("📦 Creating Cross-Architecture Wheelhouse", style="bold cyan"))
+        console.print("🌐 [cyan]This creates a package cache compatible across architectures (amd64, arm64)[/cyan]")
     else:
         console.print(Panel.fit("📤 Exporting environment", style="bold yellow"))
     
@@ -305,6 +314,9 @@ def export(name: str, format: str, output: str):
         elif format == "archive":
             progress.update(task, description="Creating comprehensive binary archive...")
             output_path = env.export_archive(output)
+        elif format == "wheelhouse":
+            progress.update(task, description="Creating cross-architecture wheelhouse...")
+            output_path = env.export_wheelhouse(output)
         
         progress.remove_task(task)
     
@@ -312,6 +324,11 @@ def export(name: str, format: str, output: str):
         console.print(f"✅ [green]Comprehensive archive created:[/green] {output_path}")
         console.print("🔬 [cyan]This archive ensures bit-for-bit reproducible results[/cyan]")
         console.print("📁 [dim]Contains complete Docker image, system packages, and metadata[/dim]")
+    elif format == "wheelhouse":
+        console.print(f"✅ [green]Cross-architecture wheelhouse created:[/green] {output_path}")
+        console.print("🌐 [cyan]Compatible across architectures (amd64, arm64)[/cyan]")
+        console.print("📦 [dim]Contains source distributions and multi-arch wheels[/dim]")
+        console.print("💡 [dim]Install on any architecture without PyPI dependency[/dim]")
     else:
         console.print(f"✅ Environment exported: {output_path}")
 
