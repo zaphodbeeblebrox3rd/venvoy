@@ -143,7 +143,7 @@ If your organization needs these platforms, I'd be happy to add them for a consu
 
 ## 📝 **License**
 
-Apache 2.0 - See [LICENSE](https://github.com/zaphodbeeblebrox3rd/venvoy/blob/main/LICENSE)
+MIT License - See [LICENSE](https://github.com/zaphodbeeblebrox3rd/venvoy/blob/main/LICENSE)
 
 ## 🤝 **Contributing**
 

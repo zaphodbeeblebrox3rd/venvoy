@@ -11,7 +11,7 @@ LABEL org.opencontainers.image.description="Extremely Portable AI-ready Python e
 LABEL org.opencontainers.image.url="https://github.com/zaphodbeeblebrox3rd/venvoy"
 LABEL org.opencontainers.image.source="https://github.com/zaphodbeeblebrox3rd/venvoy"
 LABEL org.opencontainers.image.vendor="zaphodbeeblebrox3rd"
-LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.licenses="MIT"
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
