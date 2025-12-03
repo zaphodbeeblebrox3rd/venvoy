@@ -3,6 +3,11 @@
 # Build multi-architecture R environment images for venvoy
 set -e
 
+# Ensure we're in the project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
 echo "🔨 Building multi-architecture venvoy R images..."
 
 # R versions to build

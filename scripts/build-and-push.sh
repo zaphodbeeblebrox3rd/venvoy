@@ -1,7 +1,14 @@
 #!/bin/bash
 # Build and push venvoy container images
-# This script builds multi-architecture images for all Python versions
+# This is the main orchestrator script that builds all images by default
 # Supports both Docker and Podman
+#
+# Usage:
+#   ./scripts/build-and-push.sh              # Build all images (default)
+#   ./scripts/build-and-push.sh --python     # Build only Python images
+#   ./scripts/build-and-push.sh --r          # Build only R images
+#   ./scripts/build-and-push.sh --bootstrap  # Build only bootstrap image
+#   ./scripts/build-and-push.sh --python --r # Build Python and R (no bootstrap)
 
 set -e
 
@@ -11,6 +18,80 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
 echo "📁 Working directory: $(pwd)"
+
+# Default: build everything
+BUILD_PYTHON=true
+BUILD_R=true
+BUILD_BOOTSTRAP=true
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --python)
+            BUILD_PYTHON=true
+            BUILD_R=false
+            BUILD_BOOTSTRAP=false
+            shift
+            ;;
+        --r)
+            BUILD_PYTHON=false
+            BUILD_R=true
+            BUILD_BOOTSTRAP=false
+            shift
+            ;;
+        --bootstrap)
+            BUILD_PYTHON=false
+            BUILD_R=false
+            BUILD_BOOTSTRAP=true
+            shift
+            ;;
+        --all)
+            BUILD_PYTHON=true
+            BUILD_R=true
+            BUILD_BOOTSTRAP=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Build and push venvoy container images"
+            echo ""
+            echo "Options:"
+            echo "  --python     Build only Python images"
+            echo "  --r          Build only R images"
+            echo "  --bootstrap  Build only bootstrap image"
+            echo "  --all        Build all images (default)"
+            echo "  --help, -h   Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  $0                    # Build all images (default)"
+            echo "  $0 --python           # Build only Python images"
+            echo "  $0 --r                # Build only R images"
+            echo "  $0 --python --r       # Build Python and R (no bootstrap)"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# If multiple specific options are provided, combine them
+if [[ "$*" == *"--python"* ]] && [[ "$*" == *"--r"* ]]; then
+    BUILD_PYTHON=true
+    BUILD_R=true
+    BUILD_BOOTSTRAP=false
+elif [[ "$*" == *"--python"* ]] && [[ "$*" == *"--bootstrap"* ]]; then
+    BUILD_PYTHON=true
+    BUILD_R=false
+    BUILD_BOOTSTRAP=true
+elif [[ "$*" == *"--r"* ]] && [[ "$*" == *"--bootstrap"* ]]; then
+    BUILD_PYTHON=false
+    BUILD_R=true
+    BUILD_BOOTSTRAP=true
+fi
 
 REGISTRY="docker.io"
 IMAGE_NAME="zaphodbeeblebrox3rd/venvoy"
@@ -55,6 +136,18 @@ fi
 echo "🚀 Building and pushing venvoy container images"
 echo "=============================================="
 echo "🔧 Using container runtime: $CONTAINER_RUNTIME"
+echo ""
+echo "📋 Build plan:"
+if [ "$BUILD_PYTHON" = true ]; then
+    echo "   ✓ Python images (${PYTHON_VERSIONS[*]})"
+fi
+if [ "$BUILD_R" = true ]; then
+    echo "   ✓ R images (4.2, 4.3, 4.4, 4.5)"
+fi
+if [ "$BUILD_BOOTSTRAP" = true ]; then
+    echo "   ✓ Bootstrap image"
+fi
+echo ""
 
 # Check if logged into registry
 if [ "$CONTAINER_RUNTIME" = "docker" ]; then
@@ -81,77 +174,82 @@ elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
     # Podman doesn't require buildx, uses podman build directly
 fi
 
-# Build and push each Python version
-for version in "${PYTHON_VERSIONS[@]}"; do
+# Function to build Python images
+build_python_images() {
     echo ""
-    echo "🐍 Building Python $version..."
+    echo "🐍 Building Python images..."
+    echo "============================"
     
-    # Build and push the image
-    if [ "$CONTAINER_RUNTIME" = "docker" ]; then
-        if docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg PYTHON_VERSION=$version \
-            --tag $REGISTRY/$IMAGE_NAME:python$version \
-            --file ./docker/Dockerfile.base \
-            --push \
-            .; then
-            echo "✅ Published: $REGISTRY/$IMAGE_NAME:python$version"
-        else
-            echo "❌ Failed to build Python $version"
-            exit 1
-        fi
-    elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
-        # Podman build (single architecture for now - multi-arch requires manifest creation)
-        # Note: Podman can build multi-arch but requires separate builds and manifest creation
-        if podman build \
-            --build-arg PYTHON_VERSION=$version \
-            --tag $REGISTRY/$IMAGE_NAME:python$version \
-            --file ./docker/Dockerfile.base \
-            .; then
-            echo "📤 Pushing $REGISTRY/$IMAGE_NAME:python$version..."
-            if podman push $REGISTRY/$IMAGE_NAME:python$version; then
-                echo "✅ Published: $REGISTRY/$IMAGE_NAME:python$version"
-            else
-                echo "❌ Failed to push Python $version"
-                exit 1
-            fi
-        else
-            echo "❌ Failed to build Python $version"
-            exit 1
-        fi
-    fi
-done
+    # Call the dedicated Python build script
+    "$SCRIPT_DIR/build-python.sh"
+}
 
-# Create latest tag (Python 3.11)
-echo ""
-echo "🏷️  Creating latest tag (Python 3.11)..."
-if [ "$CONTAINER_RUNTIME" = "docker" ]; then
-    docker buildx build \
-        --platform linux/amd64,linux/arm64 \
-        --build-arg PYTHON_VERSION=3.11 \
-        --tag $REGISTRY/$IMAGE_NAME:latest \
-        --file ./docker/Dockerfile.base \
-        --push \
-        .
-elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
-    podman build \
-        --build-arg PYTHON_VERSION=3.11 \
-        --tag $REGISTRY/$IMAGE_NAME:latest \
-        --file ./docker/Dockerfile.base \
-        .
-    echo "📤 Pushing $REGISTRY/$IMAGE_NAME:latest..."
-    podman push $REGISTRY/$IMAGE_NAME:latest
+# Function to build R images
+build_r_images() {
+    echo ""
+    echo "📊 Building R images..."
+    echo "======================"
+    
+    # Call the dedicated R build script
+    "$SCRIPT_DIR/build-r.sh"
+}
+
+# Function to build bootstrap image
+build_bootstrap_image() {
+    echo ""
+    echo "📦 Building bootstrap image..."
+    echo "============================="
+    
+    # Call the dedicated bootstrap build script
+    "$SCRIPT_DIR/build-bootstrap.sh"
+}
+
+# Execute builds based on flags
+BUILD_FAILED=false
+
+if [ "$BUILD_PYTHON" = true ]; then
+    if ! build_python_images; then
+        BUILD_FAILED=true
+    fi
 fi
 
-echo "✅ Published: $REGISTRY/$IMAGE_NAME:latest"
+if [ "$BUILD_R" = true ]; then
+    if ! build_r_images; then
+        BUILD_FAILED=true
+    fi
+fi
 
+if [ "$BUILD_BOOTSTRAP" = true ]; then
+    if ! build_bootstrap_image; then
+        BUILD_FAILED=true
+    fi
+fi
+
+if [ "$BUILD_FAILED" = true ]; then
+    echo ""
+    echo "❌ Some builds failed. Please check the output above."
+    exit 1
+fi
+
+# Summary
 echo ""
-echo "🎉 All images published successfully!"
+echo "🎉 All requested images published successfully!"
 echo ""
 echo "📦 Available images:"
-for version in "${PYTHON_VERSIONS[@]}"; do
-    echo "   $CONTAINER_RUNTIME pull $REGISTRY/$IMAGE_NAME:python$version"
-done
-echo "   $CONTAINER_RUNTIME pull $REGISTRY/$IMAGE_NAME:latest"
+if [ "$BUILD_PYTHON" = true ]; then
+    for version in "${PYTHON_VERSIONS[@]}"; do
+        echo "   $CONTAINER_RUNTIME pull $REGISTRY/$IMAGE_NAME:python$version"
+    done
+    echo "   $CONTAINER_RUNTIME pull $REGISTRY/$IMAGE_NAME:latest"
+fi
+if [ "$BUILD_R" = true ]; then
+    for R_VERSION in "4.2" "4.3" "4.4" "4.5"; do
+        echo "   $CONTAINER_RUNTIME pull $REGISTRY/$IMAGE_NAME:r${R_VERSION}"
+    done
+fi
+if [ "$BUILD_BOOTSTRAP" = true ]; then
+    echo "   $CONTAINER_RUNTIME pull $REGISTRY/$IMAGE_NAME:bootstrap"
+fi
 echo ""
-echo "🔗 Docker Hub: https://hub.docker.com/r/$IMAGE_NAME" 
+echo "🔗 Docker Hub: https://hub.docker.com/r/$IMAGE_NAME"
+echo ""

@@ -1,6 +1,19 @@
 name: Build and Publish Docker Images
 
-# DISABLED: GitHub Actions doesn't have enough resources to build large Docker images
+# ⚠️  WORKFLOW DISABLED - DO NOT RE-ENABLE ⚠️
+# ============================================
+# This workflow is PERMANENTLY DISABLED because:
+# 1. GitHub Actions doesn't have sufficient resources to build large Docker images
+# 2. Builds timeout or fail due to resource constraints
+# 3. Manual builds using scripts/build-and-push.sh are the recommended approach
+#
+# If you uncomment the trigger below, the workflow will still fail at the first step
+# with a clear error message. This is intentional to prevent accidental re-enabling.
+#
+# To build images, use: ./scripts/build-and-push.sh
+# ============================================
+
+# DISABLED TRIGGER - DO NOT UNCOMMENT
 # on:
 #   push:
 #     branches: [ main ]
@@ -23,106 +36,144 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python_version: ['3.9', '3.10', '3.11', '3.12', '3.13']
     
+    # SAFETY CHECK: This workflow is intentionally disabled
+    # If someone uncomments the trigger, this will fail immediately
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch,suffix=-python${{ matrix.python_version }}
-          type=ref,event=pr,suffix=-python${{ matrix.python_version }}
-          type=semver,pattern={{version}}-python${{ matrix.python_version }}
-          type=semver,pattern={{major}}.{{minor}}-python${{ matrix.python_version }}
-          type=raw,value=python${{ matrix.python_version }}
-          type=raw,value=latest,enable={{is_default_branch}},suffix=-python${{ matrix.python_version }}
-
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./docker/Dockerfile.base
-        platforms: linux/amd64,linux/arm64,linux/arm/v7
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        build-args: |
-          PYTHON_VERSION=${{ matrix.python_version }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-
-    - name: Create latest tag for Python 3.11
-      if: matrix.python_version == '3.11'
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./docker/Dockerfile.base
-        platforms: linux/amd64,linux/arm64,linux/arm/v7
-        push: true
-        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-        labels: ${{ steps.meta.outputs.labels }}
-        build-args: |
-          PYTHON_VERSION=${{ matrix.python_version }}
-        cache-from: type=gha
+    - name: ⚠️  WORKFLOW DISABLED - DO NOT RE-ENABLE
+      run: |
+        echo "❌ ERROR: This workflow is PERMANENTLY DISABLED"
+        echo ""
+        echo "Reason: GitHub Actions doesn't have sufficient resources to build large Docker images"
+        echo ""
+        echo "To build images, use the manual build script instead:"
+        echo "  ./scripts/build-and-push.sh"
+        echo ""
+        echo "If you need to modify this workflow, you must:"
+        echo "  1. Remove this safety check step"
+        echo "  2. Understand that builds will likely fail due to resource constraints"
+        echo "  3. Accept responsibility for any issues"
+        exit 1
+    
+    # The following configuration is kept for reference only
+    # It will never execute due to the safety check above
+    # strategy:
+    #   matrix:
+    #     python_version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+    #
+    # steps:
+    # - name: Checkout repository
+    #   uses: actions/checkout@v4
+    #
+    # - name: Set up Docker Buildx
+    #   uses: docker/setup-buildx-action@v3
+    #
+    # - name: Log in to Docker Hub
+    #   uses: docker/login-action@v3
+    #   with:
+    #     registry: ${{ env.REGISTRY }}
+    #     username: ${{ secrets.DOCKER_USERNAME }}
+    #     password: ${{ secrets.DOCKER_PASSWORD }}
+    #
+    # - name: Extract metadata
+    #   id: meta
+    #   uses: docker/metadata-action@v5
+    #   with:
+    #     images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+    #     tags: |
+    #       type=ref,event=branch,suffix=-python${{ matrix.python_version }}
+    #       type=ref,event=pr,suffix=-python${{ matrix.python_version }}
+    #       type=semver,pattern={{version}}-python${{ matrix.python_version }}
+    #       type=semver,pattern={{major}}.{{minor}}-python${{ matrix.python_version }}
+    #       type=raw,value=python${{ matrix.python_version }}
+    #       type=raw,value=latest,enable={{is_default_branch}},suffix=-python${{ matrix.python_version }}
+    #
+    # - name: Build and push Docker image
+    #   uses: docker/build-push-action@v5
+    #   with:
+    #     context: .
+    #     file: ./docker/Dockerfile.base
+    #     platforms: linux/amd64,linux/arm64,linux/arm/v7
+    #     push: true
+    #     tags: ${{ steps.meta.outputs.tags }}
+    #     labels: ${{ steps.meta.outputs.labels }}
+    #     build-args: |
+    #       PYTHON_VERSION=${{ matrix.python_version }}
+    #     cache-from: type=gha
+    #     cache-to: type=gha,mode=max
+    #
+    # - name: Create latest tag for Python 3.11
+    #   if: matrix.python_version == '3.11'
+    #   uses: docker/build-push-action@v5
+    #   with:
+    #     context: .
+    #     file: ./docker/Dockerfile.base
+    #     platforms: linux/amd64,linux/arm64,linux/arm/v7
+    #     push: true
+    #     tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+    #     labels: ${{ steps.meta.outputs.labels }}
+    #     build-args: |
+    #       PYTHON_VERSION=${{ matrix.python_version }}
+    #     cache-from: type=gha
 
   bootstrap:
     runs-on: ubuntu-latest
     
+    # SAFETY CHECK: This workflow is intentionally disabled
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-
-    - name: Build and push bootstrap image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./docker/Dockerfile.bootstrap
-        platforms: linux/amd64,linux/arm64,linux/arm/v7
-        push: true
-        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:bootstrap
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+    - name: ⚠️  WORKFLOW DISABLED - DO NOT RE-ENABLE
+      run: |
+        echo "❌ ERROR: This workflow is PERMANENTLY DISABLED"
+        echo "Use ./scripts/build-and-push.sh --bootstrap instead"
+        exit 1
+    
+    # The following configuration is kept for reference only
+    # It will never execute due to the safety check above
+    # steps:
+    # - name: Checkout repository
+    #   uses: actions/checkout@v4
+    #
+    # - name: Set up Docker Buildx
+    #   uses: docker/setup-buildx-action@v3
+    #
+    # - name: Log in to Docker Hub
+    #   uses: docker/login-action@v3
+    #   with:
+    #     registry: ${{ env.REGISTRY }}
+    #     username: ${{ secrets.DOCKER_USERNAME }}
+    #     password: ${{ secrets.DOCKER_PASSWORD }}
+    #
+    # - name: Build and push bootstrap image
+    #   uses: docker/build-push-action@v5
+    #   with:
+    #     context: .
+    #     file: ./docker/Dockerfile.bootstrap
+    #     platforms: linux/amd64,linux/arm64,linux/arm/v7
+    #     push: true
+    #     tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:bootstrap
+    #     cache-from: type=gha
+    #     cache-to: type=gha,mode=max
 
   update-readme:
-    needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' || github.ref == 'refs/heads/main'
+    
+    # This job depends on 'build' which is disabled, so it will never run
+    # Kept for reference only
+    if: false  # Explicitly disabled
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - name: ⚠️  WORKFLOW DISABLED
+      run: |
+        echo "This job is disabled because the build job is disabled"
+        exit 1
     
-    - name: Update Docker Hub README
-      uses: peter-evans/dockerhub-description@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-        repository: ${{ env.IMAGE_NAME }}
-        readme-filepath: ./docker/README.md 
+    # - name: Checkout repository
+    #   uses: actions/checkout@v4
+    #
+    # - name: Update Docker Hub README
+    #   uses: peter-evans/dockerhub-description@v3
+    #   with:
+    #     username: ${{ secrets.DOCKER_USERNAME }}
+    #     password: ${{ secrets.DOCKER_PASSWORD }}
+    #     repository: ${{ env.IMAGE_NAME }}
+    #     readme-filepath: ./docker/README.md

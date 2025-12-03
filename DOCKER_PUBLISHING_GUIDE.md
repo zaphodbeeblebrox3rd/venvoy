@@ -14,6 +14,12 @@ venvoy now uses **pre-built Docker images** instead of building locally. This ma
 - `zaphodbeeblebrox3rd/venvoy:python3.13`
 - `zaphodbeeblebrox3rd/venvoy:latest` (points to python3.11)
 
+### **R Environment Images** (for users)
+- `zaphodbeeblebrox3rd/venvoy:r4.2`
+- `zaphodbeeblebrox3rd/venvoy:r4.3`
+- `zaphodbeeblebrox3rd/venvoy:r4.4`
+- `zaphodbeeblebrox3rd/venvoy:r4.5`
+
 ### **Bootstrap Image** (for installer)
 - `zaphodbeeblebrox3rd/venvoy:bootstrap` (contains venvoy CLI)
 
@@ -48,12 +54,19 @@ docker login
 # Make script executable
 chmod +x scripts/build-and-push.sh
 
-# Build and push all images
+# Build and push all images (Python, R, and bootstrap)
 ./scripts/build-and-push.sh
+
+# Or build specific image types:
+./scripts/build-and-push.sh --python     # Only Python images
+./scripts/build-and-push.sh --r          # Only R images
+./scripts/build-and-push.sh --bootstrap  # Only bootstrap image
+./scripts/build-and-push.sh --python --r # Python and R (no bootstrap)
 ```
 
-This will:
+This will (by default):
 - ✅ Build multi-architecture images for Python 3.9-3.13
+- ✅ Build multi-architecture images for R 4.2-4.5
 - ✅ Push to Docker Hub
 - ✅ Create `latest` tag pointing to Python 3.11
 - ✅ Build and push bootstrap image
@@ -69,6 +82,7 @@ After the initial setup, images are automatically built and published:
 
 **What gets built:**
 - All Python versions (3.9-3.13) for `linux/amd64` and `linux/arm64`
+- All R versions (4.2-4.5) for `linux/amd64` and `linux/arm64`
 - Bootstrap image with venvoy CLI
 - Docker Hub README automatically updated
 
@@ -116,9 +130,13 @@ venvoy run                          # Instant start
 3. **Images automatically rebuild** via GitHub Actions
 
 ### **Adding Python Versions:**
-1. **Update** `PYTHON_VERSIONS` in `scripts/build-and-push.sh`
+1. **Update** `PYTHON_VERSIONS` array in `scripts/build-and-push.sh`
 2. **Update** matrix in `.github/workflows/build-images.yml`
 3. **Update** documentation
+
+### **Adding R Versions:**
+1. **Update** `R_VERSIONS` array in the `build_r_images()` function in `scripts/build-and-push.sh`
+2. **Update** documentation
 
 ### **Testing Images:**
 ```bash
