@@ -78,6 +78,116 @@ fi
 
 echo "✅ Found container runtime: $CONTAINER_RUNTIME"
 
+# Check for podman-docker if using Podman (needed for Cursor/VSCode Remote Containers)
+if [ "$CONTAINER_RUNTIME" = "podman" ]; then
+    # Check if podman-docker is installed
+    PODMAN_DOCKER_INSTALLED=false
+    if command -v docker > /dev/null 2>&1; then
+        if docker --version 2>&1 | grep -qi podman; then
+            PODMAN_DOCKER_INSTALLED=true
+        fi
+    fi
+    
+    # Check if Cursor or VSCode might be available
+    CURSOR_OR_VSCODE_AVAILABLE=false
+    if command -v cursor &> /dev/null || \
+       [ -f "/Applications/Cursor.app/Contents/Resources/app/bin/cursor" ] || \
+       [ -f "$HOME/Applications/Cursor.app/Contents/Resources/app/bin/cursor" ] || \
+       command -v code &> /dev/null || \
+       [ -f "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" ] || \
+       [ -f "$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" ]; then
+        CURSOR_OR_VSCODE_AVAILABLE=true
+    fi
+    
+    if [ "$PODMAN_DOCKER_INSTALLED" = false ] && [ "$CURSOR_OR_VSCODE_AVAILABLE" = true ]; then
+        echo ""
+        echo "💡 Cursor/VSCode detected, but podman-docker is not installed."
+        echo "   podman-docker is recommended for Cursor/VSCode Remote Containers support with Podman."
+        echo ""
+        read -p "Would you like to install podman-docker now? (y/n) " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            case $PLATFORM in
+                linux)
+                    if command -v apt-get &> /dev/null; then
+                        echo "📦 Installing podman-docker..."
+                        sudo apt-get update && sudo apt-get install -y podman-docker || {
+                            echo "⚠️  Failed to install podman-docker."
+                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and cursor into launched containers"
+                            echo "   Otherwise, you can install it manually with: sudo apt install podman-docker"
+                        }
+                    elif command -v dnf &> /dev/null; then
+                        echo "📦 Installing podman-docker..."
+                        sudo dnf install -y podman-docker || {
+                            echo "⚠️  Failed to install podman-docker."
+                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and cursor into launched containers"
+                            echo "   Otherwise, you can install it manually with: sudo dnf install podman-docker"
+                        }
+                    elif command -v yum &> /dev/null; then
+                        echo "📦 Installing podman-docker..."
+                        sudo yum install -y podman-docker || {
+                            echo "⚠️  Failed to install podman-docker."
+                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and cursor into launched containers"
+                            echo "   Otherwise, you can install it manually with: sudo yum install podman-docker"
+                        }
+                    elif command -v pacman &> /dev/null; then
+                        echo "📦 Installing podman-docker..."
+                        sudo pacman -S --noconfirm podman-docker || {
+                            echo "⚠️  Failed to install podman-docker."
+                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and cursor into launched containers"
+                            echo "   Otherwise, you can install it manually with: sudo pacman -S podman-docker"
+                        }
+                    else
+                        echo "⚠️  Could not detect package manager. Please install podman-docker manually:"
+                        echo "   For Debian/Ubuntu: sudo apt install podman-docker"
+                        echo "   For Fedora/RHEL: sudo dnf install podman-docker"
+                        echo "   For Arch: sudo pacman -S podman-docker"
+                    fi
+                    ;;
+                macos)
+                    if command -v brew &> /dev/null; then
+                        echo "📦 Installing podman-docker..."
+                        brew install podman-docker || {
+                            echo "⚠️  Failed to install podman-docker."
+                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and cursor into launched containers"
+                            echo "   Otherwise, you can install it manually with: brew install podman-docker"
+                        }
+                    else
+                        echo "⚠️  Homebrew not found. Please install podman-docker manually:"
+                        echo "   brew install podman-docker"
+                    fi
+                    ;;
+                *)
+                    echo "⚠️  Please install podman-docker manually for your platform"
+                    ;;
+            esac
+        else
+            echo "ℹ️  Skipping podman-docker installation."
+            echo "   You can install it later if you want Cursor/VSCode Remote Containers support:"
+            case $PLATFORM in
+                linux)
+                    echo "   sudo apt install podman-docker  # or equivalent for your distro"
+                    ;;
+                macos)
+                    echo "   brew install podman-docker"
+                    ;;
+            esac
+        fi
+        echo ""
+    elif [ "$PODMAN_DOCKER_INSTALLED" = false ]; then
+        echo "💡 Tip: Install podman-docker for Cursor/VSCode Remote Containers support:"
+        case $PLATFORM in
+            linux)
+                echo "   sudo apt install podman-docker  # or equivalent for your distro"
+                ;;
+            macos)
+                echo "   brew install podman-docker"
+                ;;
+        esac
+        echo ""
+    fi
+fi
+
 # Create installation directory
 INSTALL_DIR="$HOME/.venvoy/bin"
 mkdir -p "$INSTALL_DIR"
@@ -757,23 +867,105 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
             # Wait a moment for container to be ready
             sleep 2
             
-            # Launch editor connected to container
-            if [ "$EDITOR_TYPE" = "cursor" ]; then
-                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
-                    echo "⚠️  Failed to launch Cursor. Stopping container and falling back to shell..."
-                    podman stop "$CONTAINER_NAME" >/dev/null 2>&1
-                    podman rm "$CONTAINER_NAME" >/dev/null 2>&1
-                    CURSOR_AVAILABLE=false
-                    VSCODE_AVAILABLE=false
-                }
+            # For Podman, Cursor/VSCode Remote Containers needs Docker-compatible API
+            # Check if podman-docker is available (provides docker -> podman compatibility)
+            if command -v docker > /dev/null 2>&1 && docker --version 2>&1 | grep -q podman; then
+                # podman-docker is installed, Docker command points to Podman
+                echo "✅ Using podman-docker for Docker compatibility"
+                DOCKER_COMPATIBLE=true
             else
-                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
-                    echo "⚠️  Failed to launch VSCode. Stopping container and falling back to shell..."
-                    podman stop "$CONTAINER_NAME" >/dev/null 2>&1
-                    podman rm "$CONTAINER_NAME" >/dev/null 2>&1
-                    CURSOR_AVAILABLE=false
-                    VSCODE_AVAILABLE=false
-                }
+                # Try to set up Podman's Docker-compatible API socket
+                PODMAN_SOCKET_DIR="$HOME/.local/share/containers/podman-socket"
+                mkdir -p "$PODMAN_SOCKET_DIR"
+                PODMAN_SOCKET="$PODMAN_SOCKET_DIR/podman.sock"
+                
+                # Start Podman API service in background if not already running
+                if ! pgrep -f "podman system service.*$PODMAN_SOCKET" > /dev/null; then
+                    echo "🔧 Starting Podman Docker-compatible API service for Cursor/VSCode..."
+                    nohup podman system service --time=0 unix://"$PODMAN_SOCKET" > /dev/null 2>&1 &
+                    sleep 2  # Give service time to start
+                fi
+                
+                # Set DOCKER_HOST to point to Podman socket for Remote Containers extension
+                # This must be exported so Cursor can see it
+                export DOCKER_HOST="unix://$PODMAN_SOCKET"
+                DOCKER_COMPATIBLE=true
+            fi
+            
+            # Launch editor connected to container
+            # Pass DOCKER_HOST to the editor process if we set it
+            if [ "$EDITOR_TYPE" = "cursor" ]; then
+                if [ -n "$DOCKER_HOST" ]; then
+                    DOCKER_HOST="$DOCKER_HOST" "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
+                        echo ""
+                        echo "⚠️  Failed to launch Cursor with Remote Containers extension."
+                        echo ""
+                        echo "💡 Cursor's Remote Containers extension requires Docker-compatible API."
+                        echo "   For Podman, you can install podman-docker for compatibility:"
+                        echo "   sudo apt install podman-docker  # or equivalent for your distro"
+                        echo ""
+                        echo "   After installing, the 'docker' command will use Podman, and Cursor will work."
+                        echo ""
+                        echo "Stopping container and falling back to shell..."
+                        podman stop "$CONTAINER_NAME" >/dev/null 2>&1
+                        podman rm "$CONTAINER_NAME" >/dev/null 2>&1
+                        CURSOR_AVAILABLE=false
+                        VSCODE_AVAILABLE=false
+                    }
+                else
+                    "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
+                        echo ""
+                        echo "⚠️  Failed to launch Cursor with Remote Containers extension."
+                        echo ""
+                        echo "💡 Cursor's Remote Containers extension requires Docker-compatible API."
+                        echo "   For Podman, you can install podman-docker for compatibility:"
+                        echo "   sudo apt install podman-docker  # or equivalent for your distro"
+                        echo ""
+                        echo "   After installing, the 'docker' command will use Podman, and Cursor will work."
+                        echo ""
+                        echo "Stopping container and falling back to shell..."
+                        podman stop "$CONTAINER_NAME" >/dev/null 2>&1
+                        podman rm "$CONTAINER_NAME" >/dev/null 2>&1
+                        CURSOR_AVAILABLE=false
+                        VSCODE_AVAILABLE=false
+                    }
+                fi
+            else
+                if [ -n "$DOCKER_HOST" ]; then
+                    DOCKER_HOST="$DOCKER_HOST" "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
+                        echo ""
+                        echo "⚠️  Failed to launch VSCode with Remote Containers extension."
+                        echo ""
+                        echo "💡 VSCode's Remote Containers extension requires Docker-compatible API."
+                        echo "   For Podman, you can install podman-docker for compatibility:"
+                        echo "   sudo apt install podman-docker  # or equivalent for your distro"
+                        echo ""
+                        echo "   After installing, the 'docker' command will use Podman, and VSCode will work."
+                        echo ""
+                        echo "Stopping container and falling back to shell..."
+                        podman stop "$CONTAINER_NAME" >/dev/null 2>&1
+                        podman rm "$CONTAINER_NAME" >/dev/null 2>&1
+                        CURSOR_AVAILABLE=false
+                        VSCODE_AVAILABLE=false
+                    }
+                else
+                    "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
+                        echo ""
+                        echo "⚠️  Failed to launch VSCode with Remote Containers extension."
+                        echo ""
+                        echo "💡 VSCode's Remote Containers extension requires Docker-compatible API."
+                        echo "   For Podman, you can install podman-docker for compatibility:"
+                        echo "   sudo apt install podman-docker  # or equivalent for your distro"
+                        echo ""
+                        echo "   After installing, the 'docker' command will use Podman, and VSCode will work."
+                        echo ""
+                        echo "Stopping container and falling back to shell..."
+                        podman stop "$CONTAINER_NAME" >/dev/null 2>&1
+                        podman rm "$CONTAINER_NAME" >/dev/null 2>&1
+                        CURSOR_AVAILABLE=false
+                        VSCODE_AVAILABLE=false
+                    }
+                fi
             fi
             
             if [ "$CURSOR_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; then
