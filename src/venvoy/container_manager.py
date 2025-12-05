@@ -128,24 +128,43 @@ class ContainerManager:
         return None
     
     def _check_runtime_available(self, runtime: ContainerRuntime) -> bool:
-        """Check if a specific runtime is available"""
+        """Check if a specific runtime is available and accessible"""
         try:
             if runtime == ContainerRuntime.DOCKER:
-                result = subprocess.run(['docker', '--version'], 
+                # Check if docker command exists
+                docker_path = shutil.which('docker')
+                if not docker_path:
+                    return False
+                # Check if docker command works
+                result = subprocess.run([docker_path, '--version'], 
                                       capture_output=True, check=True)
+                # Also check if Docker daemon is accessible
+                daemon_check = subprocess.run([docker_path, 'info'], 
+                                            capture_output=True, check=True)
+                return result.returncode == 0 and daemon_check.returncode == 0
             elif runtime == ContainerRuntime.APPTAINER:
-                result = subprocess.run(['apptainer', '--version'], 
+                apptainer_path = shutil.which('apptainer')
+                if not apptainer_path:
+                    return False
+                result = subprocess.run([apptainer_path, '--version'], 
                                       capture_output=True, check=True)
+                return result.returncode == 0
             elif runtime == ContainerRuntime.SINGULARITY:
-                result = subprocess.run(['singularity', '--version'], 
+                singularity_path = shutil.which('singularity')
+                if not singularity_path:
+                    return False
+                result = subprocess.run([singularity_path, '--version'], 
                                       capture_output=True, text=True, check=True)
+                return result.returncode == 0
             elif runtime == ContainerRuntime.PODMAN:
-                result = subprocess.run(['podman', '--version'], 
+                podman_path = shutil.which('podman')
+                if not podman_path:
+                    return False
+                result = subprocess.run([podman_path, '--version'], 
                                       capture_output=True, check=True)
+                return result.returncode == 0
             else:
                 return False
-                
-            return result.returncode == 0
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
     
@@ -197,21 +216,33 @@ class ContainerManager:
         """Pull a container image"""
         try:
             if self.runtime == ContainerRuntime.DOCKER:
-                subprocess.run(['docker', 'pull', image_name], check=True)
+                docker_path = shutil.which('docker')
+                if not docker_path:
+                    raise FileNotFoundError("docker not found in PATH")
+                subprocess.run([docker_path, 'pull', image_name], check=True)
             elif self.runtime == ContainerRuntime.APPTAINER:
+                apptainer_path = shutil.which('apptainer')
+                if not apptainer_path:
+                    raise FileNotFoundError("apptainer not found in PATH")
                 # Sanitize image name for SIF file (replace / and : with -)
                 sif_name = image_name.replace('/', '-').replace(':', '-') + '.sif'
                 sif_path = self.sif_dir / sif_name
-                subprocess.run(['apptainer', 'pull', str(sif_path), 
+                subprocess.run([apptainer_path, 'pull', str(sif_path), 
                               f'docker://{image_name}'], check=True)
             elif self.runtime == ContainerRuntime.SINGULARITY:
+                singularity_path = shutil.which('singularity')
+                if not singularity_path:
+                    raise FileNotFoundError("singularity not found in PATH")
                 # Sanitize image name for SIF file (replace / and : with -)
                 sif_name = image_name.replace('/', '-').replace(':', '-') + '.sif'
                 sif_path = self.sif_dir / sif_name
-                subprocess.run(['singularity', 'pull', str(sif_path), 
+                subprocess.run([singularity_path, 'pull', str(sif_path), 
                               f'docker://{image_name}'], check=True)
             elif self.runtime == ContainerRuntime.PODMAN:
-                subprocess.run(['podman', 'pull', image_name], check=True)
+                podman_path = shutil.which('podman')
+                if not podman_path:
+                    raise FileNotFoundError("podman not found in PATH")
+                subprocess.run([podman_path, 'pull', image_name], check=True)
             return True
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             print(f"Failed to pull image {image_name}: {e}")

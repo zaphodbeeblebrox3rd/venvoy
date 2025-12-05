@@ -19,7 +19,7 @@ import yaml
 import os
 import shutil
 
-from .container_manager import ContainerManager
+from .container_manager import ContainerManager, ContainerRuntime
 from .platform_detector import PlatformDetector
 
 
@@ -195,16 +195,27 @@ class VenvoyEnvironment:
             else:
                 print(f"✅ Environment already available")
         else:
-            # For Docker/Podman, use traditional image inspection
+            # For Docker/Podman, use container manager's runtime-agnostic methods
+            # Check if image exists using the detected runtime
             try:
-                if runtime_info['runtime'] == 'docker':
-                    result = self._run_docker_command([
-                        'image', 'inspect', image_name
-                    ], capture_output=True, check=True)
-                elif runtime_info['runtime'] == 'podman':
+                runtime = self.container_manager.runtime
+                if runtime == ContainerRuntime.DOCKER:
+                    docker_path = shutil.which('docker')
+                    if not docker_path:
+                        raise FileNotFoundError("docker not found")
                     result = subprocess.run([
-                        'podman', 'image', 'inspect', image_name
+                        docker_path, 'image', 'inspect', image_name
                     ], capture_output=True, check=True)
+                elif runtime == ContainerRuntime.PODMAN:
+                    podman_path = shutil.which('podman')
+                    if not podman_path:
+                        raise FileNotFoundError("podman not found")
+                    result = subprocess.run([
+                        podman_path, 'image', 'inspect', image_name
+                    ], capture_output=True, check=True)
+                else:
+                    # For other runtimes, use container manager's pull_image which handles it
+                    raise subprocess.CalledProcessError(1, 'check')
                     
             except (subprocess.CalledProcessError, FileNotFoundError):
                 # Image doesn't exist or runtime not available, pull it

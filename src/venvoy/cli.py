@@ -334,9 +334,8 @@ def export(name: str, format: str, output: str):
         console.print(f"✅ Environment exported: {output_path}")
 
 
-@main.command()
-def list():
-    """List all venvoy environments"""
+def _list_environments():
+    """Internal function to list all venvoy environments"""
     console.print(Panel.fit("📋 Venvoy Environments", style="bold blue"))
     
     env = VenvoyEnvironment()
@@ -351,6 +350,25 @@ def list():
         console.print(f"🐍 {env_info['name']} (Python {env_info['python_version']})")
         console.print(f"   Created: {env_info['created']}")
         console.print(f"   Status: {env_info['status']}")
+
+
+@main.command()
+def list():
+    """List all venvoy environments"""
+    _list_environments()
+
+
+# Hidden 'env' command group for conda-like compatibility (undocumented)
+@main.group(hidden=True)
+def env():
+    """Hidden command group for conda-like compatibility"""
+    pass
+
+
+@env.command(hidden=True)
+def list():
+    """List all venvoy environments (conda-like alias)"""
+    _list_environments()
 
 
 @main.command()

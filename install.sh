@@ -1014,6 +1014,29 @@ if [ "$1" = "uninstall" ]; then
     echo "💡 You may need to restart your terminal for PATH changes to take effect."
     exit 0
 else
+    # Check if venvoy is installed as a Python package on the host
+    # If so, use that instead of running inside a container
+    if command -v python3 &> /dev/null; then
+        if python3 -c "import venvoy.cli" 2>/dev/null; then
+            # venvoy is installed as a Python package - use it directly on the host
+            python3 -c "from venvoy.cli import main; main()" "$@"
+            exit $?
+        fi
+    fi
+    
+    # Check if we're in a venvoy development directory and can run it directly
+    if [[ "$USE_LOCAL_CODE" = true ]]; then
+        VENVOY_SOURCE_DIR="$(pwd)"
+        if [[ -f "$VENVOY_SOURCE_DIR/src/venvoy/cli.py" ]] && command -v python3 &> /dev/null; then
+            # We have the source code and Python - run it directly on the host
+            echo "🔧 Using local venvoy development code from $VENVOY_SOURCE_DIR"
+            export PYTHONPATH="$VENVOY_SOURCE_DIR/src:$PYTHONPATH"
+            python3 -c "import sys; sys.path.insert(0, '$VENVOY_SOURCE_DIR/src'); from venvoy.cli import main; main()" "$@"
+            exit $?
+        fi
+    fi
+    
+    # Fall back to container execution only if Python/venvoy isn't available on host
     # Download latest venvoy source code if not available locally
     VENVOY_SOURCE_DIR="$HOME/.venvoy/src"
     if [[ "$USE_LOCAL_CODE" = true ]]; then
@@ -1032,7 +1055,7 @@ else
     HOST_UID=$(id -u)
     HOST_GID=$(id -g)
     
-    # Run normal venvoy commands inside the container with mounted source
+    # Run normal venvoy commands inside the container with mounted source (fallback only)
     if [ "$CONTAINER_RUNTIME" = "docker" ]; then
         # Docker execution with source code mounted
         test_container_access "$CONTAINER_RUNTIME"
