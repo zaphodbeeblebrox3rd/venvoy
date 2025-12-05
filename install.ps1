@@ -275,9 +275,8 @@ try {
     Write-Host "   ✅ venvoy is ready to use!" -ForegroundColor Green
     if ($ExistingInstall) {
         Write-Host "   🆕 New features available:" -ForegroundColor Cyan
-        Write-Host "      • Enhanced WSL editor detection" -ForegroundColor White
-        Write-Host "      • Working uninstall command" -ForegroundColor White
-        Write-Host "      • Improved platform detection" -ForegroundColor White
+        Write-Host "      • Improved container runtime selection and handling" -ForegroundColor White
+        Write-Host "      • New export wheelhouse option for full offline support of multi-architecture image archive independent of repository availability" -ForegroundColor White
     }
     Write-Host "   1. Run: venvoy init" -ForegroundColor White
     Write-Host "   2. Start coding with AI-powered environments!" -ForegroundColor White
@@ -285,9 +284,8 @@ try {
     Write-Host "   1. Restart your terminal or PowerShell" -ForegroundColor White
     if ($ExistingInstall) {
         Write-Host "   🆕 New features available:" -ForegroundColor Cyan
-        Write-Host "      • Enhanced WSL editor detection" -ForegroundColor White
-        Write-Host "      • Working uninstall command" -ForegroundColor White
-        Write-Host "      • Improved platform detection" -ForegroundColor White
+        Write-Host "      • Improved container runtime selection and handling" -ForegroundColor White
+        Write-Host "      • New export wheelhouse option for full offline support of multi-architecture image archive independent of repository availability" -ForegroundColor White
     }
     Write-Host "   2. Run: venvoy init" -ForegroundColor White
     Write-Host "   3. Start coding with AI-powered environments!" -ForegroundColor White

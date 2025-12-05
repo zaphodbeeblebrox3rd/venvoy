@@ -616,6 +616,8 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
     RUN_COMMAND=""
     RUN_MOUNTS=""
     
+    # First pass: collect all options
+    POSITIONAL_ARGS=()
     while [[ $# -gt 0 ]]; do
         case $1 in
             --name)
@@ -634,12 +636,44 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
                 fi
                 shift 2
                 ;;
-            *)
+            --help|-h)
+                # Pass --help to the Python CLI
+                shift
+                break
+                ;;
+            --*)
+                # Unknown option starting with --
                 echo "Unknown option: $1"
+                echo "Use 'venvoy run --help' for usage information"
                 exit 1
+                ;;
+            *)
+                # Collect positional arguments for second pass
+                POSITIONAL_ARGS+=("$1")
+                shift
                 ;;
         esac
     done
+    
+    # Second pass: handle positional arguments (only if --name wasn't explicitly set)
+    if [ ${#POSITIONAL_ARGS[@]} -gt 0 ]; then
+        if [ "$RUN_NAME" = "venvoy-env" ]; then
+            # Use first positional argument as name
+            RUN_NAME="${POSITIONAL_ARGS[0]}"
+            # If there are more positional args, that's an error
+            if [ ${#POSITIONAL_ARGS[@]} -gt 1 ]; then
+                echo "Unexpected argument: ${POSITIONAL_ARGS[1]}"
+                echo "Use 'venvoy run --help' for usage information"
+                exit 1
+            fi
+        else
+            # --name was explicitly set, so positional args are unexpected
+            echo "Unexpected argument: ${POSITIONAL_ARGS[0]}"
+            echo "Cannot specify both --name and a positional argument for the environment name"
+            echo "Use 'venvoy run --help' for usage information"
+            exit 1
+        fi
+    fi
     
     # Check if environment exists and is valid, auto-detect if default not found
     ENV_DIR="$HOME/.venvoy/environments"
@@ -1436,9 +1470,8 @@ if command -v venvoy &> /dev/null; then
     echo "   📍 Location: $(which venvoy)"
     if [ "$EXISTING_INSTALL" = true ]; then
         echo "   🆕 New features available:"
-        echo "      • Enhanced WSL editor detection"
-        echo "      • Working uninstall command"
-        echo "      • Improved platform detection"
+        echo "      • Improved container runtime selection and handling"
+        echo "      • New export wheelhouse option for full offline support of multi-architecture image archive independent of repository availability"
     fi
     echo "   1. Run: venvoy init --python-version <python-version> --name <environment-name>"
     echo "   2. Run: venvoy run --name <environment-name>"
@@ -1459,9 +1492,8 @@ else
     
     if [ "$EXISTING_INSTALL" = true ]; then
         echo "   🆕 New features available:"
-        echo "      • Enhanced WSL editor detection"
-        echo "      • Working uninstall command"
-        echo "      • Improved platform detection"
+        echo "      • Improved container runtime selection and handling"
+        echo "      • New export wheelhouse option for full offline support of multi-architecture image archive independent of repository availability"
     fi
     echo "   1. Run: venvoy init --python-version <python-version> --name <environment-name>"
     echo "   2. Run: venvoy run --name <environment-name>"

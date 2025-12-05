@@ -196,9 +196,10 @@ def freeze(name: str, include_dev: bool):
 
 
 @main.command()
+@click.argument("name_arg", required=False)
 @click.option(
     "--name", 
-    default="venvoy-env", 
+    default=None, 
     help="Name of the environment to run"
 )
 @click.option(
@@ -210,8 +211,17 @@ def freeze(name: str, include_dev: bool):
     multiple=True, 
     help="Additional volume mounts (host:container)"
 )
-def run(name: str, command: str, mount: tuple):
-    """Launch the portable Python environment"""
+def run(name_arg: str, name: str, command: str, mount: tuple):
+    """Launch the portable Python environment
+    
+    You can specify the environment name as a positional argument:
+    venvoy run my-env
+    
+    Or use the --name option:
+    venvoy run --name my-env
+    
+    If both are provided, --name takes precedence.
+    """
     console.print(Panel.fit("🏃 Launching environment - RUN COMMAND", style="bold magenta"))
     
     # Use the bootstrap script approach for consistency
@@ -226,10 +236,13 @@ def run(name: str, command: str, mount: tuple):
         console.print("❌ venvoy bootstrap script not found. Please run 'venvoy update' first.", style="red")
         sys.exit(1)
     
+    # Determine the environment name: --name takes precedence, then name_arg, then default
+    env_name = name if name is not None else (name_arg if name_arg else "venvoy-env")
+    
     # Build the command to pass to the bootstrap script
     cmd_args = ["run"]
-    if name != "venvoy-env":  # Only add --name if it's not the default
-        cmd_args.extend(["--name", name])
+    if env_name != "venvoy-env":  # Only add --name if it's not the default
+        cmd_args.extend(["--name", env_name])
     if command:
         cmd_args.extend(["--command", command])
     if mount:
