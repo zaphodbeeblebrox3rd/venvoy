@@ -242,7 +242,12 @@ class ContainerManager:
                 podman_path = shutil.which('podman')
                 if not podman_path:
                     raise FileNotFoundError("podman not found in PATH")
-                subprocess.run([podman_path, 'pull', image_name], check=True)
+                # Podman requires fully qualified image names (docker.io/ prefix)
+                if not image_name.startswith('docker.io/') and '/' in image_name:
+                    podman_image_name = f"docker.io/{image_name}"
+                else:
+                    podman_image_name = image_name
+                subprocess.run([podman_path, 'pull', podman_image_name], check=True)
             return True
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             print(f"Failed to pull image {image_name}: {e}")

@@ -18,12 +18,6 @@ NC='\033[0m' # No Color
 echo "🔍 Docker Build Profiler"
 echo "========================"
 echo ""
-
-# Check if Docker BuildKit is available
-if ! docker buildx version &> /dev/null; then
-    echo -e "${RED}❌ Docker BuildX not found. Install it for better profiling:${NC}"
-    echo "   docker buildx install"
-    exit 1
 fi
 
 # Parse arguments

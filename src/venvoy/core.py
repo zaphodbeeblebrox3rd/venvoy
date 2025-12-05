@@ -210,8 +210,13 @@ class VenvoyEnvironment:
                     podman_path = shutil.which('podman')
                     if not podman_path:
                         raise FileNotFoundError("podman not found")
+                    # Podman requires fully qualified image names (docker.io/ prefix)
+                    if not image_name.startswith('docker.io/') and '/' in image_name:
+                        podman_image_name = f"docker.io/{image_name}"
+                    else:
+                        podman_image_name = image_name
                     result = subprocess.run([
-                        podman_path, 'image', 'inspect', image_name
+                        podman_path, 'image', 'inspect', podman_image_name
                     ], capture_output=True, check=True)
                 else:
                     # For other runtimes, use container manager's pull_image which handles it
