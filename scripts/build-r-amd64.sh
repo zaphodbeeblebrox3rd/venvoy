@@ -46,5 +46,5 @@ for R_VERSION in "${R_VERSIONS[@]}"; do
 done
 echo ""
 echo "🚀 Usage:"
-echo "   venvoy init --runtime r --version 4.4 --name my-r-project"
+echo "   venvoy init --runtime r --r-version 4.4 --name my-r-project"
 echo "   venvoy run --name my-r-project" 

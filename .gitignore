@@ -1,6 +1,9 @@
 # Environment vars, creds
 *.env
 
+# User-generated directory during use of venvoy
+.venvoy/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
