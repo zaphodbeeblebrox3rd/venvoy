@@ -2156,16 +2156,30 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                         containers = self.container_manager.list_containers(all_containers=True)
                         status = "stopped"
                         for container in containers:
-                            if container['name'] == config['name']:
-                                status = container['status']
+                            # Container names follow pattern: venvoy-{name}-{pid}
+                            container_name = container.get('name', '')
+                            if container_name.startswith(f"venvoy-{config['name']}-"):
+                                # Extract status - it might be "Up" or "Exited" or similar
+                                container_status = container.get('status', '').lower()
+                                if 'up' in container_status or 'running' in container_status:
+                                    status = "running"
+                                else:
+                                    status = "stopped"
                                 break
                         
-                        environments.append({
+                        env_info = {
                             'name': config['name'],
-                            'python_version': config['python_version'],
                             'created': config['created'],
                             'status': status
-                        })
+                        }
+                        # Add runtime-specific version info
+                        if config.get('runtime') == 'r':
+                            env_info['runtime'] = 'r'
+                            env_info['r_version'] = config.get('r_version', 'unknown')
+                        else:
+                            env_info['runtime'] = 'python'
+                            env_info['python_version'] = config.get('python_version', 'unknown')
+                        environments.append(env_info)
                     except (yaml.YAMLError, KeyError):
                         continue
         

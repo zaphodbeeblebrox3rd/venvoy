@@ -469,41 +469,51 @@ class ContainerManager:
         """List containers"""
         try:
             if self.runtime == ContainerRuntime.DOCKER:
-                cmd = ['docker', 'ps']
+                docker_path = shutil.which('docker')
+                if not docker_path:
+                    raise FileNotFoundError("docker not found in PATH")
+                cmd = [docker_path, 'ps', '--format', '{{.ID}}|{{.Image}}|{{.Command}}|{{.Created}}|{{.Status}}|{{.Ports}}|{{.Names}}']
                 if all_containers:
-                    cmd.append('-a')
+                    cmd.insert(2, '-a')
                 result = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 return self._parse_docker_ps_output(result.stdout)
             elif self.runtime == ContainerRuntime.PODMAN:
-                cmd = ['podman', 'ps']
+                podman_path = shutil.which('podman')
+                if not podman_path:
+                    raise FileNotFoundError("podman not found in PATH")
+                cmd = [podman_path, 'ps', '--format', '{{.ID}}|{{.Image}}|{{.Command}}|{{.Created}}|{{.Status}}|{{.Ports}}|{{.Names}}']
                 if all_containers:
-                    cmd.append('-a')
+                    cmd.insert(2, '-a')
                 result = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 return self._parse_docker_ps_output(result.stdout)  # Same format as Docker
             else:
                 # Apptainer/Singularity doesn't have persistent containers in the same way
                 return []
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, FileNotFoundError):
             return []
     
     def _parse_docker_ps_output(self, output: str) -> List[Dict]:
-        """Parse Docker/Podman ps output into structured data"""
+        """Parse Docker/Podman ps output into structured data (pipe-delimited format)"""
         lines = output.strip().split('\n')
-        if len(lines) < 2:
+        if not lines or not lines[0].strip():
             return []
         
-        headers = lines[0].split()
         containers = []
-        
-        for line in lines[1:]:
+        for line in lines:
             if not line.strip():
                 continue
-            parts = line.split()
-            if len(parts) >= len(headers):
-                container = {}
-                for i, header in enumerate(headers):
-                    if i < len(parts):
-                        container[header.lower()] = parts[i]
+            # Format: ID|IMAGE|COMMAND|CREATED|STATUS|PORTS|NAMES
+            parts = line.split('|')
+            if len(parts) >= 7:
+                container = {
+                    'id': parts[0].strip(),
+                    'image': parts[1].strip(),
+                    'command': parts[2].strip(),
+                    'created': parts[3].strip(),
+                    'status': parts[4].strip(),
+                    'ports': parts[5].strip(),
+                    'name': parts[6].strip()
+                }
                 containers.append(container)
         
         return containers

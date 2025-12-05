@@ -8,7 +8,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .core import VenvoyEnvironment
-from .container_manager import ContainerManager
+from .container_manager import ContainerManager, ContainerRuntime
 from .platform_detector import PlatformDetector
 
 console = Console()
@@ -146,13 +146,13 @@ def init(runtime: str, python_version: str, r_version: str, name: str, force: bo
     
     if editor_available:
         if editor_type == "cursor":
-            console.print("💡 Use 'venvoy run' to start working in your environment")
+            console.print(f"💡 Use 'venvoy run --name {name}' to start working in your environment")
             console.print("🧠 Cursor will automatically connect to your container with AI assistance")
         elif editor_type == "vscode":
-            console.print("💡 Use 'venvoy run' to start working in your environment")
+            console.print(f"💡 Use 'venvoy run --name {name}' to start working in your environment")
             console.print("🔧 VSCode will automatically connect to your container")
     else:
-        console.print("💡 Use 'venvoy run' to launch an interactive shell in your environment")
+        console.print(f"💡 Use 'venvoy run --name {name}' to launch an interactive shell in your environment")
         console.print("🐚 Your environment will start with an enhanced AI-ready bash/conda shell")
 
 
@@ -347,7 +347,10 @@ def _list_environments():
         return
     
     for env_info in environments:
-        console.print(f"🐍 {env_info['name']} (Python {env_info['python_version']})")
+        if env_info.get('runtime') == 'r':
+            console.print(f"📊 {env_info['name']} (R {env_info.get('r_version', 'unknown')})")
+        else:
+            console.print(f"🐍 {env_info['name']} (Python {env_info.get('python_version', 'unknown')})")
         console.print(f"   Created: {env_info['created']}")
         console.print(f"   Status: {env_info['status']}")
 
@@ -882,7 +885,7 @@ def restore(name: str):
         console.print(f"🔄 Restoring environment from: {selected_export.name}")
         env.restore_from_environment_export(selected_export)
         console.print("✅ Environment restored successfully!")
-        console.print("💡 Run 'venvoy run' to start working with the restored environment")
+        console.print(f"💡 Run 'venvoy run --name {name}' to start working with the restored environment")
     else:
         console.print("🚫 Restoration cancelled")
 
@@ -1085,12 +1088,76 @@ def update():
 
 
 @main.command()
-def exit():
-    """Exit virtual environment (same as 'deactivate')"""
+@click.option(
+    "--name",
+    default=None,
+    help="Name of the venvoy environment container to stop"
+)
+def exit(name: str):
+    """Exit virtual environment or stop venvoy container"""
     import os
     import subprocess
+    import shutil
     
-    # Check if we're in a virtual environment
+    # If --name is provided, try to stop the container
+    if name:
+        container_manager = ContainerManager()
+        runtime = container_manager.runtime
+        
+        # Find containers matching the environment name pattern
+        # Container names follow pattern: venvoy-{name}-{pid}
+        try:
+            if runtime == ContainerRuntime.DOCKER:
+                docker_path = shutil.which('docker')
+                if docker_path:
+                    # List all containers and find ones matching the pattern
+                    result = subprocess.run(
+                        [docker_path, 'ps', '-a', '--format', '{{.Names}}'],
+                        capture_output=True, text=True, check=True
+                    )
+                    containers = [c.strip() for c in result.stdout.split('\n') if c.strip()]
+                    matching_containers = [c for c in containers if c.startswith(f'venvoy-{name}-')]
+                    
+                    if matching_containers:
+                        for container in matching_containers:
+                            console.print(f"🛑 Stopping container: {container}")
+                            subprocess.run([docker_path, 'stop', container], check=True)
+                            subprocess.run([docker_path, 'rm', container], check=True)
+                        console.print(f"✅ Stopped and removed containers for environment '{name}'")
+                    else:
+                        console.print(f"ℹ️  No running containers found for environment '{name}'")
+                else:
+                    console.print("❌ Docker not found in PATH")
+            elif runtime == ContainerRuntime.PODMAN:
+                podman_path = shutil.which('podman')
+                if podman_path:
+                    # List all containers and find ones matching the pattern
+                    result = subprocess.run(
+                        [podman_path, 'ps', '-a', '--format', '{{.Names}}'],
+                        capture_output=True, text=True, check=True
+                    )
+                    containers = [c.strip() for c in result.stdout.split('\n') if c.strip()]
+                    matching_containers = [c for c in containers if c.startswith(f'venvoy-{name}-')]
+                    
+                    if matching_containers:
+                        for container in matching_containers:
+                            console.print(f"🛑 Stopping container: {container}")
+                            subprocess.run([podman_path, 'stop', container], check=True)
+                            subprocess.run([podman_path, 'rm', container], check=True)
+                        console.print(f"✅ Stopped and removed containers for environment '{name}'")
+                    else:
+                        console.print(f"ℹ️  No running containers found for environment '{name}'")
+                else:
+                    console.print("❌ Podman not found in PATH")
+            else:
+                console.print(f"ℹ️  Container stopping not supported for {runtime.value} runtime")
+        except subprocess.CalledProcessError as e:
+            console.print(f"❌ Failed to stop container: {e}")
+        except Exception as e:
+            console.print(f"❌ Error: {e}")
+        return
+    
+    # Otherwise, handle virtual environment deactivation
     if os.environ.get('VIRTUAL_ENV'):
         console.print("🚪 Exiting virtual environment...")
         try:
@@ -1109,7 +1176,8 @@ def exit():
             console.print("✅ Virtual environment deactivated")
     else:
         console.print("ℹ️  No virtual environment currently active")
-        console.print("💡 Use 'deactivate' directly if you're in a virtual environment")
+        console.print("💡 Use 'venvoy exit --name <environment-name>' to stop a running container")
+        console.print("💡 Or use 'deactivate' directly if you're in a virtual environment")
 
 
 @main.command()

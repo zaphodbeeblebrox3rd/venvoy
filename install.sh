@@ -439,7 +439,12 @@ if ! $CONTAINER_RUNTIME image inspect "$IMAGE_URI" &> /dev/null; then
     fi
     echo "✅ Bootstrap environment ready"
 elif [ "\$1" = "update" ] || [ "\$1" = "upgrade" ]; then
-    echo "🔄 Updating venvoy environment..."
+    # Check if --help is requested - if so, pass through to Python CLI
+    if [ "$2" = "--help" ] || [ "$2" = "-h" ]; then
+        # Pass through to Python CLI for help (will be handled below)
+        :
+    else
+        echo "🔄 Updating venvoy environment..."
     if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
         # For Apptainer/Singularity, use --force to overwrite existing SIF files
         if ! $CONTAINER_RUNTIME pull --force "$IMAGE_URI"; then
@@ -464,10 +469,11 @@ elif [ "\$1" = "update" ] || [ "\$1" = "upgrade" ]; then
         tar -xz -C "$VENVOY_SOURCE_DIR" --strip-components=1
     echo "✅ Source code updated"
     
-    # Handle upgrade command by converting it to update
-    if [ "$1" = "upgrade" ]; then
-        # Replace upgrade with update in arguments
-        set -- update "${@:2}"
+        # Handle upgrade command by converting it to update
+        if [ "$1" = "upgrade" ]; then
+            # Replace upgrade with update in arguments
+            set -- update "${@:2}"
+        fi
     fi
 fi
 
@@ -492,8 +498,8 @@ if [[ "$USE_LOCAL_CODE" = false ]]; then
     done
 fi
 
-# Handle run command specially
-if [ "$1" = "run" ]; then
+# Handle run command specially (unless --help is requested)
+if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
     # Parse run command arguments
     shift  # Remove 'run' from arguments
     RUN_NAME="venvoy-env"
@@ -731,8 +737,7 @@ if [ "$1" = "run" ]; then
             if [ "$CURSOR_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; then
                 echo "✅ $EDITOR_TYPE connected to container!"
                 echo "💡 Container is running in background: $CONTAINER_NAME"
-                echo "💡 When you're done, stop the container with: $CONTAINER_RUNTIME stop $CONTAINER_NAME"
-                echo "💡 Or use: $CONTAINER_RUNTIME rm -f $CONTAINER_NAME"
+                echo "💡 When you're done, stop the container with: venvoy exit --name $RUN_NAME"
                 exit 0
             fi
         elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
@@ -774,8 +779,7 @@ if [ "$1" = "run" ]; then
             if [ "$CURSOR_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; then
                 echo "✅ $EDITOR_TYPE connected to container!"
                 echo "💡 Container is running in background: $CONTAINER_NAME"
-                echo "💡 When you're done, stop the container with: $CONTAINER_RUNTIME stop $CONTAINER_NAME"
-                echo "💡 Or use: $CONTAINER_RUNTIME rm -f $CONTAINER_NAME"
+                echo "💡 When you're done, stop the container with: venvoy exit --name $RUN_NAME"
                 exit 0
             fi
         fi
@@ -847,8 +851,8 @@ if [ "$1" = "run" ]; then
     exit 0
 fi
 
-# Handle uninstall command specially
-if [ "$1" = "uninstall" ]; then
+# Handle uninstall command specially (unless --help is requested)
+if [ "$1" = "uninstall" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
     # Run uninstall directly on host, not in container
     echo "🗑️  venvoy Uninstaller"
     echo "===================="
