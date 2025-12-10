@@ -1040,6 +1040,80 @@ exec "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_
 EOFLAUNCHER
             chmod +x "$EDITOR_LAUNCHER"
             
+            # CRITICAL: Cursor spawns child processes that run 'docker inspect'
+            # These processes don't inherit DOCKER_HOST and may not have socket access
+            # We MUST check socket permissions directly, not just test docker inspect
+            
+            echo ""
+            echo "🔍 Pre-flight check: Verifying Cursor can access Docker/Podman..."
+            
+            # ALWAYS check socket permissions for Podman (this is the most common issue)
+            SOCKET_ISSUE=false
+            if [ "$CONTAINER_RUNTIME" = "podman" ]; then
+                if [ -S "/run/podman/podman.sock" ]; then
+                    SOCKET_PERMS=$(stat -c "%a" /run/podman/podman.sock 2>/dev/null || echo "unknown")
+                    SOCKET_OWNER=$(stat -c "%U:%G" /run/podman/podman.sock 2>/dev/null || echo "unknown")
+                    
+                    # Check if socket is accessible to all users (needed for Cursor)
+                    if [ "$SOCKET_PERMS" != "666" ] && [ "$SOCKET_PERMS" != "777" ]; then
+                        SOCKET_ISSUE=true
+                        echo "❌ PROBLEM DETECTED: Podman socket permissions are too restrictive!"
+                        echo "   Socket: /run/podman/podman.sock"
+                        echo "   Current permissions: $SOCKET_PERMS (owner: $SOCKET_OWNER)"
+                        echo "   Required: 666 or 777 (accessible to all users)"
+                        echo ""
+                        echo "   🔧 REQUIRED FIX:"
+                        echo "      sudo chmod 666 /run/podman/podman.sock"
+                        echo ""
+                        echo "   This makes the socket accessible to Cursor's processes."
+                        echo "   Without this, Cursor will fail with 'docker inspect' error."
+                        echo ""
+                    else
+                        echo "✅ Socket permissions OK: $SOCKET_PERMS"
+                    fi
+                fi
+            fi
+            
+            # Also test docker inspect without DOCKER_HOST (what Cursor will see)
+            unset DOCKER_HOST
+            if docker inspect "$CONTAINER_NAME" > /dev/null 2>&1; then
+                echo "✅ docker inspect works without DOCKER_HOST"
+            else
+                echo "❌ docker inspect FAILED without DOCKER_HOST"
+                if [ "$SOCKET_ISSUE" = false ]; then
+                    # Socket permissions are OK but docker inspect still fails
+                    echo "   This might be a different issue (not socket permissions)"
+                    echo "   Check: docker info && docker inspect $CONTAINER_NAME"
+                fi
+                SOCKET_ISSUE=true
+            fi
+            
+            # If there's a socket issue, don't launch Cursor
+            if [ "$SOCKET_ISSUE" = true ]; then
+                echo ""
+                echo "⚠️  Cursor will fail - socket access issue detected!"
+                echo ""
+                if [ "$CONTAINER_RUNTIME" = "podman" ] && [ -S "/run/podman/podman.sock" ]; then
+                    SOCKET_PERMS=$(stat -c "%a" /run/podman/podman.sock 2>/dev/null || echo "unknown")
+                    if [ "$SOCKET_PERMS" != "666" ] && [ "$SOCKET_PERMS" != "777" ]; then
+                        echo "   🔧 FIX: Run this command, then try again:"
+                        echo "      sudo chmod 666 /run/podman/podman.sock"
+                    fi
+                fi
+                echo ""
+                echo "   Alternative: Use interactive shell instead:"
+                echo "      venvoy run --name $RUN_NAME --command /bin/bash"
+                echo ""
+                
+                podman stop "$CONTAINER_NAME" > /dev/null 2>&1
+                podman rm "$CONTAINER_NAME" > /dev/null 2>&1
+                CURSOR_AVAILABLE=false
+                VSCODE_AVAILABLE=false
+                exit 0
+            fi
+            
+            echo "✅ All checks passed - Cursor should work!"
+            
             # Launch editor connected to container
             if [ "$EDITOR_TYPE" = "cursor" ]; then
                 # Launch Cursor in background and capture any immediate errors
