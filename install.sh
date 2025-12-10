@@ -902,103 +902,267 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
             sleep 2
             
             # For Podman, Cursor/VSCode Remote Containers needs Docker-compatible API
-            # Check if podman-docker is available (provides docker -> podman compatibility)
-            if command -v docker > /dev/null 2>&1 && docker --version 2>&1 | grep -q podman; then
+            # Check multiple potential socket locations and set up if needed
+            DOCKER_HOST_SET=false
+            
+            # First, check if there's an existing accessible Docker/Podman socket
+            if [ -S "/var/run/docker.sock" ] && [ -r "/var/run/docker.sock" ]; then
+                # System Docker socket exists and is readable
+                export DOCKER_HOST="unix:///var/run/docker.sock"
+                DOCKER_HOST_SET=true
+                echo "✅ Using existing Docker socket: /var/run/docker.sock"
+            elif [ -S "/run/podman/podman.sock" ] && [ -r "/run/podman/podman.sock" ]; then
+                # System Podman socket exists and is readable
+                export DOCKER_HOST="unix:///run/podman/podman.sock"
+                DOCKER_HOST_SET=true
+                echo "✅ Using existing Podman socket: /run/podman/podman.sock"
+            elif command -v docker > /dev/null 2>&1 && docker --version 2>&1 | grep -qi podman; then
                 # podman-docker is installed, Docker command points to Podman
-                echo "✅ Using podman-docker for Docker compatibility"
-                DOCKER_COMPATIBLE=true
-            else
-                # Try to set up Podman's Docker-compatible API socket
+                # Check if it can access the socket
+                if docker info > /dev/null 2>&1; then
+                    # Docker command works, use default socket
+                    unset DOCKER_HOST  # Use default
+                    DOCKER_HOST_SET=true
+                    echo "✅ Using podman-docker for Docker compatibility"
+                fi
+            fi
+            
+            # If no accessible socket found, set up user-level Podman API service
+            if [ "$DOCKER_HOST_SET" = false ]; then
                 PODMAN_SOCKET_DIR="$HOME/.local/share/containers/podman-socket"
                 mkdir -p "$PODMAN_SOCKET_DIR"
                 PODMAN_SOCKET="$PODMAN_SOCKET_DIR/podman.sock"
                 
-                # Start Podman API service in background if not already running
-                if ! pgrep -f "podman system service.*$PODMAN_SOCKET" > /dev/null; then
-                    echo "🔧 Starting Podman Docker-compatible API service for Cursor/VSCode..."
-                    nohup podman system service --time=0 unix://"$PODMAN_SOCKET" > /dev/null 2>&1 &
-                    sleep 2  # Give service time to start
+                # Check if user-level socket already exists and is accessible
+                if [ -S "$PODMAN_SOCKET" ] && [ -r "$PODMAN_SOCKET" ]; then
+                    export DOCKER_HOST="unix://$PODMAN_SOCKET"
+                    DOCKER_HOST_SET=true
+                    echo "✅ Using existing user Podman socket: $PODMAN_SOCKET"
+                else
+                    # Start Podman API service in background if not already running
+                    if ! pgrep -f "podman system service.*$PODMAN_SOCKET" > /dev/null; then
+                        echo "🔧 Starting Podman Docker-compatible API service for Cursor/VSCode..."
+                        # Start service and wait for socket to be created
+                        podman system service --time=0 unix://"$PODMAN_SOCKET" > /dev/null 2>&1 &
+                        PODMAN_SERVICE_PID=$!
+                        
+                        # Wait for socket to be created (up to 5 seconds)
+                        for i in {1..10}; do
+                            if [ -S "$PODMAN_SOCKET" ] && [ -r "$PODMAN_SOCKET" ]; then
+                                break
+                            fi
+                            sleep 0.5
+                        done
+                        
+                        # Verify socket is accessible
+                        if [ -S "$PODMAN_SOCKET" ] && [ -r "$PODMAN_SOCKET" ]; then
+                            export DOCKER_HOST="unix://$PODMAN_SOCKET"
+                            DOCKER_HOST_SET=true
+                            echo "✅ Podman API service started: $PODMAN_SOCKET"
+                        else
+                            echo "⚠️  Warning: Podman API service socket not accessible"
+                            echo "   Cursor Remote Containers may not work properly"
+                        fi
+                    else
+                        # Service is running, check if socket is accessible
+                        if [ -S "$PODMAN_SOCKET" ] && [ -r "$PODMAN_SOCKET" ]; then
+                            export DOCKER_HOST="unix://$PODMAN_SOCKET"
+                            DOCKER_HOST_SET=true
+                            echo "✅ Using existing Podman API service: $PODMAN_SOCKET"
+                        fi
+                    fi
                 fi
-                
-                # Set DOCKER_HOST to point to Podman socket for Remote Containers extension
-                # This must be exported so Cursor can see it
-                export DOCKER_HOST="unix://$PODMAN_SOCKET"
-                DOCKER_COMPATIBLE=true
             fi
             
-            # Launch editor connected to container
-            # Pass DOCKER_HOST to the editor process if we set it
-            if [ "$EDITOR_TYPE" = "cursor" ]; then
-                if [ -n "$DOCKER_HOST" ]; then
-                    DOCKER_HOST="$DOCKER_HOST" "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
-                        echo ""
-                        echo "⚠️  Failed to launch Cursor with Remote Containers extension."
-                        echo ""
-                        echo "💡 Cursor's Remote Containers extension requires Docker-compatible API."
-                        echo "   For Podman, you can install podman-docker for compatibility:"
-                        echo "   sudo apt install podman-docker  # or equivalent for your distro"
-                        echo ""
-                        echo "   After installing, the 'docker' command will use Podman, and Cursor will work."
-                        echo ""
-                        echo "Stopping container and falling back to shell..."
-                        podman stop "$CONTAINER_NAME" >/dev/null 2>&1
-                        podman rm "$CONTAINER_NAME" >/dev/null 2>&1
-                        CURSOR_AVAILABLE=false
-                        VSCODE_AVAILABLE=false
-                    }
+            # Verify Docker/Podman access works with the selected socket
+            if [ "$DOCKER_HOST_SET" = true ] || [ -z "$DOCKER_HOST" ]; then
+                if DOCKER_HOST="${DOCKER_HOST:-}" docker inspect "$CONTAINER_NAME" > /dev/null 2>&1; then
+                    echo "✅ Verified container access for Remote Containers"
                 else
-                    "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
-                        echo ""
-                        echo "⚠️  Failed to launch Cursor with Remote Containers extension."
-                        echo ""
+                    echo "⚠️  Warning: Cannot verify container access - Cursor may have issues"
+                    echo "   Attempting to fix socket permissions..."
+                    
+                    # Try to make socket accessible if it's a user socket
+                    if [ -n "$DOCKER_HOST" ] && [ -S "${DOCKER_HOST#unix://}" ]; then
+                        SOCKET_PATH="${DOCKER_HOST#unix://}"
+                        if [ -w "$(dirname "$SOCKET_PATH")" ]; then
+                            chmod 666 "$SOCKET_PATH" 2>/dev/null || true
+                        fi
+                    fi
+                fi
+            fi
+            
+            # For Cursor/VSCode Remote Containers, we need to ensure the socket is accessible
+            # Create a helper script that sets up the environment and launches the editor
+            # This script ensures Cursor can access Docker/Podman
+            EDITOR_LAUNCHER=$(mktemp)
+            cat > "$EDITOR_LAUNCHER" << EOFLAUNCHER
+#!/bin/bash
+# Launcher script for Cursor/VSCode with proper Docker/Podman socket access
+# This ensures the editor can run 'docker inspect' successfully
+
+# First, try to use the DOCKER_HOST we detected
+if [ -n "${DOCKER_HOST:-}" ]; then
+    export DOCKER_HOST="${DOCKER_HOST}"
+fi
+
+# Verify docker command works - if not, try to fix it
+if command -v docker > /dev/null 2>&1; then
+    # Test if docker works (try a simple command that doesn't require a container)
+    if ! docker version > /dev/null 2>&1; then
+        # Docker doesn't work, try to find a working socket
+        if [ -S "/var/run/docker.sock" ] && [ -r "/var/run/docker.sock" ]; then
+            export DOCKER_HOST="unix:///var/run/docker.sock"
+        elif [ -S "/run/podman/podman.sock" ] && [ -r "/run/podman/podman.sock" ]; then
+            export DOCKER_HOST="unix:///run/podman/podman.sock"
+        elif [ -S "$HOME/.local/share/containers/podman-socket/podman.sock" ] && [ -r "$HOME/.local/share/containers/podman-socket/podman.sock" ]; then
+            export DOCKER_HOST="unix://$HOME/.local/share/containers/podman-socket/podman.sock"
+        fi
+        
+        # Test again
+        if ! docker version > /dev/null 2>&1; then
+            # Still doesn't work - try unsetting DOCKER_HOST (use default)
+            unset DOCKER_HOST
+        fi
+    fi
+    
+    # Final test - can we inspect the container?
+    if ! docker inspect "${CONTAINER_NAME}" > /dev/null 2>&1; then
+        echo "Warning: docker inspect failed for ${CONTAINER_NAME}" >&2
+        echo "DOCKER_HOST=${DOCKER_HOST:-<unset>}" >&2
+        echo "This may cause Cursor Remote Containers to fail" >&2
+    fi
+fi
+
+# Launch the editor with the container URI
+# Cursor will try to run 'docker inspect' - it must work!
+exec "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" "\$@"
+EOFLAUNCHER
+            chmod +x "$EDITOR_LAUNCHER"
+            
+            # Launch editor connected to container
+            if [ "$EDITOR_TYPE" = "cursor" ]; then
+                # Launch Cursor in background and capture any immediate errors
+                "$EDITOR_LAUNCHER" > /tmp/cursor-launch.log 2>&1 &
+                CURSOR_PID=$!
+                
+                # Wait a moment to see if Cursor starts successfully
+                sleep 3
+                
+                # Check if Cursor process is still running and if there were errors
+                if ! kill -0 "$CURSOR_PID" 2>/dev/null; then
+                    # Process died, check the log
+                    if grep -qi "docker\|socket\|permission" /tmp/cursor-launch.log 2>/dev/null; then
+                        CURSOR_ERROR=1
+                    fi
+                fi
+                
+                # Also check if Cursor window opened (heuristic: check for cursor processes)
+                if ! pgrep -f "[Cc]ursor" > /dev/null 2>&1; then
+                    sleep 2  # Give it more time
+                    if ! pgrep -f "[Cc]ursor" > /dev/null 2>&1; then
+                        CURSOR_ERROR=1
+                    fi
+                fi
+                
+                # Clean up launcher
+                rm -f "$EDITOR_LAUNCHER"
+                
+                # Check if Cursor launched successfully
+                if [ "${CURSOR_ERROR:-0}" = "1" ]; then
+                    echo ""
+                    echo "⚠️  Failed to launch Cursor with Remote Containers extension."
+                    echo ""
+                    if [ "$CONTAINER_RUNTIME" = "podman" ]; then
                         echo "💡 Cursor's Remote Containers extension requires Docker-compatible API."
-                        echo "   For Podman, you can install podman-docker for compatibility:"
-                        echo "   sudo apt install podman-docker  # or equivalent for your distro"
                         echo ""
-                        echo "   After installing, the 'docker' command will use Podman, and Cursor will work."
+                        echo "   The issue: Cursor tries to run 'docker inspect' but it fails with Podman."
                         echo ""
-                        echo "Stopping container and falling back to shell..."
-                        podman stop "$CONTAINER_NAME" >/dev/null 2>&1
-                        podman rm "$CONTAINER_NAME" >/dev/null 2>&1
-                        CURSOR_AVAILABLE=false
-                        VSCODE_AVAILABLE=false
-                    }
+                        echo "   ⚠️  RECOMMENDED SOLUTION: Install podman-docker"
+                        echo "   This makes the 'docker' command work with Podman automatically:"
+                        echo ""
+                        echo "      sudo apt install podman-docker    # Debian/Ubuntu"
+                        echo "      sudo dnf install podman-docker    # Fedora/RHEL"
+                        echo "      sudo pacman -S podman-docker      # Arch Linux"
+                        echo ""
+                        echo "   After installing, restart Cursor and try again."
+                        echo ""
+                        echo "   Alternative solutions (if podman-docker not available):"
+                        echo "   1. Make Podman socket accessible (if using system socket):"
+                        echo "      sudo chmod 666 /run/podman/podman.sock"
+                        echo ""
+                        echo "   2. Set DOCKER_HOST in your shell profile:"
+                        if [ -n "${DOCKER_HOST:-}" ]; then
+                            echo "      Add to ~/.bashrc or ~/.zshrc:"
+                            echo "      export DOCKER_HOST=\"${DOCKER_HOST}\""
+                        else
+                            echo "      export DOCKER_HOST=\"unix://\$HOME/.local/share/containers/podman-socket/podman.sock\""
+                        fi
+                        echo "      Then restart Cursor from a new terminal."
+                        echo ""
+                        echo "   3. Use interactive shell instead:"
+                        echo "      venvoy run --name $RUN_NAME --command /bin/bash"
+                    else
+                        echo "💡 Make sure Docker is running and accessible:"
+                        echo "      sudo systemctl start docker"
+                        echo "      sudo usermod -aG docker $USER  # then log out and back in"
+                    fi
+                    echo ""
+                    echo "Stopping container and falling back to shell..."
+                    podman stop "$CONTAINER_NAME" >/dev/null 2>&1
+                    podman rm "$CONTAINER_NAME" >/dev/null 2>&1
+                    CURSOR_AVAILABLE=false
+                    VSCODE_AVAILABLE=false
                 fi
             else
-                if [ -n "$DOCKER_HOST" ]; then
-                    DOCKER_HOST="$DOCKER_HOST" "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
-                        echo ""
-                        echo "⚠️  Failed to launch VSCode with Remote Containers extension."
-                        echo ""
+                # VSCode - use the same launcher approach
+                "$EDITOR_LAUNCHER" > /tmp/vscode-launch.log 2>&1 &
+                VSCODE_PID=$!
+                
+                sleep 3
+                
+                if ! kill -0 "$VSCODE_PID" 2>/dev/null; then
+                    if grep -qi "docker\|socket\|permission" /tmp/vscode-launch.log 2>/dev/null; then
+                        VSCODE_ERROR=1
+                    fi
+                fi
+                
+                if ! pgrep -f "[Cc]ode" > /dev/null 2>&1; then
+                    sleep 2
+                    if ! pgrep -f "[Cc]ode" > /dev/null 2>&1; then
+                        VSCODE_ERROR=1
+                    fi
+                fi
+                
+                rm -f "$EDITOR_LAUNCHER"
+                
+                if [ "${VSCODE_ERROR:-0}" = "1" ]; then
+                    echo ""
+                    echo "⚠️  Failed to launch VSCode with Remote Containers extension."
+                    echo ""
+                    if [ "$CONTAINER_RUNTIME" = "podman" ]; then
                         echo "💡 VSCode's Remote Containers extension requires Docker-compatible API."
-                        echo "   For Podman, you can install podman-docker for compatibility:"
-                        echo "   sudo apt install podman-docker  # or equivalent for your distro"
                         echo ""
-                        echo "   After installing, the 'docker' command will use Podman, and VSCode will work."
+                        echo "   Solutions:"
+                        echo "   1. Install podman-docker for compatibility:"
+                        echo "      sudo apt install podman-docker  # or equivalent for your distro"
                         echo ""
-                        echo "Stopping container and falling back to shell..."
-                        podman stop "$CONTAINER_NAME" >/dev/null 2>&1
-                        podman rm "$CONTAINER_NAME" >/dev/null 2>&1
-                        CURSOR_AVAILABLE=false
-                        VSCODE_AVAILABLE=false
-                    }
-                else
-                    "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
+                        echo "   2. Or ensure Podman socket is accessible:"
+                        echo "      sudo chmod 666 /run/podman/podman.sock  # if using system socket"
                         echo ""
-                        echo "⚠️  Failed to launch VSCode with Remote Containers extension."
-                        echo ""
-                        echo "💡 VSCode's Remote Containers extension requires Docker-compatible API."
-                        echo "   For Podman, you can install podman-docker for compatibility:"
-                        echo "   sudo apt install podman-docker  # or equivalent for your distro"
-                        echo ""
-                        echo "   After installing, the 'docker' command will use Podman, and VSCode will work."
-                        echo ""
-                        echo "Stopping container and falling back to shell..."
-                        podman stop "$CONTAINER_NAME" >/dev/null 2>&1
-                        podman rm "$CONTAINER_NAME" >/dev/null 2>&1
-                        CURSOR_AVAILABLE=false
-                        VSCODE_AVAILABLE=false
-                    }
+                        echo "   3. Or use the interactive shell instead:"
+                        echo "      venvoy run --name $RUN_NAME --command /bin/bash"
+                    else
+                        echo "💡 Make sure Docker is running and accessible:"
+                        echo "      sudo systemctl start docker"
+                        echo "      sudo usermod -aG docker $USER  # then log out and back in"
+                    fi
+                    echo ""
+                    echo "Stopping container and falling back to shell..."
+                    podman stop "$CONTAINER_NAME" >/dev/null 2>&1
+                    podman rm "$CONTAINER_NAME" >/dev/null 2>&1
+                    CURSOR_AVAILABLE=false
+                    VSCODE_AVAILABLE=false
                 fi
             fi
             

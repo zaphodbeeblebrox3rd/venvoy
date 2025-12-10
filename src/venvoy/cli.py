@@ -1201,9 +1201,10 @@ def deactivate():
 
 
 @main.command()
+@click.argument("name_arg", required=False)
 @click.option(
     "--name",
-    required=True,
+    default=None,
     help="Name of the venvoy environment to delete"
 )
 @click.option(
@@ -1211,18 +1212,37 @@ def deactivate():
     is_flag=True,
     help="Skip confirmation prompt"
 )
-def delete(name: str, force: bool):
-    """Delete a venvoy environment and its associated containers"""
+def delete(name_arg: str, name: str, force: bool):
+    """Delete a venvoy environment and its associated containers
+    
+    You can specify the environment name as a positional argument:
+    venvoy delete my-env
+    
+    Or use the --name option:
+    venvoy delete --name my-env
+    
+    If both are provided, --name takes precedence.
+    """
     import shutil
+    import subprocess
     from pathlib import Path
     
-    console.print(Panel.fit(f"🗑️  Deleting Environment: {name}", style="bold red"))
+    # Determine the environment name: --name takes precedence, then name_arg
+    env_name = name if name is not None else (name_arg if name_arg else None)
     
-    env = VenvoyEnvironment(name=name)
+    if not env_name:
+        console.print("❌ Environment name is required.", style="red")
+        console.print("💡 Usage: venvoy delete <environment-name>")
+        console.print("   Or: venvoy delete --name <environment-name>")
+        return
+    
+    console.print(Panel.fit(f"🗑️  Deleting Environment: {env_name}", style="bold red"))
+    
+    env = VenvoyEnvironment(name=env_name)
     
     # Check if environment exists
     if not env.config_file.exists():
-        console.print(f"❌ Environment '{name}' not found.", style="red")
+        console.print(f"❌ Environment '{env_name}' not found.", style="red")
         console.print(f"💡 Use 'venvoy list' to see all available environments")
         return
     
@@ -1235,7 +1255,7 @@ def delete(name: str, force: bool):
     console.print("")
     
     if not force:
-        confirm = click.confirm(f"Are you sure you want to delete environment '{name}'?")
+        confirm = click.confirm(f"Are you sure you want to delete environment '{env_name}'?")
         if not confirm:
             console.print("❌ Deletion cancelled", style="bold red")
             return
@@ -1255,7 +1275,7 @@ def delete(name: str, force: bool):
                     capture_output=True, text=True, check=True
                 )
                 containers = [c.strip() for c in result.stdout.split('\n') if c.strip()]
-                matching_containers = [c for c in containers if c.startswith(f'venvoy-{name}-')]
+                matching_containers = [c for c in containers if c.startswith(f'venvoy-{env_name}-')]
                 
                 for container in matching_containers:
                     console.print(f"  🛑 Stopping container: {container}")
@@ -1272,7 +1292,7 @@ def delete(name: str, force: bool):
                     capture_output=True, text=True, check=True
                 )
                 containers = [c.strip() for c in result.stdout.split('\n') if c.strip()]
-                matching_containers = [c for c in containers if c.startswith(f'venvoy-{name}-')]
+                matching_containers = [c for c in containers if c.startswith(f'venvoy-{env_name}-')]
                 
                 for container in matching_containers:
                     console.print(f"  🛑 Stopping container: {container}")
@@ -1307,7 +1327,7 @@ def delete(name: str, force: bool):
         console.print(f"⚠️  Warning: Could not remove projects directory: {e}", style="yellow")
     
     console.print("")
-    console.print(f"✅ Environment '{name}' deleted successfully!", style="bold green")
+    console.print(f"✅ Environment '{env_name}' deleted successfully!", style="bold green")
     console.print(f"💡 Use 'venvoy list' to see remaining environments")
 
 
