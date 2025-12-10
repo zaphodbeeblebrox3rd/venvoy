@@ -1200,5 +1200,116 @@ def deactivate():
     exit()
 
 
+@main.command()
+@click.option(
+    "--name",
+    required=True,
+    help="Name of the venvoy environment to delete"
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Skip confirmation prompt"
+)
+def delete(name: str, force: bool):
+    """Delete a venvoy environment and its associated containers"""
+    import shutil
+    from pathlib import Path
+    
+    console.print(Panel.fit(f"🗑️  Deleting Environment: {name}", style="bold red"))
+    
+    env = VenvoyEnvironment(name=name)
+    
+    # Check if environment exists
+    if not env.config_file.exists():
+        console.print(f"❌ Environment '{name}' not found.", style="red")
+        console.print(f"💡 Use 'venvoy list' to see all available environments")
+        return
+    
+    # Show what will be deleted
+    console.print("")
+    console.print("This will remove:", style="bold yellow")
+    console.print(f"  📁 Environment directory: {env.env_dir}")
+    console.print(f"  📁 Projects directory: {env.projects_dir}")
+    console.print(f"  🐳 Associated containers")
+    console.print("")
+    
+    if not force:
+        confirm = click.confirm(f"Are you sure you want to delete environment '{name}'?")
+        if not confirm:
+            console.print("❌ Deletion cancelled", style="bold red")
+            return
+    
+    # Stop and remove associated containers first
+    console.print("🛑 Stopping associated containers...", style="cyan")
+    try:
+        container_manager = ContainerManager()
+        runtime = container_manager.runtime
+        
+        if runtime == ContainerRuntime.DOCKER:
+            docker_path = shutil.which('docker')
+            if docker_path:
+                # List all containers and find ones matching the pattern
+                result = subprocess.run(
+                    [docker_path, 'ps', '-a', '--format', '{{.Names}}'],
+                    capture_output=True, text=True, check=True
+                )
+                containers = [c.strip() for c in result.stdout.split('\n') if c.strip()]
+                matching_containers = [c for c in containers if c.startswith(f'venvoy-{name}-')]
+                
+                for container in matching_containers:
+                    console.print(f"  🛑 Stopping container: {container}")
+                    subprocess.run([docker_path, 'stop', container], capture_output=True, check=False)
+                    subprocess.run([docker_path, 'rm', container], capture_output=True, check=False)
+                
+                if matching_containers:
+                    console.print(f"✅ Stopped and removed {len(matching_containers)} container(s)", style="green")
+        elif runtime == ContainerRuntime.PODMAN:
+            podman_path = shutil.which('podman')
+            if podman_path:
+                result = subprocess.run(
+                    [podman_path, 'ps', '-a', '--format', '{{.Names}}'],
+                    capture_output=True, text=True, check=True
+                )
+                containers = [c.strip() for c in result.stdout.split('\n') if c.strip()]
+                matching_containers = [c for c in containers if c.startswith(f'venvoy-{name}-')]
+                
+                for container in matching_containers:
+                    console.print(f"  🛑 Stopping container: {container}")
+                    subprocess.run([podman_path, 'stop', container], capture_output=True, check=False)
+                    subprocess.run([podman_path, 'rm', container], capture_output=True, check=False)
+                
+                if matching_containers:
+                    console.print(f"✅ Stopped and removed {len(matching_containers)} container(s)", style="green")
+    except Exception as e:
+        console.print(f"⚠️  Warning: Could not stop containers: {e}", style="yellow")
+    
+    # Delete environment directory
+    console.print("")
+    console.print("🗑️  Removing environment files...", style="cyan")
+    try:
+        if env.env_dir.exists():
+            shutil.rmtree(env.env_dir)
+            console.print(f"✅ Removed environment directory: {env.env_dir}", style="green")
+    except Exception as e:
+        console.print(f"❌ Failed to remove environment directory: {e}", style="red")
+        return
+    
+    # Delete projects directory (optional - contains exports)
+    try:
+        if env.projects_dir.exists():
+            if force or click.confirm(f"Also remove projects directory with exports? ({env.projects_dir})"):
+                shutil.rmtree(env.projects_dir)
+                console.print(f"✅ Removed projects directory: {env.projects_dir}", style="green")
+            else:
+                console.print(f"📁 Kept projects directory: {env.projects_dir}", style="yellow")
+    except Exception as e:
+        console.print(f"⚠️  Warning: Could not remove projects directory: {e}", style="yellow")
+    
+    console.print("")
+    console.print(f"✅ Environment '{name}' deleted successfully!", style="bold green")
+    console.print(f"💡 Use 'venvoy list' to see remaining environments")
+
+
 if __name__ == "__main__":
     main() 
