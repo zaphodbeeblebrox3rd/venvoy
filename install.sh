@@ -1498,6 +1498,33 @@ else
         if [[ -f "$VENVOY_SOURCE_DIR/src/venvoy/cli.py" ]] && command -v python3 &> /dev/null; then
             # We have the source code and Python - run it directly on the host
             echo "🔧 Using local venvoy development code from $VENVOY_SOURCE_DIR"
+            
+            # Check if dependencies are installed, install if missing
+            # Check core dependencies: yaml (from pyyaml), click, rich, requests
+            if ! python3 -c "import yaml, click, rich, requests" 2>/dev/null; then
+                echo "📦 Installing venvoy dependencies for development..."
+                if [[ -f "$VENVOY_SOURCE_DIR/requirements.txt" ]]; then
+                    python3 -m pip install --user -q -r "$VENVOY_SOURCE_DIR/requirements.txt" || {
+                        echo "⚠️  Failed to install dependencies. Trying with pip3..."
+                        pip3 install --user -q -r "$VENVOY_SOURCE_DIR/requirements.txt" || {
+                            echo "❌ Failed to install dependencies. Please install manually:"
+                            echo "   pip install -r $VENVOY_SOURCE_DIR/requirements.txt"
+                            exit 1
+                        }
+                    }
+                else
+                    echo "⚠️  requirements.txt not found. Installing core dependencies..."
+                    python3 -m pip install --user -q pyyaml click docker rich packaging requests || {
+                        pip3 install --user -q pyyaml click docker rich packaging requests || {
+                            echo "❌ Failed to install dependencies. Please install manually:"
+                            echo "   pip install pyyaml click docker rich packaging requests"
+                            exit 1
+                        }
+                    }
+                fi
+                echo "✅ Dependencies installed"
+            fi
+            
             export PYTHONPATH="$VENVOY_SOURCE_DIR/src:$PYTHONPATH"
             python3 -c "import sys; sys.path.insert(0, '$VENVOY_SOURCE_DIR/src'); from venvoy.cli import main; main()" "$@"
             exit $?
