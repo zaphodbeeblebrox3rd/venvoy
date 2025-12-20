@@ -63,7 +63,9 @@ Developers, Hobbyists, Researchers, and IT Professionals - have you had these he
 
 **venvoy solves these fundamental scientific reproducibility problems.**
 
-`venvoy` creates **containerized Python environments** that deliver **identical results** across any platform. Unlike traditional virtual environments that are tied to specific systems and architectures, venvoy environments guarantee the same numerical outputs whether running on:
+### What Venvoy Is
+
+`venvoy` creates **containerized Python and R environments** that deliver **identical sofware environments** across any platform. Unlike traditional virtual environments that are tied to specific systems and architectures, venvoy environments guarantee the same numerical outputs whether running on:
 
 - **Research institutions** - Share exact environments between universities and labs
 - **Cross-platform teams** - Intel workstations, Apple Silicon laptops, ARM cloud servers
@@ -72,6 +74,9 @@ Developers, Hobbyists, Researchers, and IT Professionals - have you had these he
 - **Peer review** - Reviewers get your exact computational environment
 - **Multi-architecture deployment** - Seamless scaling from laptop to cloud infrastructure
 - **HPC clusters** - Work on research computing clusters without root access
+
+### What Venvoy is Not
+Venvoy cannot eliminate hardware-level differences that affect floating-point math.  I will provide an example of a totally unavoidable difference between arm and x86_64.
 
 ### 🌐 **How Cross-Platform Magic Works:**
 - **🏢 HPC Clusters & Research Computing**: Apptainer/Singularity containers without root access
@@ -87,7 +92,8 @@ Developers, Hobbyists, Researchers, and IT Professionals - have you had these he
 - **ARM64 Servers**: Cloud-native support for ARM-based infrastructure
 - **Automatic Selection**: Docker automatically pulls the correct architecture for your system
 
-*Enterprise platforms (IBM Power/mainframes) available on consulting basis.*
+> Enterprise platforms (IBM Power/mainframes) may be made available; if you are interested please support the project and let me know.
+{ .is-info }
 
 **🔧 Multi-Runtime Container Support:**
 - **Docker**: Traditional containers for development environments
