@@ -186,6 +186,146 @@ if [ "$CONTAINER_RUNTIME" = "podman" ]; then
         esac
         echo ""
     fi
+    
+    # Set up Podman socket for Cursor/VSCode Remote Containers compatibility
+    # This is critical because Cursor spawns child processes that run 'docker inspect'
+    # and these processes need access to the Podman socket
+    if [ "$CURSOR_OR_VSCODE_AVAILABLE" = true ] && [ "$PLATFORM" = "linux" ]; then
+        echo "🔧 Setting up Podman socket for Cursor/VSCode compatibility..."
+        
+        PODMAN_SOCKET_SETUP_SUCCESS=false
+        
+        # Step 1: Enable the systemd user podman socket if available
+        if command -v systemctl &> /dev/null; then
+            # Check if user socket unit exists
+            if systemctl --user list-unit-files podman.socket &> /dev/null; then
+                # Enable and start the socket
+                if systemctl --user enable --now podman.socket 2>/dev/null; then
+                    echo "   ✅ Enabled systemd user podman socket"
+                    PODMAN_SOCKET_SETUP_SUCCESS=true
+                    PODMAN_USER_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
+                else
+                    echo "   ⚠️  Could not enable systemd user podman socket"
+                fi
+            fi
+        fi
+        
+        # Step 2: Set up DOCKER_HOST in environment.d for desktop applications
+        # This makes DOCKER_HOST available to all processes in the user session
+        if [ "$PODMAN_SOCKET_SETUP_SUCCESS" = true ]; then
+            ENVIRONMENT_D_DIR="$HOME/.config/environment.d"
+            mkdir -p "$ENVIRONMENT_D_DIR"
+            
+            # Create environment file for Podman socket
+            cat > "$ENVIRONMENT_D_DIR/podman-docker.conf" << 'ENVEOF'
+# Podman socket configuration for Docker compatibility
+# This allows Cursor, VSCode, and other tools that expect Docker to work with Podman
+DOCKER_HOST=unix://${XDG_RUNTIME_DIR}/podman/podman.sock
+ENVEOF
+            echo "   ✅ Created $ENVIRONMENT_D_DIR/podman-docker.conf"
+            
+            # Also add to bashrc for terminal sessions
+            if ! grep -q "DOCKER_HOST.*podman.sock" "$HOME/.bashrc" 2>/dev/null; then
+                echo '' >> "$HOME/.bashrc"
+                echo '# Podman socket for Docker compatibility (added by venvoy)' >> "$HOME/.bashrc"
+                echo 'export DOCKER_HOST="unix://${XDG_RUNTIME_DIR}/podman/podman.sock"' >> "$HOME/.bashrc"
+                echo "   ✅ Added DOCKER_HOST to ~/.bashrc"
+            fi
+            
+            # Export for current session
+            export DOCKER_HOST="unix://${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
+        fi
+        
+        # Step 3: Update Cursor settings to use Podman
+        CURSOR_SETTINGS_DIR="$HOME/.config/Cursor/User"
+        if [ -d "$CURSOR_SETTINGS_DIR" ] || [ -d "$HOME/.config/Cursor" ]; then
+            mkdir -p "$CURSOR_SETTINGS_DIR"
+            CURSOR_SETTINGS="$CURSOR_SETTINGS_DIR/settings.json"
+            
+            # Check if settings file exists and has content
+            if [ -f "$CURSOR_SETTINGS" ] && [ -s "$CURSOR_SETTINGS" ]; then
+                # Backup existing settings
+                cp "$CURSOR_SETTINGS" "$CURSOR_SETTINGS.venvoy-backup" 2>/dev/null || true
+                
+                # Check if docker settings already exist
+                if ! grep -q '"docker.dockerPath"' "$CURSOR_SETTINGS" 2>/dev/null; then
+                    # Add docker settings before the closing brace
+                    # Use a temp file to avoid issues
+                    TEMP_SETTINGS=$(mktemp)
+                    # Remove trailing } and whitespace, add our settings, then close
+                    sed '$ s/}$//' "$CURSOR_SETTINGS" | sed -e :a -e '/^[[:space:]]*$/d;N;ba' > "$TEMP_SETTINGS"
+                    cat >> "$TEMP_SETTINGS" << CURSORSETTINGS
+,
+    "docker.dockerPath": "/usr/bin/podman",
+    "docker.environment": {
+        "DOCKER_HOST": "unix:///run/user/$(id -u)/podman/podman.sock"
+    },
+    "dev.containers.dockerPath": "/usr/bin/podman",
+    "remote.containers.dockerPath": "/usr/bin/podman"
+}
+CURSORSETTINGS
+                    mv "$TEMP_SETTINGS" "$CURSOR_SETTINGS"
+                    echo "   ✅ Updated Cursor settings for Podman"
+                fi
+            else
+                # Create new settings file
+                cat > "$CURSOR_SETTINGS" << CURSORSETTINGS
+{
+    "docker.dockerPath": "/usr/bin/podman",
+    "docker.environment": {
+        "DOCKER_HOST": "unix:///run/user/$(id -u)/podman/podman.sock"
+    },
+    "dev.containers.dockerPath": "/usr/bin/podman",
+    "remote.containers.dockerPath": "/usr/bin/podman"
+}
+CURSORSETTINGS
+                echo "   ✅ Created Cursor settings for Podman"
+            fi
+        fi
+        
+        # Step 4: Create a local desktop file override for Cursor with DOCKER_HOST
+        if [ -f "/usr/share/applications/cursor.desktop" ]; then
+            LOCAL_APPS_DIR="$HOME/.local/share/applications"
+            mkdir -p "$LOCAL_APPS_DIR"
+            
+            # Create override that sets DOCKER_HOST before launching Cursor
+            cat > "$LOCAL_APPS_DIR/cursor.desktop" << DESKTOPEOF
+[Desktop Entry]
+Name=Cursor
+Comment=The AI Code Editor.
+GenericName=Text Editor
+Exec=env DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock /usr/share/cursor/cursor %F
+Icon=co.anysphere.cursor
+Type=Application
+StartupNotify=false
+StartupWMClass=Cursor
+Categories=TextEditor;Development;IDE;
+MimeType=application/x-cursor-workspace;
+Actions=new-empty-window;
+Keywords=cursor;
+
+[Desktop Action new-empty-window]
+Name=New Empty Window
+Exec=env DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock /usr/share/cursor/cursor --new-window %F
+Icon=co.anysphere.cursor
+DESKTOPEOF
+            # Update desktop database
+            update-desktop-database "$LOCAL_APPS_DIR" 2>/dev/null || true
+            echo "   ✅ Created Cursor desktop launcher with DOCKER_HOST"
+        fi
+        
+        if [ "$PODMAN_SOCKET_SETUP_SUCCESS" = true ]; then
+            echo "   ✅ Podman socket setup complete for Cursor/VSCode"
+            echo ""
+            echo "   ⚠️  IMPORTANT: You may need to log out and back in, or reboot,"
+            echo "      for the DOCKER_HOST environment variable to take effect in GUI apps."
+            echo ""
+        else
+            echo "   ⚠️  Could not set up Podman socket automatically."
+            echo "      You may need to run: systemctl --user enable --now podman.socket"
+            echo ""
+        fi
+    fi
 fi
 
 # Create installation directory
@@ -902,51 +1042,69 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
             sleep 2
             
             # For Podman, Cursor/VSCode Remote Containers needs Docker-compatible API
-            # Check multiple potential socket locations and set up if needed
+            # Priority order for socket detection:
+            # 1. Systemd user socket (most reliable for Cursor - set up during install)
+            # 2. XDG_RUNTIME_DIR socket
+            # 3. System Docker socket (if accessible)
+            # 4. System Podman socket (if accessible)
+            # 5. Fall back to manual socket setup
             DOCKER_HOST_SET=false
+            XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
             
-            # First, check if there's an existing accessible Docker/Podman socket
-            if [ -S "/var/run/docker.sock" ] && [ -r "/var/run/docker.sock" ]; then
-                # System Docker socket exists and is readable
-                export DOCKER_HOST="unix:///var/run/docker.sock"
+            # First priority: Check systemd user podman socket (set up during install)
+            SYSTEMD_USER_SOCKET="$XDG_RUNTIME_DIR/podman/podman.sock"
+            if [ -S "$SYSTEMD_USER_SOCKET" ] && [ -r "$SYSTEMD_USER_SOCKET" ]; then
+                export DOCKER_HOST="unix://$SYSTEMD_USER_SOCKET"
                 DOCKER_HOST_SET=true
-                echo "✅ Using existing Docker socket: /var/run/docker.sock"
-            elif [ -S "/run/podman/podman.sock" ] && [ -r "/run/podman/podman.sock" ]; then
-                # System Podman socket exists and is readable
-                export DOCKER_HOST="unix:///run/podman/podman.sock"
-                DOCKER_HOST_SET=true
-                echo "✅ Using existing Podman socket: /run/podman/podman.sock"
-            elif command -v docker > /dev/null 2>&1 && docker --version 2>&1 | grep -qi podman; then
-                # podman-docker is installed, Docker command points to Podman
-                # Check if it can access the socket
-                if docker info > /dev/null 2>&1; then
-                    # Docker command works, use default socket
-                    unset DOCKER_HOST  # Use default
-                    DOCKER_HOST_SET=true
-                    echo "✅ Using podman-docker for Docker compatibility"
+                echo "✅ Using systemd user Podman socket: $SYSTEMD_USER_SOCKET"
+            # Second: Try to enable systemd user socket if not running
+            elif command -v systemctl &> /dev/null && systemctl --user list-unit-files podman.socket &> /dev/null; then
+                echo "🔧 Enabling systemd user podman socket..."
+                if systemctl --user enable --now podman.socket 2>/dev/null; then
+                    sleep 1
+                    if [ -S "$SYSTEMD_USER_SOCKET" ] && [ -r "$SYSTEMD_USER_SOCKET" ]; then
+                        export DOCKER_HOST="unix://$SYSTEMD_USER_SOCKET"
+                        DOCKER_HOST_SET=true
+                        echo "✅ Enabled and using systemd user Podman socket"
+                    fi
                 fi
             fi
             
-            # If no accessible socket found, set up user-level Podman API service
+            # Fallback: Check system sockets if user socket not available
+            if [ "$DOCKER_HOST_SET" = false ]; then
+                if [ -S "/var/run/docker.sock" ] && [ -r "/var/run/docker.sock" ]; then
+                    export DOCKER_HOST="unix:///var/run/docker.sock"
+                    DOCKER_HOST_SET=true
+                    echo "✅ Using system Docker socket: /var/run/docker.sock"
+                elif [ -S "/run/podman/podman.sock" ] && [ -r "/run/podman/podman.sock" ]; then
+                    export DOCKER_HOST="unix:///run/podman/podman.sock"
+                    DOCKER_HOST_SET=true
+                    echo "✅ Using system Podman socket: /run/podman/podman.sock"
+                elif command -v docker > /dev/null 2>&1 && docker --version 2>&1 | grep -qi podman; then
+                    if docker info > /dev/null 2>&1; then
+                        unset DOCKER_HOST
+                        DOCKER_HOST_SET=true
+                        echo "✅ Using podman-docker for Docker compatibility"
+                    fi
+                fi
+            fi
+            
+            # Last resort: Start manual Podman API service
             if [ "$DOCKER_HOST_SET" = false ]; then
                 PODMAN_SOCKET_DIR="$HOME/.local/share/containers/podman-socket"
                 mkdir -p "$PODMAN_SOCKET_DIR"
                 PODMAN_SOCKET="$PODMAN_SOCKET_DIR/podman.sock"
                 
-                # Check if user-level socket already exists and is accessible
                 if [ -S "$PODMAN_SOCKET" ] && [ -r "$PODMAN_SOCKET" ]; then
                     export DOCKER_HOST="unix://$PODMAN_SOCKET"
                     DOCKER_HOST_SET=true
                     echo "✅ Using existing user Podman socket: $PODMAN_SOCKET"
                 else
-                    # Start Podman API service in background if not already running
                     if ! pgrep -f "podman system service.*$PODMAN_SOCKET" > /dev/null; then
-                        echo "🔧 Starting Podman Docker-compatible API service for Cursor/VSCode..."
-                        # Start service and wait for socket to be created
+                        echo "🔧 Starting Podman API service for Cursor/VSCode..."
                         podman system service --time=0 unix://"$PODMAN_SOCKET" > /dev/null 2>&1 &
                         PODMAN_SERVICE_PID=$!
                         
-                        # Wait for socket to be created (up to 5 seconds)
                         for i in {1..10}; do
                             if [ -S "$PODMAN_SOCKET" ] && [ -r "$PODMAN_SOCKET" ]; then
                                 break
@@ -954,7 +1112,6 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
                             sleep 0.5
                         done
                         
-                        # Verify socket is accessible
                         if [ -S "$PODMAN_SOCKET" ] && [ -r "$PODMAN_SOCKET" ]; then
                             export DOCKER_HOST="unix://$PODMAN_SOCKET"
                             DOCKER_HOST_SET=true
@@ -1001,118 +1158,148 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
 # Launcher script for Cursor/VSCode with proper Docker/Podman socket access
 # This ensures the editor can run 'docker inspect' successfully
 
-# First, try to use the DOCKER_HOST we detected
-if [ -n "${DOCKER_HOST:-}" ]; then
+# Priority order for socket detection (same as main script):
+# 1. Systemd user socket (most reliable)
+# 2. System sockets
+# 3. Manual socket
+
+XDG_RUNTIME_DIR="\${XDG_RUNTIME_DIR:-/run/user/\$(id -u)}"
+SYSTEMD_USER_SOCKET="\$XDG_RUNTIME_DIR/podman/podman.sock"
+
+# First, check for systemd user socket (set up during venvoy install)
+if [ -S "\$SYSTEMD_USER_SOCKET" ] && [ -r "\$SYSTEMD_USER_SOCKET" ]; then
+    export DOCKER_HOST="unix://\$SYSTEMD_USER_SOCKET"
+# Then try inherited DOCKER_HOST
+elif [ -n "${DOCKER_HOST:-}" ]; then
     export DOCKER_HOST="${DOCKER_HOST}"
+# Then try system sockets
+elif [ -S "/var/run/docker.sock" ] && [ -r "/var/run/docker.sock" ]; then
+    export DOCKER_HOST="unix:///var/run/docker.sock"
+elif [ -S "/run/podman/podman.sock" ] && [ -r "/run/podman/podman.sock" ]; then
+    export DOCKER_HOST="unix:///run/podman/podman.sock"
+elif [ -S "\$HOME/.local/share/containers/podman-socket/podman.sock" ] && [ -r "\$HOME/.local/share/containers/podman-socket/podman.sock" ]; then
+    export DOCKER_HOST="unix://\$HOME/.local/share/containers/podman-socket/podman.sock"
 fi
 
-# Verify docker command works - if not, try to fix it
+# Final test - can we inspect the container?
 if command -v docker > /dev/null 2>&1; then
-    # Test if docker works (try a simple command that doesn't require a container)
-    if ! docker version > /dev/null 2>&1; then
-        # Docker doesn't work, try to find a working socket
-        if [ -S "/var/run/docker.sock" ] && [ -r "/var/run/docker.sock" ]; then
-            export DOCKER_HOST="unix:///var/run/docker.sock"
-        elif [ -S "/run/podman/podman.sock" ] && [ -r "/run/podman/podman.sock" ]; then
-            export DOCKER_HOST="unix:///run/podman/podman.sock"
-        elif [ -S "$HOME/.local/share/containers/podman-socket/podman.sock" ] && [ -r "$HOME/.local/share/containers/podman-socket/podman.sock" ]; then
-            export DOCKER_HOST="unix://$HOME/.local/share/containers/podman-socket/podman.sock"
-        fi
-        
-        # Test again
-        if ! docker version > /dev/null 2>&1; then
-            # Still doesn't work - try unsetting DOCKER_HOST (use default)
-            unset DOCKER_HOST
-        fi
-    fi
-    
-    # Final test - can we inspect the container?
     if ! docker inspect "${CONTAINER_NAME}" > /dev/null 2>&1; then
         echo "Warning: docker inspect failed for ${CONTAINER_NAME}" >&2
-        echo "DOCKER_HOST=${DOCKER_HOST:-<unset>}" >&2
+        echo "DOCKER_HOST=\${DOCKER_HOST:-<unset>}" >&2
         echo "This may cause Cursor Remote Containers to fail" >&2
     fi
 fi
 
 # Launch the editor with the container URI
-# Cursor will try to run 'docker inspect' - it must work!
 exec "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" "\$@"
 EOFLAUNCHER
             chmod +x "$EDITOR_LAUNCHER"
             
             # CRITICAL: Cursor spawns child processes that run 'docker inspect'
-            # These processes don't inherit DOCKER_HOST and may not have socket access
-            # We MUST check socket permissions directly, not just test docker inspect
+            # These processes need access to the Podman socket
+            # We check for the user socket first (most reliable), then fall back
             
             echo ""
             echo "🔍 Pre-flight check: Verifying Cursor can access Docker/Podman..."
             
-            # ALWAYS check socket permissions for Podman (this is the most common issue)
             SOCKET_ISSUE=false
+            XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+            SYSTEMD_USER_SOCKET="$XDG_RUNTIME_DIR/podman/podman.sock"
+            
             if [ "$CONTAINER_RUNTIME" = "podman" ]; then
-                if [ -S "/run/podman/podman.sock" ]; then
-                    SOCKET_PERMS=$(stat -c "%a" /run/podman/podman.sock 2>/dev/null || echo "unknown")
-                    SOCKET_OWNER=$(stat -c "%U:%G" /run/podman/podman.sock 2>/dev/null || echo "unknown")
-                    
-                    # Check if socket is accessible to all users (needed for Cursor)
-                    if [ "$SOCKET_PERMS" != "666" ] && [ "$SOCKET_PERMS" != "777" ]; then
-                        SOCKET_ISSUE=true
-                        echo "❌ PROBLEM DETECTED: Podman socket permissions are too restrictive!"
-                        echo "   Socket: /run/podman/podman.sock"
-                        echo "   Current permissions: $SOCKET_PERMS (owner: $SOCKET_OWNER)"
-                        echo "   Required: 666 or 777 (accessible to all users)"
-                        echo ""
-                        echo "   🔧 REQUIRED FIX:"
-                        echo "      sudo chmod 666 /run/podman/podman.sock"
-                        echo ""
-                        echo "   This makes the socket accessible to Cursor's processes."
-                        echo "   Without this, Cursor will fail with 'docker inspect' error."
-                        echo ""
+                # First, check if the systemd user socket is available (best option)
+                if [ -S "$SYSTEMD_USER_SOCKET" ] && [ -r "$SYSTEMD_USER_SOCKET" ]; then
+                    echo "✅ Systemd user Podman socket available: $SYSTEMD_USER_SOCKET"
+                    # Test that docker inspect works with this socket
+                    if DOCKER_HOST="unix://$SYSTEMD_USER_SOCKET" docker inspect "$CONTAINER_NAME" > /dev/null 2>&1; then
+                        echo "✅ docker inspect works with user socket"
                     else
-                        echo "✅ Socket permissions OK: $SOCKET_PERMS"
+                        echo "⚠️  docker inspect failed with user socket"
+                        SOCKET_ISSUE=true
+                    fi
+                else
+                    echo "⚠️  Systemd user Podman socket not available"
+                    echo "   Expected at: $SYSTEMD_USER_SOCKET"
+                    
+                    # Try to enable it
+                    if command -v systemctl &> /dev/null; then
+                        echo "   🔧 Attempting to enable systemd user podman socket..."
+                        if systemctl --user enable --now podman.socket 2>/dev/null; then
+                            sleep 1
+                            if [ -S "$SYSTEMD_USER_SOCKET" ] && [ -r "$SYSTEMD_USER_SOCKET" ]; then
+                                echo "   ✅ Socket enabled successfully!"
+                            else
+                                SOCKET_ISSUE=true
+                            fi
+                        else
+                            echo "   ❌ Could not enable socket"
+                            SOCKET_ISSUE=true
+                        fi
+                    else
+                        SOCKET_ISSUE=true
+                    fi
+                    
+                    # Fall back to checking system socket
+                    if [ "$SOCKET_ISSUE" = true ]; then
+                        if [ -S "/run/podman/podman.sock" ] && [ -r "/run/podman/podman.sock" ]; then
+                            echo "   ✅ System Podman socket accessible"
+                            SOCKET_ISSUE=false
+                        elif [ -S "/var/run/docker.sock" ] && [ -r "/var/run/docker.sock" ]; then
+                            echo "   ✅ Docker socket accessible"
+                            SOCKET_ISSUE=false
+                        fi
                     fi
                 fi
             fi
             
-            # Also test docker inspect without DOCKER_HOST (what Cursor will see)
-            unset DOCKER_HOST
-            if docker inspect "$CONTAINER_NAME" > /dev/null 2>&1; then
-                echo "✅ docker inspect works without DOCKER_HOST"
-            else
-                echo "❌ docker inspect FAILED without DOCKER_HOST"
-                if [ "$SOCKET_ISSUE" = false ]; then
-                    # Socket permissions are OK but docker inspect still fails
-                    echo "   This might be a different issue (not socket permissions)"
-                    echo "   Check: docker info && docker inspect $CONTAINER_NAME"
+            # Final test: docker inspect without explicitly setting DOCKER_HOST
+            # This simulates what Cursor's child processes will do
+            if [ "$SOCKET_ISSUE" = false ]; then
+                # Temporarily unset to test default behavior
+                SAVED_DOCKER_HOST="${DOCKER_HOST:-}"
+                unset DOCKER_HOST
+                if docker inspect "$CONTAINER_NAME" > /dev/null 2>&1; then
+                    echo "✅ docker inspect works without DOCKER_HOST"
+                else
+                    # Try with the user socket explicitly
+                    if DOCKER_HOST="unix://$SYSTEMD_USER_SOCKET" docker inspect "$CONTAINER_NAME" > /dev/null 2>&1; then
+                        echo "✅ docker inspect works with DOCKER_HOST set"
+                        echo "   ⚠️  Note: Cursor may still have issues if DOCKER_HOST is not in environment"
+                        echo "   💡 If Cursor fails, log out and back in to apply environment changes"
+                    else
+                        echo "❌ docker inspect FAILED"
+                        SOCKET_ISSUE=true
+                    fi
                 fi
-                SOCKET_ISSUE=true
+                # Restore
+                if [ -n "$SAVED_DOCKER_HOST" ]; then
+                    export DOCKER_HOST="$SAVED_DOCKER_HOST"
+                fi
             fi
             
-            # If there's a socket issue, don't launch Cursor
+            # If there's a socket issue, provide guidance and offer alternatives
             if [ "$SOCKET_ISSUE" = true ]; then
                 echo ""
-                echo "⚠️  Cursor will fail - socket access issue detected!"
+                echo "⚠️  Socket access issue detected - Cursor may fail!"
                 echo ""
-                if [ "$CONTAINER_RUNTIME" = "podman" ] && [ -S "/run/podman/podman.sock" ]; then
-                    SOCKET_PERMS=$(stat -c "%a" /run/podman/podman.sock 2>/dev/null || echo "unknown")
-                    if [ "$SOCKET_PERMS" != "666" ] && [ "$SOCKET_PERMS" != "777" ]; then
-                        echo "   🔧 FIX: Run this command, then try again:"
-                        echo "      sudo chmod 666 /run/podman/podman.sock"
-                    fi
-                fi
+                echo "   🔧 RECOMMENDED FIXES (try in order):"
+                echo ""
+                echo "   1. Enable the systemd user podman socket:"
+                echo "      systemctl --user enable --now podman.socket"
+                echo ""
+                echo "   2. Log out and back in to apply environment changes"
+                echo ""
+                echo "   3. If still failing, check if you need to restart after venvoy install"
                 echo ""
                 echo "   Alternative: Use interactive shell instead:"
                 echo "      venvoy run --name $RUN_NAME --command /bin/bash"
                 echo ""
                 
-                podman stop "$CONTAINER_NAME" > /dev/null 2>&1
-                podman rm "$CONTAINER_NAME" > /dev/null 2>&1
-                CURSOR_AVAILABLE=false
-                VSCODE_AVAILABLE=false
-                exit 0
+                # Don't exit - let the user try anyway, maybe the launcher script will work
+                echo "   Attempting to launch Cursor anyway..."
+            else
+                echo "✅ All checks passed - Cursor should work!"
             fi
-            
-            echo "✅ All checks passed - Cursor should work!"
             
             # Launch editor connected to container
             if [ "$EDITOR_TYPE" = "cursor" ]; then
