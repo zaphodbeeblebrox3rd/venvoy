@@ -234,9 +234,60 @@ ENVEOF
             
             # Export for current session
             export DOCKER_HOST="unix://${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
+            
+            # Step 2b: Create podman configuration to work with the user socket
+            # This allows podman/docker commands to work without DOCKER_HOST being set
+            CONTAINERS_CONF_DIR="$HOME/.config/containers"
+            mkdir -p "$CONTAINERS_CONF_DIR"
+            
+            cat > "$CONTAINERS_CONF_DIR/containers.conf" << CONTAINERSCONF
+[engine]
+# Use the systemd user socket for Docker-compatible tools
+# This allows Cursor/VSCode to connect to containers without DOCKER_HOST
+remote = false
+
+[engine.service_destinations]
+  [engine.service_destinations.default]
+    uri = "unix:///run/user/$(id -u)/podman/podman.sock"
+CONTAINERSCONF
+            echo "   ✅ Created $CONTAINERS_CONF_DIR/containers.conf"
+            
+            # Step 2c: Create a docker wrapper script that sets DOCKER_HOST
+            # This is critical because Cursor's child processes don't inherit environment variables
+            # and call docker directly without DOCKER_HOST set
+            DOCKER_WRAPPER_DIR="$HOME/.local/bin"
+            mkdir -p "$DOCKER_WRAPPER_DIR"
+            
+            cat > "$DOCKER_WRAPPER_DIR/docker" << 'DOCKERWRAPPER'
+#!/bin/bash
+# Docker wrapper for Podman compatibility with Cursor/VSCode
+# Created by venvoy installer
+# This ensures DOCKER_HOST is set for Podman socket access
+
+# Set DOCKER_HOST if not already set
+if [ -z "$DOCKER_HOST" ]; then
+    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    if [ -S "$XDG_RUNTIME_DIR/podman/podman.sock" ]; then
+        export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
+    elif [ -S "/run/podman/podman.sock" ]; then
+        export DOCKER_HOST="unix:///run/podman/podman.sock"
+    fi
+fi
+
+# Call podman
+exec /usr/bin/podman "$@"
+DOCKERWRAPPER
+            chmod +x "$DOCKER_WRAPPER_DIR/docker"
+            echo "   ✅ Created docker wrapper at $DOCKER_WRAPPER_DIR/docker"
+            
+            # Ensure ~/.local/bin is in PATH
+            if ! grep -q 'export PATH="$HOME/.local/bin' "$HOME/.bashrc" 2>/dev/null; then
+                echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+                echo "   ✅ Added ~/.local/bin to PATH in ~/.bashrc"
+            fi
         fi
         
-        # Step 3: Update Cursor settings to use Podman
+        # Step 3: Update Cursor settings to use the docker wrapper
         CURSOR_SETTINGS_DIR="$HOME/.config/Cursor/User"
         if [ -d "$CURSOR_SETTINGS_DIR" ] || [ -d "$HOME/.config/Cursor" ]; then
             mkdir -p "$CURSOR_SETTINGS_DIR"
@@ -256,30 +307,30 @@ ENVEOF
                     sed '$ s/}$//' "$CURSOR_SETTINGS" | sed -e :a -e '/^[[:space:]]*$/d;N;ba' > "$TEMP_SETTINGS"
                     cat >> "$TEMP_SETTINGS" << CURSORSETTINGS
 ,
-    "docker.dockerPath": "/usr/bin/podman",
+    "docker.dockerPath": "$HOME/.local/bin/docker",
     "docker.environment": {
         "DOCKER_HOST": "unix:///run/user/$(id -u)/podman/podman.sock"
     },
-    "dev.containers.dockerPath": "/usr/bin/podman",
-    "remote.containers.dockerPath": "/usr/bin/podman"
+    "dev.containers.dockerPath": "$HOME/.local/bin/docker",
+    "remote.containers.dockerPath": "$HOME/.local/bin/docker"
 }
 CURSORSETTINGS
                     mv "$TEMP_SETTINGS" "$CURSOR_SETTINGS"
-                    echo "   ✅ Updated Cursor settings for Podman"
+                    echo "   ✅ Updated Cursor settings for Podman (using docker wrapper)"
                 fi
             else
                 # Create new settings file
                 cat > "$CURSOR_SETTINGS" << CURSORSETTINGS
 {
-    "docker.dockerPath": "/usr/bin/podman",
+    "docker.dockerPath": "$HOME/.local/bin/docker",
     "docker.environment": {
         "DOCKER_HOST": "unix:///run/user/$(id -u)/podman/podman.sock"
     },
-    "dev.containers.dockerPath": "/usr/bin/podman",
-    "remote.containers.dockerPath": "/usr/bin/podman"
+    "dev.containers.dockerPath": "$HOME/.local/bin/docker",
+    "remote.containers.dockerPath": "$HOME/.local/bin/docker"
 }
 CURSORSETTINGS
-                echo "   ✅ Created Cursor settings for Podman"
+                echo "   ✅ Created Cursor settings for Podman (using docker wrapper)"
             fi
         fi
         
@@ -965,6 +1016,10 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
     # Determine container name for editor connection (use $$ for process ID to ensure uniqueness)
     CONTAINER_NAME="venvoy-${RUN_NAME}-$$"
     
+    # Hex-encode the container name for the vscode-remote URI
+    # Cursor/VSCode Dev Containers expects the container name to be hex-encoded in the URI
+    CONTAINER_NAME_HEX=$(echo -n "$CONTAINER_NAME" | xxd -p | tr -d '\n')
+    
     # If editor is available and no custom command specified, launch editor
     if [ -z "$RUN_COMMAND" ] && { [ "$CURSOR_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; }; then
         # Determine which editor to use (prefer Cursor)
@@ -1001,7 +1056,7 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
             
             # Launch editor connected to container
             if [ "$EDITOR_TYPE" = "cursor" ]; then
-                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
+                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME_HEX}/home/venvoy" 2>/dev/null || {
                     echo "⚠️  Failed to launch Cursor. Stopping container and falling back to shell..."
                     docker stop "$CONTAINER_NAME" >/dev/null 2>&1
                     docker rm "$CONTAINER_NAME" >/dev/null 2>&1
@@ -1009,7 +1064,7 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
                     VSCODE_AVAILABLE=false
                 }
             else
-                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" 2>/dev/null || {
+                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME_HEX}/home/venvoy" 2>/dev/null || {
                     echo "⚠️  Failed to launch VSCode. Stopping container and falling back to shell..."
                     docker stop "$CONTAINER_NAME" >/dev/null 2>&1
                     docker rm "$CONTAINER_NAME" >/dev/null 2>&1
@@ -1190,8 +1245,8 @@ if command -v docker > /dev/null 2>&1; then
     fi
 fi
 
-# Launch the editor with the container URI
-exec "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME}/home/venvoy" "\$@"
+# Launch the editor with the container URI (hex-encoded container name)
+exec "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME_HEX}/home/venvoy" "\$@"
 EOFLAUNCHER
             chmod +x "$EDITOR_LAUNCHER"
             
