@@ -128,6 +128,26 @@ RUN groupadd -g $GROUP_ID venvoy && \
 WORKDIR /workspace
 RUN chown venvoy:venvoy /workspace
 
+# Create /host-home mount point with proper permissions
+# This directory will be mounted at runtime, but we need it to exist
+# with proper permissions so the mounted volume is accessible
+RUN mkdir -p /host-home && \
+    chmod 755 /host-home
+
+# Create entrypoint script to fix /host-home permissions
+# This script runs as root to fix permissions, then drops to the user
+RUN echo '#!/bin/bash' > /usr/local/bin/fix-host-home.sh && \
+    echo 'set -e' >> /usr/local/bin/fix-host-home.sh && \
+    echo '# Fix /host-home permissions if mounted and owned by root' >> /usr/local/bin/fix-host-home.sh && \
+    echo 'if [ -d /host-home ] && [ -n "$HOST_UID" ] && [ -n "$HOST_GID" ]; then' >> /usr/local/bin/fix-host-home.sh && \
+    echo '    # Check if owned by root' >> /usr/local/bin/fix-host-home.sh && \
+    echo '    if [ "$(stat -c %u /host-home 2>/dev/null || echo 0)" = "0" ]; then' >> /usr/local/bin/fix-host-home.sh && \
+    echo '        chown -R "$HOST_UID:$HOST_GID" /host-home 2>/dev/null || true' >> /usr/local/bin/fix-host-home.sh && \
+    echo '        chmod 755 /host-home 2>/dev/null || true' >> /usr/local/bin/fix-host-home.sh && \
+    echo '    fi' >> /usr/local/bin/fix-host-home.sh && \
+    echo 'fi' >> /usr/local/bin/fix-host-home.sh && \
+    chmod +x /usr/local/bin/fix-host-home.sh
+
 # Switch to user
 USER venvoy
 

@@ -287,11 +287,109 @@ os.environ['OMP_NUM_THREADS'] = '1'
 
 ## Strategy 6: Run Validation Tests Across Architectures
 
-**Problem**: Architecture-specific issues may not be discovered until deployment.
+**Problem**: Architecture-specific issues may not be discovered until deployment. Without systematic testing, numerical differences between architectures can go unnoticed until they cause problems in production or peer review.
 
-**Solution**: Include cross-architecture validation in your testing pipeline.
+**Solution**: Include cross-architecture validation in your testing pipeline using a comprehensive test suite that exercises computations prone to architectural differences.
+
+### Architectural Baseline Test Suite
+
+Venvoy includes a comprehensive test suite in `architectural_baseline/test_architectural_differences.py` that runs a variety of computations prone to showing different numerical results across different CPU architectures. These differences are typically in the last 2-4 decimal places and are due to:
+
+- **Different BLAS/LAPACK backends**: macOS uses Accelerate, Linux typically uses OpenBLAS
+- **Floating-point precision handling**: x86_64 can use 80-bit extended precision in some cases
+- **Compiler optimizations**: Different code generation can affect intermediate calculations
+- **Math library implementations**: Different implementations of trigonometric and other functions
+
+### Running the Test Suite
+
+#### Inside a venvoy Environment (Recommended)
+
+```bash
+# Create and run a venvoy environment
+venvoy init --name arch-test
+venvoy run --name arch-test
+
+# Inside the container, run the test
+python /host-home/architectural_baseline/test_architectural_differences.py > results.txt
+```
+
+#### On Your Host System
+
+```bash
+python architectural_baseline/test_architectural_differences.py > results.txt
+```
+
+### Comparing Results Across Architectures
+
+1. **On x86_64 machine**:
+   ```bash
+   python architectural_baseline/test_architectural_differences.py > results_x86_64.txt
+   ```
+
+2. **On ARM64 machine** (e.g., M1/M2 Mac):
+   ```bash
+   python architectural_baseline/test_architectural_differences.py > results_arm64.txt
+   ```
+
+3. **Compare results**:
+   ```bash
+   diff results_x86_64.txt results_arm64.txt
+   ```
+
+   Or for a side-by-side comparison:
+   ```bash
+   diff -y results_x86_64.txt results_arm64.txt | less
+   ```
+
+### Test Suite Contents
+
+The script includes 12 different test categories:
+
+1. **BLAS Matrix Multiplication** - Tests matrix multiplication using BLAS backend
+2. **LAPACK Eigenvalue Decomposition** - Tests eigenvalue computation
+3. **LAPACK SVD Decomposition** - Tests singular value decomposition
+4. **Matrix Inverse** - Tests matrix inversion
+5. **Floating-Point Accumulation** - Tests accumulation of many floating-point operations
+6. **Kahan Summation** - Compares Kahan summation algorithm with regular summation
+7. **Trigonometric Functions with Large Inputs** - Tests sin/cos/tan with very large angles
+8. **Floating-Point Edge Cases** - Tests classic floating-point representation issues
+9. **Large Matrix Operations** - Tests large matrices that stress BLAS/LAPACK
+10. **Numerical Integration** - Tests trapezoidal and Simpson's rule integration
+11. **Linear System Solver** - Tests solving linear systems using LAPACK
+12. **Cholesky Decomposition** - Tests Cholesky decomposition
+
+### Expected Differences
+
+- **Most differences** will be in the last 2-4 decimal places
+- **BLAS operations** (matrix multiplication, SVD, etc.) are most likely to differ
+- **Simple operations** (like NumPy's RNG) are designed to be identical
+- **Differences are typically very small** (often < 1e-15 relative error)
+
+### Example Output
+
+The script outputs formatted results with high precision (17 decimal places) to make differences visible:
+
+```
+================================================================================
+  Test 1: BLAS Matrix Multiplication
+================================================================================
+A @ B [0, 0]                          : 24.12345678901234567
+A @ B [50, 50]                        : 25.23456789012345678
+...
+```
+
+### Interpreting Results
+
+When comparing results between architectures:
+
+1. **Small differences (< 1e-12)** are expected and typically not significant
+2. **Differences in BLAS/LAPACK operations** are most common
+3. **Differences in accumulation** may appear in the last few decimal places
+4. **Large differences (> 1e-10)** may indicate a bug or configuration issue
 
 ### Unit Tests with Tolerance
+
+In addition to the baseline test suite, include tolerance-based unit tests in your test suite:
 
 ```python
 import numpy as np
@@ -335,6 +433,8 @@ class TestCrossArchitecture:
 
 ### CI/CD Integration
 
+Automate cross-architecture testing in your CI/CD pipeline:
+
 ```yaml
 # .github/workflows/test-architectures.yml
 name: Cross-Architecture Tests
@@ -349,7 +449,7 @@ jobs:
       - name: Run tests
         run: |
           python -m pytest tests/ -v
-          python tests/validate_numerical_precision.py > results_x86_64.txt
+          python architectural_baseline/test_architectural_differences.py > results_x86_64.txt
   
   test-arm64:
     runs-on: [self-hosted, linux, ARM64]
@@ -358,54 +458,29 @@ jobs:
       - name: Run tests
         run: |
           python -m pytest tests/ -v
-          python tests/validate_numerical_precision.py > results_arm64.txt
+          python architectural_baseline/test_architectural_differences.py > results_arm64.txt
       - name: Compare results
         run: |
-          python tests/compare_architectures.py results_x86_64.txt results_arm64.txt
+          diff results_x86_64.txt results_arm64.txt || echo "Architectural differences detected (expected)"
 ```
 
-### Validation Script
+### Best Practices
 
-```python
-# validate_numerical_precision.py
-"""Validate numerical precision across architectures."""
+1. **Run the baseline test suite** on each architecture you support
+2. **Document the architecture** used for published results
+3. **Test on target architecture** before finalizing results
+4. **Use same architecture** when bit-for-bit reproducibility is required
+5. **Set explicit precision types** in your code:
+   ```python
+   A = np.random.rand(100, 100).astype(np.float64)
+   ```
 
-import numpy as np
-import json
+### Notes
 
-def run_validation_tests():
-    """Run a suite of numerical tests."""
-    np.random.seed(42)
-    results = {}
-    
-    # Test 1: Matrix multiplication
-    A = np.random.rand(100, 100).astype(np.float64)
-    B = np.random.rand(100, 100).astype(np.float64)
-    C = A @ B
-    results['matrix_mult'] = {
-        'C[0,0]': float(C[0,0]),
-        'C[50,50]': float(C[50,50])
-    }
-    
-    # Test 2: SVD
-    U, s, Vt = np.linalg.svd(A)
-    results['svd'] = {
-        'first_singular': float(s[0]),
-        'last_singular': float(s[-1])
-    }
-    
-    # Test 3: Accumulation
-    values = np.linspace(0, 1, 100000, dtype=np.float64)
-    results['accumulation'] = {
-        'sum': float(np.sum(values))
-    }
-    
-    return results
-
-if __name__ == '__main__':
-    results = run_validation_tests()
-    print(json.dumps(results, indent=2))
-```
+- Modern libraries like NumPy are well-designed for cross-platform consistency
+- Most differences are very small and may not affect practical results
+- The differences are inherent to the hardware and cannot be eliminated by containerization
+- Venvoy standardizes the software environment but cannot eliminate hardware-level differences
 
 ## Strategy 7: Consider Fixed-Point or Arbitrary Precision
 
