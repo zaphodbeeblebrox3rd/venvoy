@@ -9,6 +9,9 @@ All package management (mamba, uv, pip) happens INSIDE containers, not on the ho
 """
 
 import json
+import os
+import re
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -16,8 +19,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 import yaml
-import os
-import shutil
 
 from .container_manager import ContainerManager, ContainerRuntime
 from .platform_detector import PlatformDetector
@@ -1261,6 +1262,181 @@ CMD ["/bin/bash"]
             print(f"\n💡 Packages will be installed from local cache (no repository access needed)")
             
             return env_name
+    
+    def import_yaml(self, yaml_path: str, force: bool = False) -> str:
+        """
+        Import and restore environment from a YAML export file.
+        
+        Args:
+            yaml_path: Path to the YAML export file
+            force: Whether to overwrite existing environment
+            
+        Returns:
+            Name of the restored environment
+        """
+        yaml_file = Path(yaml_path)
+        if not yaml_file.exists():
+            raise FileNotFoundError(f"YAML file not found: {yaml_path}")
+        
+        print(f"📦 Importing venvoy environment from YAML: {yaml_file.name}")
+        
+        # Read YAML file
+        with open(yaml_file, 'r') as f:
+            export_data = yaml.safe_load(f)
+        
+        if not export_data:
+            raise RuntimeError("Invalid YAML file: empty or invalid format")
+        
+        env_name = export_data.get('name', 'venvoy-env')
+        python_version = export_data.get('python_version', '3.11')
+        packages = export_data.get('packages', [])
+        
+        print(f"🔍 YAML contains environment: {env_name}")
+        print(f"   Python: {python_version}")
+        print(f"   Packages: {len(packages)} total")
+        
+        # Check if environment already exists
+        target_env_dir = self.config_dir / "environments" / env_name
+        if target_env_dir.exists() and not force:
+            raise RuntimeError(
+                f"Environment '{env_name}' already exists. Use --force to overwrite."
+            )
+        
+        # Create environment directory
+        if target_env_dir.exists():
+            shutil.rmtree(target_env_dir)
+        target_env_dir.mkdir(parents=True)
+        
+        # Create requirements.txt from packages
+        if packages:
+            print("📝 Creating requirements.txt...")
+            requirements_file = target_env_dir / "requirements.txt"
+            with open(requirements_file, 'w') as f:
+                for pkg in packages:
+                    pkg_name = pkg.get('name', '')
+                    pkg_version = pkg.get('version', '')
+                    if pkg_name:
+                        if pkg_version:
+                            f.write(f"{pkg_name}=={pkg_version}\n")
+                        else:
+                            f.write(f"{pkg_name}\n")
+        
+        # Create config.yaml
+        config = {
+            'name': env_name,
+            'python_version': python_version,
+            'runtime': 'python',
+            'created': export_data.get('created', datetime.now().isoformat()),
+            'imported_from': str(yaml_file),
+            'imported_at': datetime.now().isoformat(),
+        }
+        
+        config_file = target_env_dir / "config.yaml"
+        with open(config_file, 'w') as f:
+            yaml.safe_dump(config, f, default_flow_style=False)
+        
+        print(f"\n✅ YAML imported successfully!")
+        print(f"🚀 To build and use the environment:")
+        print(f"   venvoy init --name {env_name} --python-version {python_version} --force")
+        
+        return env_name
+    
+    def import_dockerfile(self, dockerfile_path: str, force: bool = False) -> str:
+        """
+        Import and restore environment from a Dockerfile export.
+        
+        Args:
+            dockerfile_path: Path to the Dockerfile export file
+            force: Whether to overwrite existing environment
+            
+        Returns:
+            Name of the restored environment
+        """
+        dockerfile_file = Path(dockerfile_path)
+        if not dockerfile_file.exists():
+            raise FileNotFoundError(f"Dockerfile not found: {dockerfile_path}")
+        
+        print(f"📦 Importing venvoy environment from Dockerfile: {dockerfile_file.name}")
+        
+        # Read Dockerfile
+        with open(dockerfile_file, 'r') as f:
+            dockerfile_content = f.read()
+        
+        # Try to extract environment name from comments
+        env_name = 'venvoy-env'
+        python_version = '3.11'
+        
+        # Look for venvoy export comments
+        for line in dockerfile_content.split('\n'):
+            if 'Exported venvoy environment:' in line:
+                # Extract name from comment
+                parts = line.split(':')
+                if len(parts) > 1:
+                    env_name = parts[1].strip()
+            elif 'FROM' in line and 'python' in line.lower():
+                # Try to extract Python version from FROM line
+                match = re.search(r'python:?(\d+\.\d+)', line, re.IGNORECASE)
+                if match:
+                    python_version = match.group(1)
+        
+        print(f"🔍 Dockerfile appears to be for environment: {env_name}")
+        print(f"   Python: {python_version}")
+        
+        # Check if environment already exists
+        target_env_dir = self.config_dir / "environments" / env_name
+        if target_env_dir.exists() and not force:
+            raise RuntimeError(
+                f"Environment '{env_name}' already exists. Use --force to overwrite."
+            )
+        
+        # Create environment directory
+        if target_env_dir.exists():
+            shutil.rmtree(target_env_dir)
+        target_env_dir.mkdir(parents=True)
+        
+        # Copy Dockerfile to environment directory
+        print("📝 Copying Dockerfile...")
+        target_dockerfile = target_env_dir / "Dockerfile"
+        shutil.copy2(dockerfile_file, target_dockerfile)
+        
+        # Try to extract requirements from Dockerfile
+        requirements = []
+        in_requirements = False
+        for line in dockerfile_content.split('\n'):
+            if 'requirements.txt' in line.lower() and ('copy' in line.lower() or 'add' in line.lower()):
+                in_requirements = True
+            elif in_requirements and ('RUN' in line or 'pip install' in line.lower()):
+                # Extract package names from pip install commands
+                matches = re.findall(r'pip install[^&|]*?([a-zA-Z0-9_-]+(?:==[0-9.]+)?)', line)
+                requirements.extend(matches)
+        
+        # Create requirements.txt if we found packages
+        if requirements:
+            print("📝 Creating requirements.txt from Dockerfile...")
+            requirements_file = target_env_dir / "requirements.txt"
+            with open(requirements_file, 'w') as f:
+                for req in requirements:
+                    f.write(f"{req}\n")
+        
+        # Create config.yaml
+        config = {
+            'name': env_name,
+            'python_version': python_version,
+            'runtime': 'python',
+            'created': datetime.now().isoformat(),
+            'imported_from': str(dockerfile_file),
+            'imported_at': datetime.now().isoformat(),
+        }
+        
+        config_file = target_env_dir / "config.yaml"
+        with open(config_file, 'w') as f:
+            yaml.safe_dump(config, f, default_flow_style=False)
+        
+        print(f"\n✅ Dockerfile imported successfully!")
+        print(f"🚀 To build and use the environment:")
+        print(f"   venvoy init --name {env_name} --python-version {python_version} --force")
+        
+        return env_name
     
     def _create_wheelhouse_restore_script(self, script_path: Path, manifest: Dict):
         """Create restore script for the wheelhouse"""

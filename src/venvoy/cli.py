@@ -3,6 +3,7 @@ Command-line interface for venvoy
 """
 
 import click
+from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -32,15 +33,15 @@ def main():
         venvoy init             # Initialize new environment (Python or R)
         venvoy run              # Launch environment  
         venvoy runtime-info     # Show container runtime information
-        venvoy export           # Export for sharing (yaml/dockerfile/tarball/archive)
-        venvoy import-archive   # Import comprehensive binary archive
+        venvoy export           # Export for sharing (yaml/dockerfile/tarball/archive/wheelhouse)
+        venvoy import           # Import from exported file (yaml/dockerfile/tarball/archive/wheelhouse)
         venvoy history          # View environment history
         venvoy update/upgrade   # Update venvoy to latest version
         venvoy exit/deactivate  # Exit virtual environment (same as 'deactivate')
 
     Scientific Reproducibility:
         venvoy export --format archive    # Create comprehensive binary archive
-        venvoy import-archive archive.tar.gz  # Restore from binary archive
+        venvoy import archive.tar.gz --format archive  # Restore from binary archive
 
     HPC Support:
         venvoy runtime-info     # Check what runtime will be used
@@ -903,23 +904,106 @@ def restore(name: str):
         console.print("🚫 Restoration cancelled")
 
 
-@main.command()
-@click.argument("archive_path", type=click.Path(exists=True))
+@main.command(name="import")
+@click.argument("file_path", type=click.Path(exists=True))
 @click.option(
-    "--force", 
-    is_flag=True, 
+    "--format",
+    default=None,
+    type=click.Choice(["yaml", "dockerfile", "tarball", "archive", "wheelhouse"]),
+    help="Import format (auto-detected if not specified)"
+)
+@click.option(
+    "--force",
+    is_flag=True,
     help="Overwrite existing environment"
 )
-def import_archive(archive_path: str, force: bool):
-    """Import architecture-specific environment from a comprehensive binary archive"""
-    console.print(Panel.fit("📦 Importing Binary Archive", style="bold blue"))
-    console.print(f"📁 Archive: {archive_path}")
+def import_cmd(file_path: str, format: str, force: bool):
+    """Import environment from exported file
     
-    if not force:
-        console.print("⚠️  [yellow]This will load Docker images and restore environment configuration[/yellow]")
-        if not click.confirm("Continue with import?"):
-            console.print("🚫 Import cancelled")
+    Formats:
+    - yaml: Environment specification (requirements.txt style)
+    - dockerfile: Standalone Dockerfile for custom builds
+    - tarball: Complete offline package with dependencies
+    - archive: Comprehensive binary archive (architecture-specific, includes Docker image)
+    - wheelhouse: Cross-architecture package cache (works on amd64 and arm64)
+    
+    The format is auto-detected from the file extension and contents if not specified.
+    """
+    # Auto-detect format from filename if not specified
+    if format is None:
+        file_lower = file_path.lower()
+        file_path_obj = Path(file_path)
+        
+        # Check by extension first
+        if file_path.endswith(".yaml") or file_path.endswith(".yml"):
+            format = "yaml"
+        elif "dockerfile" in file_lower or file_path.endswith("Dockerfile"):
+            format = "dockerfile"
+        elif "archive" in file_lower or file_path.endswith("-archive.tar.gz"):
+            format = "archive"
+        elif "wheelhouse" in file_lower or file_path.endswith("-wheelhouse.tar.gz"):
+            format = "wheelhouse"
+        elif file_path.endswith(".tar.gz") or file_path.endswith(".tgz"):
+            # Try to detect by examining the archive structure
+            try:
+                import tarfile
+                with tarfile.open(file_path, 'r:gz') as tar:
+                    members = tar.getnames()
+                    # Check for archive metadata
+                    if any("archive-metadata.json" in m for m in members):
+                        format = "archive"
+                    elif any("manifest.json" in m for m in members):
+                        format = "wheelhouse"
+                    else:
+                        format = "tarball"
+            except Exception:
+                # Default to tarball if we can't determine
+                format = "tarball"
+        else:
+            console.print("❌ [red]Could not auto-detect format. Please specify --format[/red]")
             return
+    
+    # Display appropriate message based on format
+    if format == "yaml":
+        console.print(Panel.fit("📦 Importing Environment from YAML", style="bold green"))
+        console.print(f"📁 YAML: {file_path}")
+        if not force:
+            console.print("⚠️  [yellow]This will create environment configuration from YAML export[/yellow]")
+            if not click.confirm("Continue with import?"):
+                console.print("🚫 Import cancelled")
+                return
+    elif format == "dockerfile":
+        console.print(Panel.fit("📦 Importing Environment from Dockerfile", style="bold blue"))
+        console.print(f"📁 Dockerfile: {file_path}")
+        if not force:
+            console.print("⚠️  [yellow]This will create environment configuration from Dockerfile[/yellow]")
+            if not click.confirm("Continue with import?"):
+                console.print("🚫 Import cancelled")
+                return
+    elif format == "archive":
+        console.print(Panel.fit("📦 Importing Binary Archive", style="bold red"))
+        console.print(f"📁 Archive: {file_path}")
+        if not force:
+            console.print("⚠️  [yellow]This will load Docker images and restore environment configuration[/yellow]")
+            if not click.confirm("Continue with import?"):
+                console.print("🚫 Import cancelled")
+                return
+    elif format == "wheelhouse":
+        console.print(Panel.fit("📦 Importing Cross-Architecture Wheelhouse", style="bold cyan"))
+        console.print(f"📁 Wheelhouse: {file_path}")
+        if not force:
+            console.print("🌐 [cyan]This will restore packages for cross-architecture compatibility[/cyan]")
+            if not click.confirm("Continue with import?"):
+                console.print("🚫 Import cancelled")
+                return
+    elif format == "tarball":
+        console.print(Panel.fit("📦 Importing Tarball", style="bold yellow"))
+        console.print(f"📁 Tarball: {file_path}")
+        if not force:
+            console.print("⚠️  [yellow]This will restore environment from tarball[/yellow]")
+            if not click.confirm("Continue with import?"):
+                console.print("🚫 Import cancelled")
+                return
     
     try:
         # Create temporary environment for import
@@ -930,63 +1014,54 @@ def import_archive(archive_path: str, force: bool):
             TextColumn("[progress.description]{task.description}"),
             console=console,
         ) as progress:
-            task = progress.add_task("Importing archive...", total=None)
-            
-            progress.update(task, description="Extracting and analyzing archive...")
-            env_name = temp_env.import_archive(archive_path, force=force)
-            
-            progress.remove_task(task)
-        
-        console.print(f"✅ [green]Archive imported successfully![/green]")
-        console.print(f"📦 Environment: {env_name}")
-        console.print(f"🚀 Run with: [cyan]venvoy run --name {env_name}[/cyan]")
-        console.print(f"📋 View history: [cyan]venvoy history --name {env_name}[/cyan]")
-        
-    except Exception as e:
-        console.print(f"❌ [red]Import failed:[/red] {str(e)}")
-        if "already exists" in str(e):
-            console.print("💡 Use --force to overwrite existing environment")
-
-
-@main.command()
-@click.argument("wheelhouse_path", type=click.Path(exists=True))
-@click.option(
-    "--force", 
-    is_flag=True, 
-    help="Overwrite existing environment"
-)
-def import_wheelhouse(wheelhouse_path: str, force: bool):
-    """Import environment from a cross-architecture wheelhouse"""
-    console.print(Panel.fit("📦 Importing Cross-Architecture Wheelhouse", style="bold cyan"))
-    console.print(f"📁 Wheelhouse: {wheelhouse_path}")
-    
-    if not force:
-        console.print("🌐 [cyan]This will restore packages for cross-architecture compatibility[/cyan]")
-        if not click.confirm("Continue with import?"):
-            console.print("🚫 Import cancelled")
-            return
-    
-    try:
-        # Create temporary environment for import
-        temp_env = VenvoyEnvironment()
-        
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
-            task = progress.add_task("Importing wheelhouse...", total=None)
-            
-            progress.update(task, description="Extracting and analyzing wheelhouse...")
-            env_name = temp_env.import_wheelhouse(wheelhouse_path, force=force)
+            if format == "yaml":
+                task = progress.add_task("Importing YAML...", total=None)
+                progress.update(task, description="Reading YAML and extracting environment info...")
+                env_name = temp_env.import_yaml(file_path, force=force)
+            elif format == "dockerfile":
+                task = progress.add_task("Importing Dockerfile...", total=None)
+                progress.update(task, description="Reading Dockerfile and extracting environment info...")
+                env_name = temp_env.import_dockerfile(file_path, force=force)
+            elif format == "archive":
+                task = progress.add_task("Importing archive...", total=None)
+                progress.update(task, description="Extracting and analyzing archive...")
+                env_name = temp_env.import_archive(file_path, force=force)
+            elif format == "wheelhouse":
+                task = progress.add_task("Importing wheelhouse...", total=None)
+                progress.update(task, description="Extracting and analyzing wheelhouse...")
+                env_name = temp_env.import_wheelhouse(file_path, force=force)
+            elif format == "tarball":
+                task = progress.add_task("Importing tarball...", total=None)
+                progress.update(task, description="Extracting and analyzing tarball...")
+                # TODO: Implement import_tarball method in core.py
+                console.print("❌ [red]Tarball import not yet implemented[/red]")
+                return
+            else:
+                console.print(f"❌ [red]Unsupported format: {format}[/red]")
+                return
             
             progress.remove_task(task)
         
-        console.print(f"✅ [green]Wheelhouse imported successfully![/green]")
-        console.print(f"📦 Environment: {env_name}")
-        console.print(f"🌐 [cyan]Packages are cross-architecture compatible (amd64, arm64)[/cyan]")
-        console.print(f"🚀 To build and use: [cyan]venvoy init --name {env_name} --force[/cyan]")
-        console.print(f"💡 [dim]Packages will be installed from local cache (no repository access needed)[/dim]")
+        # Display success message based on format
+        if format == "yaml":
+            console.print(f"✅ [green]YAML imported successfully![/green]")
+            console.print(f"📦 Environment: {env_name}")
+            console.print(f"🚀 To build and use: [cyan]venvoy init --name {env_name} --force[/cyan]")
+        elif format == "dockerfile":
+            console.print(f"✅ [green]Dockerfile imported successfully![/green]")
+            console.print(f"📦 Environment: {env_name}")
+            console.print(f"🚀 To build and use: [cyan]venvoy init --name {env_name} --force[/cyan]")
+        elif format == "archive":
+            console.print(f"✅ [green]Archive imported successfully![/green]")
+            console.print(f"📦 Environment: {env_name}")
+            console.print(f"🚀 Run with: [cyan]venvoy run --name {env_name}[/cyan]")
+            console.print(f"📋 View history: [cyan]venvoy history --name {env_name}[/cyan]")
+        elif format == "wheelhouse":
+            console.print(f"✅ [green]Wheelhouse imported successfully![/green]")
+            console.print(f"📦 Environment: {env_name}")
+            console.print(f"🌐 [cyan]Packages are cross-architecture compatible (amd64, arm64)[/cyan]")
+            console.print(f"🚀 To build and use: [cyan]venvoy init --name {env_name} --force[/cyan]")
+            console.print(f"💡 [dim]Packages will be installed from local cache (no repository access needed)[/dim]")
         
     except Exception as e:
         console.print(f"❌ [red]Import failed:[/red] {str(e)}")

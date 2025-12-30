@@ -397,12 +397,12 @@ venvoy export --format dockerfile --output Dockerfile
 venvoy export --format tarball --output project.tar.gz
 
 # Export as comprehensive binary archive (for reproducibility on the same CPU Architecture)
-export --format archive --output research.tar.gz
+venvoy export --format archive --output research.tar.gz
 
 # Export as wheelhouse archive for cross-architecture reproducibility
 venvoy export --format wheelhouse --output research.tar.gz
 
-#### 📦 Wheelhouse Binary Archives
+#### 📦 Comprehensive Binary Archives (Archive Format)
 
 For **scientific reproducibility** and **long-term archival**, venvoy supports comprehensive binary archives:
 
@@ -410,11 +410,11 @@ For **scientific reproducibility** and **long-term archival**, venvoy supports c
 # Create comprehensive archive (1-5GB file)
 venvoy export --name my-research --format archive
 
-# Import archive on any system
-venvoy import-archive research-archive-20240621_143022.tar.gz
+# Import archive on any system (same architecture)
+venvoy import research-archive-20240621_143022.tar.gz --format archive
 
 # Force overwrite existing environment
-venvoy import-archive archive.tar.gz --force
+venvoy import archive.tar.gz --format archive --force
 ```
 
 **Binary archives contain:**
@@ -432,6 +432,36 @@ venvoy import-archive archive.tar.gz --force
 - **Cross-institutional Collaboration**: Ensure identical results across different organizations
 - **HPC Clusters**: Work on research clusters without root access
 - **Multi-Runtime Environments**: Seamlessly switch between Docker, Apptainer, Singularity, and Podman
+
+#### 🌐 Cross-Architecture Wheelhouse Archives
+
+For **cross-architecture reproducibility** (works on both x86_64 and ARM64):
+
+```bash
+# Create wheelhouse archive (500MB-2GB file)
+venvoy export --name my-research --format wheelhouse
+
+# Import wheelhouse on any architecture (amd64 or arm64)
+venvoy import research-wheelhouse-20240621_143022.tar.gz --format wheelhouse
+
+# Build and use the environment
+venvoy init --name my-research --force
+venvoy run --name my-research
+```
+
+**Wheelhouse archives contain:**
+- ✅ Python source distributions (architecture-independent)
+- ✅ Python wheels for multiple architectures (amd64, arm64)
+- ✅ R source packages (architecture-independent)
+- ✅ R binary packages for multiple architectures
+- ✅ Package manifests and metadata
+- ❌ Does NOT include Docker image (must build after import)
+
+**Use cases:**
+- **Cross-Platform Development**: Work on Intel Mac, Apple Silicon, and Linux
+- **Multi-Architecture Deployment**: Deploy to both x86_64 and ARM64 servers
+- **Offline Package Installation**: Install packages without repository access
+- **Architecture Portability**: Share environments across different CPU architectures
 
 ## 🏢 HPC Cluster Compatibility
 
@@ -538,7 +568,7 @@ venvoy run --name my-research --mount /scratch/data:/workspace/data
    venvoy export --format archive --output research-env.tar.gz
    
    # Import on another system
-   venvoy import-archive research-env.tar.gz
+   venvoy import research-env.tar.gz --format archive
    ```
 
 4. **Monitor Resource Usage**
@@ -583,7 +613,7 @@ python -c "from venvoy.container_manager import ContainerRuntime; print(Containe
 **Network Issues on HPC Clusters:**
 - Some clusters block Docker Hub access
 - Use `venvoy export --format archive` to create offline environments
-- Import archives with `venvoy import-archive` for offline use
+- Import archives with `venvoy import --format archive` for offline use
 - Contact system administrators for registry access if needed
 
 For detailed HPC documentation, see [docs/HPC_COMPATIBILITY.md](docs/HPC_COMPATIBILITY.md).
@@ -609,7 +639,7 @@ jupyter notebook research_analysis.ipynb
 venvoy export --name cancer-research --format archive --output cancer-research-final.tar.gz
 
 # 5. Years later, or on different system, restore exact environment
-venvoy import-archive cancer-research-final.tar.gz
+venvoy import cancer-research-final.tar.gz --format archive
 venvoy run --name cancer-research
 # Exact same results guaranteed!
 ```
@@ -651,7 +681,7 @@ R -e "rmarkdown::render('statistical_report.Rmd')"
 venvoy export --name biostatistics --format archive --output fda-submission-env.tar.gz
 
 # 5. Regulatory review or replication
-venvoy import-archive fda-submission-env.tar.gz
+venvoy import fda-submission-env.tar.gz --format archive
 venvoy run --name biostatistics
 # Exact statistical results guaranteed for regulatory compliance!
 ```

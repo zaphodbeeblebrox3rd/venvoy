@@ -364,7 +364,7 @@ R -e "packageVersion('survival')"
 # Test cross-platform export/import
 venvoy export --name test-scientific --format archive
 # Test import on different system
-venvoy import-archive test-scientific-*.tar.gz
+venvoy import test-scientific-*.tar.gz --format archive
 ```
 
 ## 🚀 Release Process
