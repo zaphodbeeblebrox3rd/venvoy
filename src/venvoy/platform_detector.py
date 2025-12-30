@@ -167,11 +167,12 @@ class PlatformDetector:
     
     def get_home_mount_path(self) -> str:
         """Get the home directory path for Docker mounting"""
-        home = Path.home()
+        # Use ~/.venvoy/home subdirectory instead of full home directory
+        venvoy_home = Path.home() / ".venvoy" / "home"
         if self.system == 'windows':
             # Convert Windows path to Docker-compatible format
-            return str(home).replace('\\', '/')
-        return str(home)
+            return str(venvoy_home).replace('\\', '/')
+        return str(venvoy_home)
     
     def supports_buildx(self) -> bool:
         """Check if Docker BuildX is supported"""

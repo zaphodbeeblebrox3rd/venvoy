@@ -47,6 +47,11 @@ class VenvoyEnvironment:
         self.config_dir.mkdir(exist_ok=True)
         (self.config_dir / "environments").mkdir(exist_ok=True)
         (self.config_dir / "projects").mkdir(exist_ok=True)
+        # Create ~/.venvoy/home directory for container mount
+        venvoy_home_dir = self.config_dir / "home"
+        venvoy_home_dir.mkdir(exist_ok=True)
+        # Set permissions: 755 (rwxr-xr-x) - user can read/write/execute, group/others can read/execute
+        venvoy_home_dir.chmod(0o755)
         self.projects_dir.mkdir(parents=True, exist_ok=True)
     
     def initialize(self, force: bool = False, editor_type: str = "none", editor_available: bool = False):
@@ -335,7 +340,7 @@ RUN echo 'conda activate venvoy' >> ~/.bashrc && \\
     echo 'echo "📊 Pre-installed: numpy, pandas, matplotlib, jupyter, and more"' >> ~/.bashrc && \\
     echo 'echo "🔍 Auto-saving environment.yml on package changes"' >> ~/.bashrc && \\
     echo 'echo "📂 Workspace: $(pwd)"' >> ~/.bashrc && \\
-    echo 'echo "💡 Home directory mounted at: /home/venvoy/host-home"' >> ~/.bashrc && \\
+    echo 'echo "💡 Home directory mounted at: /host-home"' >> ~/.bashrc && \\
     echo 'python3 /usr/local/bin/package_monitor.py --daemon 2>/dev/null &' >> ~/.bashrc
 
 # Default command
@@ -363,7 +368,7 @@ CMD ["/bin/bash"]
                     },
                     'container_name': self.name,
                     'volumes': [
-                        f"{home_path}:/home/venvoy/host-home",
+                        f"{home_path}:/host-home",
                         f"{Path.cwd()}:/workspace"
                     ],
                     'working_dir': '/workspace',
@@ -563,7 +568,7 @@ CMD ["/bin/bash"]
         # Prepare volume mounts
         home_path = self.platform.get_home_mount_path()
         volumes = {
-            home_path: {'bind': '/home/venvoy/host-home', 'mode': 'rw'},
+            home_path: {'bind': '/host-home', 'mode': 'rw'},
             str(Path.cwd()): {'bind': '/workspace', 'mode': 'rw'}
         }
         
@@ -2389,7 +2394,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
     def _get_interactive_shell_command(self) -> str:
         """Get the appropriate interactive shell command"""
         # Return a command that activates conda and starts an interactive shell
-        return '/bin/bash -c "source /opt/conda/bin/activate venvoy && echo \\"🚀 Welcome to your AI-ready venvoy environment!\\" && echo \\"🐍 Python $(python --version)\\" && echo \\"📦 Conda environment: $CONDA_DEFAULT_ENV\\" && echo \\"⚡ Package managers: mamba (fast), uv (ultra-fast), pip (standard)\\" && echo \\"🤖 AI packages: numpy, pandas, matplotlib, jupyter, and more\\" && echo \\"💡 Your home directory is mounted at /home/venvoy/host-home\\" && echo \\"📂 Current workspace: $(pwd)\\" && echo && exec /bin/bash"'
+        return '/bin/bash -c "source /opt/conda/bin/activate venvoy && echo \\"🚀 Welcome to your AI-ready venvoy environment!\\" && echo \\"🐍 Python $(python --version)\\" && echo \\"📦 Conda environment: $CONDA_DEFAULT_ENV\\" && echo \\"⚡ Package managers: mamba (fast), uv (ultra-fast), pip (standard)\\" && echo \\"🤖 AI packages: numpy, pandas, matplotlib, jupyter, and more\\" && echo \\"💡 Your home directory is mounted at /host-home\\" && echo \\"📂 Current workspace: $(pwd)\\" && echo && exec /bin/bash"'
     
     def _launch_with_cursor(self, image_tag: str, volumes: Dict):
         """Launch container and connect Cursor"""
@@ -2416,7 +2421,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
             cursor_command = [
                 'cursor',
                 '--folder-uri',
-                f'vscode-remote://attached-container+{container.name}/workspace'
+                f'vscode-remote://attached-container+{container.name}/host-home'
             ]
             
             try:
@@ -2474,7 +2479,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
             vscode_command = [
                 'code',
                 '--folder-uri',
-                f'vscode-remote://attached-container+{container.name}/workspace'
+                f'vscode-remote://attached-container+{container.name}/host-home'
             ]
             
             try:

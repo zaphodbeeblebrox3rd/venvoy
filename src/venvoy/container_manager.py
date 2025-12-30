@@ -31,8 +31,21 @@ class ContainerManager:
         self.runtime = self._detect_best_runtime()
         self.client = None
         # Create SIF storage directory in ~/.venvoy
-        self.sif_dir = Path.home() / ".venvoy" / "sif"
-        self.sif_dir.mkdir(parents=True, exist_ok=True)
+        # If running inside a container, use /tmp (SIF files are typically temporary)
+        # and we're unlikely to create Apptainer/Singularity containers from inside a venvoy container
+        if self._is_inside_container():
+            self.sif_dir = Path("/tmp") / ".venvoy" / "sif"
+        else:
+            # Running on host, use normal home directory
+            self.sif_dir = Path.home() / ".venvoy" / "sif"
+        
+        try:
+            self.sif_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError):
+            # If we can't create the directory, use /tmp as fallback
+            # This should rarely happen, but provides a safety net
+            self.sif_dir = Path("/tmp") / ".venvoy" / "sif"
+            self.sif_dir.mkdir(parents=True, exist_ok=True)
         
     def _detect_best_runtime(self) -> ContainerRuntime:
         """Detect the best available container runtime for the environment"""
@@ -103,6 +116,38 @@ class ContainerManager:
         if any(pattern in hostname.lower() for pattern in hpc_patterns):
             return True
             
+        return False
+    
+    def _is_inside_container(self) -> bool:
+        """Detect if we're running inside a container"""
+        # Check for container-specific environment variables
+        if any(key in os.environ for key in [
+            'SINGULARITY_NAME', 'SINGULARITY_CONTAINER',
+            'APPTAINER_NAME', 'APPTAINER_CONTAINER',
+            'DOCKER_CONTAINER', 'PODMAN_CONTAINER'
+        ]):
+            return True
+        
+        # Check for container-specific files
+        if os.path.exists('/.dockerenv'):
+            return True
+        
+        # Check cgroup for container indicators
+        if os.path.exists('/proc/1/cgroup'):
+            try:
+                with open('/proc/1/cgroup', 'r') as f:
+                    cgroup_content = f.read()
+                    if any(indicator in cgroup_content for indicator in [
+                        'docker', 'containerd', 'crio', 'podman'
+                    ]):
+                        return True
+            except (IOError, OSError):
+                pass
+        
+        # Check if we're in a venvoy container (workspace mount is a strong indicator)
+        if os.path.exists('/workspace') and os.path.exists('/home/venvoy'):
+            return True
+        
         return False
     
     def _detect_runtime_from_environment(self) -> Optional[ContainerRuntime]:

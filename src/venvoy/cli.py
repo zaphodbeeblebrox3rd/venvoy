@@ -846,6 +846,13 @@ def setup():
         else:
             editor_type, editor_available = "none", False
         
+        # Create ~/.venvoy/home directory for container mount
+        progress.update(task, description="Creating venvoy home directory...")
+        venvoy_home_dir = Path.home() / ".venvoy" / "home"
+        venvoy_home_dir.mkdir(parents=True, exist_ok=True)
+        # Set permissions: 755 (rwxr-xr-x) - user can read/write/execute, group/others can read/execute
+        venvoy_home_dir.chmod(0o755)
+        
         progress.remove_task(task)
     
     console.print("✅ Venvoy setup completed!")

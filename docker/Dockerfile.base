@@ -139,7 +139,7 @@ RUN echo 'conda activate venvoy' >> ~/.bashrc && \
     echo 'echo "📦 Package managers: mamba (fast conda), uv (ultra-fast pip), pip"' >> ~/.bashrc && \
     echo 'echo "📊 Pre-installed: numpy, pandas, matplotlib, jupyter, scikit-learn, and more"' >> ~/.bashrc && \
     echo 'echo "📂 Workspace: $(pwd)"' >> ~/.bashrc && \
-    echo 'echo "💡 Home directory mounted at: /home/venvoy/host-home"' >> ~/.bashrc
+    echo 'echo "💡 Home directory mounted at: /host-home"' >> ~/.bashrc
 
 # Default command
 CMD ["/bin/bash"] 

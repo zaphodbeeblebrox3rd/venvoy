@@ -610,6 +610,9 @@ VENVOY_DIR="$HOME/.venvoy"
 
 # Ensure venvoy directory exists
 mkdir -p "$VENVOY_DIR"
+# Create ~/.venvoy/home directory for container mount
+mkdir -p "$VENVOY_DIR/home"
+chmod 755 "$VENVOY_DIR/home"
 
 # Clear Python bytecode cache to ensure latest code is used
 if [[ -d "/workspace" ]]; then
@@ -1041,7 +1044,7 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
             docker run -d --name "$CONTAINER_NAME" \
                 --user "$HOST_UID:$HOST_GID" \
                 -v "$PWD:/workspace" \
-                -v "$HOME:/host-home" \
+                -v "$HOME/.venvoy/home:/host-home" \
                 -w /home/venvoy \
                 -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
                 -e VENVOY_HOST_HOME="/host-home" \
@@ -1056,7 +1059,7 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
             
             # Launch editor connected to container
             if [ "$EDITOR_TYPE" = "cursor" ]; then
-                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME_HEX}/home/venvoy" 2>/dev/null || {
+                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME_HEX}/host-home" 2>/dev/null || {
                     echo "⚠️  Failed to launch Cursor. Stopping container and falling back to shell..."
                     docker stop "$CONTAINER_NAME" >/dev/null 2>&1
                     docker rm "$CONTAINER_NAME" >/dev/null 2>&1
@@ -1064,7 +1067,7 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
                     VSCODE_AVAILABLE=false
                 }
             else
-                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME_HEX}/home/venvoy" 2>/dev/null || {
+                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME_HEX}/host-home" 2>/dev/null || {
                     echo "⚠️  Failed to launch VSCode. Stopping container and falling back to shell..."
                     docker stop "$CONTAINER_NAME" >/dev/null 2>&1
                     docker rm "$CONTAINER_NAME" >/dev/null 2>&1
@@ -1083,7 +1086,7 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
             podman run -d --name "$CONTAINER_NAME" \
                 --userns=keep-id \
                 -v "$PWD:/workspace" \
-                -v "$HOME:/host-home" \
+                -v "$HOME/.venvoy/home:/host-home" \
                 -w /home/venvoy \
                 -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
                 -e VENVOY_HOST_HOME="/host-home" \
@@ -1246,7 +1249,7 @@ if command -v docker > /dev/null 2>&1; then
 fi
 
 # Launch the editor with the container URI (hex-encoded container name)
-exec "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME_HEX}/home/venvoy" "\$@"
+exec "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME_HEX}/host-home" "\$@"
 EOFLAUNCHER
             chmod +x "$EDITOR_LAUNCHER"
             
@@ -1509,7 +1512,7 @@ EOFLAUNCHER
         docker run --rm -it \
             --user "$HOST_UID:$HOST_GID" \
             -v "$PWD:/workspace" \
-            -v "$HOME:/host-home" \
+            -v "$HOME/.venvoy/home:/host-home" \
             -w /home/venvoy \
             -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
             -e VENVOY_HOST_HOME="/host-home" \
@@ -1525,7 +1528,7 @@ EOFLAUNCHER
         # Note: Editor connection not supported for Apptainer/Singularity, use shell
         $CONTAINER_RUNTIME exec \
             --bind "$PWD:/workspace" \
-            --bind "$HOME:/host-home" \
+            --bind "$HOME/.venvoy/home:/host-home" \
             --pwd /home/venvoy \
             --env VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
             --env VENVOY_HOST_HOME="/host-home" \
@@ -1537,7 +1540,7 @@ EOFLAUNCHER
         podman run --rm -it \
             --userns=keep-id \
             -v "$PWD:/workspace" \
-            -v "$HOME:/host-home" \
+            -v "$HOME/.venvoy/home:/host-home" \
             -w /home/venvoy \
             -e VENVOY_HOST_RUNTIME="$CONTAINER_RUNTIME" \
             -e VENVOY_HOST_HOME="/host-home" \
@@ -1799,7 +1802,7 @@ else
         docker run --rm -it \
             --user "$HOST_UID:$HOST_GID" \
             -v "$PWD:/workspace" \
-            -v "$HOME:/host-home" \
+            -v "$HOME/.venvoy/home:/host-home" \
             -v "$VENVOY_SOURCE_DIR:/venvoy-source" \
             -w /workspace \
             -e VENVOY_SOURCE_DIR="/venvoy-source" \
@@ -1816,7 +1819,7 @@ else
         # User namespace is handled automatically, mount as read/write
         $CONTAINER_RUNTIME exec \
             --bind "$PWD:/workspace" \
-            --bind "$HOME:/host-home" \
+            --bind "$HOME/.venvoy/home:/host-home" \
             --bind "$VENVOY_SOURCE_DIR:/venvoy-source" \
             --pwd /workspace \
             --env VENVOY_SOURCE_DIR="/venvoy-source" \
@@ -1829,7 +1832,7 @@ else
         podman run --rm -it \
             --userns=keep-id \
             -v "$PWD:/workspace" \
-            -v "$HOME:/host-home" \
+            -v "$HOME/.venvoy/home:/host-home" \
             -v "$VENVOY_SOURCE_DIR:/venvoy-source" \
             -w /workspace \
             -e VENVOY_SOURCE_DIR="/venvoy-source" \
