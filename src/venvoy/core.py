@@ -17,7 +17,8 @@ import tarfile
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
+
 import yaml
 
 from .container_manager import ContainerManager, ContainerRuntime
@@ -27,7 +28,13 @@ from .platform_detector import PlatformDetector
 class VenvoyEnvironment:
     """Manages portable Python and R environments"""
 
-    def __init__(self, name: str = "venvoy-env", python_version: str = "3.11", runtime: str = "python", r_version: str = "4.4"):
+    def __init__(
+        self,
+        name: str = "venvoy-env",
+        python_version: str = "3.11",
+        runtime: str = "python",
+        r_version: str = "4.4",
+    ):
         print(f"🔧 VenvoyEnvironment.__init__ called with name: {name}")
         self.name = name
         self.runtime = runtime  # "python", "r", or "mixed"
@@ -54,7 +61,12 @@ class VenvoyEnvironment:
         venvoy_home_dir.chmod(0o755)
         self.projects_dir.mkdir(parents=True, exist_ok=True)
 
-    def initialize(self, force: bool = False, editor_type: str = "none", editor_available: bool = False):
+    def initialize(
+        self,
+        force: bool = False,
+        editor_type: str = "none",
+        editor_available: bool = False,
+    ):
         """Initialize a new venvoy environment"""
         if self.env_dir.exists() and not force:
             raise RuntimeError(
@@ -84,8 +96,10 @@ class VenvoyEnvironment:
         # Log runtime information for debugging
         runtime_info = self.container_manager.get_runtime_info()
         print(f"🔧 Using {runtime_info['runtime']} {runtime_info['version']}")
-        if runtime_info['is_hpc']:
-            print(f"🏢 HPC environment detected - using {runtime_info['runtime']} for best compatibility")
+        if runtime_info["is_hpc"]:
+            print(
+                f"🏢 HPC environment detected - using {runtime_info['runtime']} for best compatibility"
+            )
 
         # Check for existing environment exports but don't prompt during init
         exports = self.list_environment_exports()
@@ -93,8 +107,10 @@ class VenvoyEnvironment:
 
         if exports:
             # Use the most recent export automatically
-            selected_export = exports[0]['file']  # First one is most recent
-            print(f"🔄 Found {len(exports)} previous exports, using most recent: {selected_export.name}")
+            selected_export = exports[0]["file"]  # First one is most recent
+            print(
+                f"🔄 Found {len(exports)} previous exports, using most recent: {selected_export.name}"
+            )
             self.restore_from_environment_export(selected_export)
         else:
             # Create new environment
@@ -106,23 +122,23 @@ class VenvoyEnvironment:
 
         # Create configuration
         config = {
-            'name': self.name,
-            'runtime': self.runtime,
-            'python_version': self.python_version,
-            'r_version': self.r_version,
-            'created': datetime.now().isoformat(),
-            'platform': self.platform.detect(),
-            'image_name': image_name,
-            'packages': [],
-            'dev_packages': [],
-            'editor_type': editor_type,
-            'editor_available': editor_available,
+            "name": self.name,
+            "runtime": self.runtime,
+            "python_version": self.python_version,
+            "r_version": self.r_version,
+            "created": datetime.now().isoformat(),
+            "platform": self.platform.detect(),
+            "image_name": image_name,
+            "packages": [],
+            "dev_packages": [],
+            "editor_type": editor_type,
+            "editor_available": editor_available,
             # Keep backward compatibility
-            'vscode_available': editor_available and editor_type == "vscode",
-            'restored_from': selected_export.name if selected_export else None,
+            "vscode_available": editor_available and editor_type == "vscode",
+            "restored_from": selected_export.name if selected_export else None,
         }
 
-        with open(self.config_file, 'w') as f:
+        with open(self.config_file, "w") as f:
             yaml.safe_dump(config, f, default_flow_style=False)
 
         # Copy package monitor script to environment directory
@@ -130,6 +146,7 @@ class VenvoyEnvironment:
         target_script = self.env_dir / "package_monitor.py"
         if monitor_script.exists():
             import shutil
+
             shutil.copy2(monitor_script, target_script)
 
         print(f"✅ Environment '{self.name}' ready!")
@@ -142,55 +159,59 @@ class VenvoyEnvironment:
         """Find the Docker command with proper PATH handling"""
         # Common Docker installation paths
         common_paths = [
-            '/usr/local/bin/docker',
-            '/usr/bin/docker',
-            '/opt/homebrew/bin/docker',
-            shutil.which('docker')
+            "/usr/local/bin/docker",
+            "/usr/bin/docker",
+            "/opt/homebrew/bin/docker",
+            shutil.which("docker"),
         ]
 
         for docker_path in common_paths:
             if docker_path and Path(docker_path).exists():
                 return docker_path
 
-        raise RuntimeError("Docker not found. Please install Docker and ensure it's in your PATH.")
+        raise RuntimeError(
+            "Docker not found. Please install Docker and ensure it's in your PATH."
+        )
 
-    def _run_docker_command(self, args: List[str], **kwargs) -> subprocess.CompletedProcess:
+    def _run_docker_command(
+        self, args: List[str], **kwargs
+    ) -> subprocess.CompletedProcess:
         """Run a Docker command with proper PATH handling"""
         docker_cmd = self._find_docker_command()
         full_command = [docker_cmd] + args
 
         # Ensure we have a proper environment with PATH
         env = os.environ.copy()
-        if '/usr/local/bin' not in env.get('PATH', ''):
-            env['PATH'] = f"/usr/local/bin:{env.get('PATH', '')}"
+        if "/usr/local/bin" not in env.get("PATH", ""):
+            env["PATH"] = f"/usr/local/bin:{env.get('PATH', '')}"
 
         return subprocess.run(full_command, env=env, **kwargs)
 
     def _ensure_image_available(self, image_name: str):
         """Ensure the venvoy image is available locally"""
         runtime_info = self.container_manager.get_runtime_info()
-        host_runtime = os.environ.get('VENVOY_HOST_RUNTIME')
+        host_runtime = os.environ.get("VENVOY_HOST_RUNTIME")
 
         # Check if we're running inside a container and the runtime isn't available
         # In this case, assume the bootstrap script on the host has handled image availability
         if host_runtime:
             runtime_available = False
-            if runtime_info['runtime'] == 'docker':
-                runtime_available = shutil.which('docker') is not None
-            elif runtime_info['runtime'] == 'podman':
-                runtime_available = shutil.which('podman') is not None
-            elif runtime_info['runtime'] in ['apptainer', 'singularity']:
-                runtime_available = shutil.which(runtime_info['runtime']) is not None
+            if runtime_info["runtime"] == "docker":
+                runtime_available = shutil.which("docker") is not None
+            elif runtime_info["runtime"] == "podman":
+                runtime_available = shutil.which("podman") is not None
+            elif runtime_info["runtime"] in ["apptainer", "singularity"]:
+                runtime_available = shutil.which(runtime_info["runtime"]) is not None
 
             if not runtime_available:
                 # Running inside container without runtime available - assume host handles it
                 print("✅ Environment availability handled by host runtime")
                 return
 
-        if runtime_info['runtime'] in ['apptainer', 'singularity']:
+        if runtime_info["runtime"] in ["apptainer", "singularity"]:
             # For Apptainer/Singularity, check if SIF file exists
             # Sanitize image name for SIF file (replace / and : with -)
-            sif_name = image_name.replace('/', '-').replace(':', '-') + '.si'
+            sif_name = image_name.replace("/", "-").replace(":", "-") + ".si"
             sif_file = self.container_manager.sif_dir / sif_name
             if not sif_file.exists():
                 print("⬇️  Downloading environment (one-time setup)...")
@@ -206,43 +227,55 @@ class VenvoyEnvironment:
             try:
                 runtime = self.container_manager.runtime
                 if runtime == ContainerRuntime.DOCKER:
-                    docker_path = shutil.which('docker')
+                    docker_path = shutil.which("docker")
                     if not docker_path:
                         raise FileNotFoundError("docker not found")
-                    result = subprocess.run([
-                        docker_path, 'image', 'inspect', image_name
-                    ], capture_output=True, check=True)
+                    result = subprocess.run(
+                        [docker_path, "image", "inspect", image_name],
+                        capture_output=True,
+                        check=True,
+                    )
                     # Validate that image inspection returned valid JSON
                     # check=True will raise on failure, but we validate output
                     if result.stdout:
                         try:
-                            json.loads(result.stdout.decode() if isinstance(result.stdout, bytes) else result.stdout)
+                            json.loads(
+                                result.stdout.decode()
+                                if isinstance(result.stdout, bytes)
+                                else result.stdout
+                            )
                         except (json.JSONDecodeError, AttributeError):
                             # Not critical, but log if output is unexpected
                             pass
                 elif runtime == ContainerRuntime.PODMAN:
-                    podman_path = shutil.which('podman')
+                    podman_path = shutil.which("podman")
                     if not podman_path:
                         raise FileNotFoundError("podman not found")
                     # Podman requires fully qualified image names (docker.io/ prefix)
-                    if not image_name.startswith('docker.io/') and '/' in image_name:
+                    if not image_name.startswith("docker.io/") and "/" in image_name:
                         podman_image_name = f"docker.io/{image_name}"
                     else:
                         podman_image_name = image_name
-                    result = subprocess.run([
-                        podman_path, 'image', 'inspect', podman_image_name
-                    ], capture_output=True, check=True)
+                    result = subprocess.run(
+                        [podman_path, "image", "inspect", podman_image_name],
+                        capture_output=True,
+                        check=True,
+                    )
                     # Validate that image inspection returned valid JSON
                     # check=True will raise on failure, but we validate output
                     if result.stdout:
                         try:
-                            json.loads(result.stdout.decode() if isinstance(result.stdout, bytes) else result.stdout)
+                            json.loads(
+                                result.stdout.decode()
+                                if isinstance(result.stdout, bytes)
+                                else result.stdout
+                            )
                         except (json.JSONDecodeError, AttributeError):
                             # Not critical, but log if output is unexpected
                             pass
                 else:
                     # For other runtimes, use container manager's pull_image which handles it
-                    raise subprocess.CalledProcessError(1, 'check')
+                    raise subprocess.CalledProcessError(1, "check")
 
             except (subprocess.CalledProcessError, FileNotFoundError):
                 # Image doesn't exist or runtime not available, pull it
@@ -364,7 +397,7 @@ CMD ["/bin/bash"]
 """
 
         dockerfile_path = self.env_dir / "Dockerfile"
-        with open(dockerfile_path, 'w') as f:
+        with open(dockerfile_path, "w") as f:
             f.write(dockerfile_content)
 
     def _create_docker_compose(self):
@@ -372,33 +405,28 @@ CMD ["/bin/bash"]
         home_path = self.platform.get_home_mount_path()
 
         compose_content = {
-            'version': '3.8',
-            'services': {
+            "version": "3.8",
+            "services": {
                 self.name: {
-                    'build': {
-                        'context': '.',
-                        'args': {
-                            'USER_ID': '${USER_ID:-1000}',
-                            'GROUP_ID': '${GROUP_ID:-1000}'
-                        }
+                    "build": {
+                        "context": ".",
+                        "args": {
+                            "USER_ID": "${USER_ID:-1000}",
+                            "GROUP_ID": "${GROUP_ID:-1000}",
+                        },
                     },
-                    'container_name': self.name,
-                    'volumes': [
-                        f"{home_path}:/host-home",
-                        f"{Path.cwd()}:/workspace"
-                    ],
-                    'working_dir': '/workspace',
-                    'stdin_open': True,
-                    'tty': True,
-                    'environment': [
-                        'TERM=xterm-256color'
-                    ]
+                    "container_name": self.name,
+                    "volumes": [f"{home_path}:/host-home", f"{Path.cwd()}:/workspace"],
+                    "working_dir": "/workspace",
+                    "stdin_open": True,
+                    "tty": True,
+                    "environment": ["TERM=xterm-256color"],
                 }
-            }
+            },
         }
 
         compose_path = self.env_dir / "docker-compose.yml"
-        with open(compose_path, 'w') as f:
+        with open(compose_path, "w") as f:
             yaml.safe_dump(compose_content, f, default_flow_style=False)
 
     def build_and_launch(self):
@@ -407,16 +435,16 @@ CMD ["/bin/bash"]
         image_tag = f"venvoy/{self.name}:{self.python_version}"
 
         try:
-            self._run_docker_command([
-                'build',
-                '-t', image_tag,
-                str(self.env_dir)
-            ], check=True, cwd=self.env_dir)
+            self._run_docker_command(
+                ["build", "-t", image_tag, str(self.env_dir)],
+                check=True,
+                cwd=self.env_dir,
+            )
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Failed to build Docker image: {e}")
 
         # Update config with image tag
-        self._update_config({'image_tag': image_tag})
+        self._update_config({"image_tag": image_tag})
 
     def download_wheels(self, include_dev: bool = False):
         """Download wheels for all installed packages using container's package managers
@@ -443,42 +471,66 @@ CMD ["/bin/bash"]
 
                     # Try uv first for ultra-fast downloads (inside container)
                     try:
-                        self._run_docker_command([
-                            'run', '--rm',
-                            '-v', f"{req_file}:/workspace/{req_filename}:ro",
-                            '-v', f"{vendor_dir}:/workspace/vendor",
-                            image_tag,
-                            'bash', '-c', f'source /opt/conda/bin/activate venvoy && uv pip download -r /workspace/{req_filename} --dest /workspace/vendor --no-deps'
-                        ], check=True)
-                        print("✅ Downloaded wheels using uv (ultra-fast) inside container")
+                        self._run_docker_command(
+                            [
+                                "run",
+                                "--rm",
+                                "-v",
+                                f"{req_file}:/workspace/{req_filename}:ro",
+                                "-v",
+                                f"{vendor_dir}:/workspace/vendor",
+                                image_tag,
+                                "bash",
+                                "-c",
+                                f"source /opt/conda/bin/activate venvoy && uv pip download -r /workspace/{req_filename} --dest /workspace/vendor --no-deps",
+                            ],
+                            check=True,
+                        )
+                        print(
+                            "✅ Downloaded wheels using uv (ultra-fast) inside container"
+                        )
                     except subprocess.CalledProcessError:
                         # Fallback to pip if uv fails (inside container)
                         try:
-                            self._run_docker_command([
-                                'run', '--rm',
-                                '-v', f"{req_file}:/workspace/{req_filename}:ro",
-                                '-v', f"{vendor_dir}:/workspace/vendor",
-                                image_tag,
-                                'bash', '-c', f'source /opt/conda/bin/activate venvoy && pip download -r /workspace/{req_filename} -d /workspace/vendor --no-deps'
-                            ], check=True)
-                            print("✅ Downloaded wheels using pip (fallback) inside container")
+                            self._run_docker_command(
+                                [
+                                    "run",
+                                    "--rm",
+                                    "-v",
+                                    f"{req_file}:/workspace/{req_filename}:ro",
+                                    "-v",
+                                    f"{vendor_dir}:/workspace/vendor",
+                                    image_tag,
+                                    "bash",
+                                    "-c",
+                                    f"source /opt/conda/bin/activate venvoy && pip download -r /workspace/{req_filename} -d /workspace/vendor --no-deps",
+                                ],
+                                check=True,
+                            )
+                            print(
+                                "✅ Downloaded wheels using pip (fallback) inside container"
+                            )
                         except subprocess.CalledProcessError as e:
-                            print(f"Warning: Failed to download wheels inside container: {e}")
+                            print(
+                                f"Warning: Failed to download wheels inside container: {e}"
+                            )
                 except subprocess.CalledProcessError as e:
                     print(f"Warning: Failed to download some wheels: {e}")
 
     def create_snapshot(self):
         """Create a snapshot of the current environment state"""
         snapshot = {
-            'name': self.name,
-            'python_version': self.python_version,
-            'created': datetime.now().isoformat(),
-            'platform': self.platform.detect(),
-            'packages': self._get_installed_packages(),
+            "name": self.name,
+            "python_version": self.python_version,
+            "created": datetime.now().isoformat(),
+            "platform": self.platform.detect(),
+            "packages": self._get_installed_packages(),
         }
 
-        snapshot_file = self.env_dir / f"snapshot-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
-        with open(snapshot_file, 'w') as f:
+        snapshot_file = (
+            self.env_dir / f"snapshot-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+        )
+        with open(snapshot_file, "w") as f:
             json.dump(snapshot, f, indent=2)
 
         return snapshot_file
@@ -487,17 +539,25 @@ CMD ["/bin/bash"]
         """Get list of installed packages from the environment"""
         try:
             # Run pip freeze inside the container to get actual installed packages
-            result = self._run_docker_command([
-                'run', '--rm',
-                f"venvoy/{self.name}:{self.python_version}",
-                'bash', '-c', 'source /opt/conda/bin/activate venvoy && pip freeze'
-            ], capture_output=True, text=True, check=True)
+            result = self._run_docker_command(
+                [
+                    "run",
+                    "--rm",
+                    f"venvoy/{self.name}:{self.python_version}",
+                    "bash",
+                    "-c",
+                    "source /opt/conda/bin/activate venvoy && pip freeze",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
 
             packages = []
-            for line in result.stdout.strip().split('\n'):
-                if line and '==' in line:
-                    name, version = line.split('==', 1)
-                    packages.append({'name': name, 'version': version})
+            for line in result.stdout.strip().split("\n"):
+                if line and "==" in line:
+                    name, version = line.split("==", 1)
+                    packages.append({"name": name, "version": version})
 
             return packages
         except subprocess.CalledProcessError:
@@ -507,26 +567,65 @@ CMD ["/bin/bash"]
         """Get list of installed R packages from the container"""
         try:
             # Get R packages using installed.packages()
-            result = subprocess.run([
-                'docker', 'run', '--rm', image_name,
-                'bash', '-c', '''
+            result = subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    image_name,
+                    "bash",
+                    "-c",
+                    """
                 R --slave -e "pkgs <- installed.packages(); cat(paste(pkgs[,1], pkgs[,3], sep='=='), sep='\\n')"
-                '''
-            ], capture_output=True, text=True, check=True)
+                """,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
 
             packages = []
-            for line in result.stdout.strip().split('\n'):
-                if line and '==' in line:
-                    name, version = line.split('==', 1)
+            for line in result.stdout.strip().split("\n"):
+                if line and "==" in line:
+                    name, version = line.split("==", 1)
                     # Filter out base R packages (they come with R itself)
-                    base_packages = {'base', 'compiler', 'datasets', 'graphics', 'grDevices',
-                                   'grid', 'methods', 'parallel', 'splines', 'stats', 'stats4',
-                                   'tcltk', 'tools', 'utils', 'Matrix', 'lattice', 'nlme',
-                                   'mgcv', 'rpart', 'survival', 'MASS', 'class', 'nnet',
-                                   'spatial', 'boot', 'cluster', 'codetools', 'foreign',
-                                   'KernSmooth', 'rpart', 'class', 'nnet', 'spatial'}
+                    base_packages = {
+                        "base",
+                        "compiler",
+                        "datasets",
+                        "graphics",
+                        "grDevices",
+                        "grid",
+                        "methods",
+                        "parallel",
+                        "splines",
+                        "stats",
+                        "stats4",
+                        "tcltk",
+                        "tools",
+                        "utils",
+                        "Matrix",
+                        "lattice",
+                        "nlme",
+                        "mgcv",
+                        "rpart",
+                        "survival",
+                        "MASS",
+                        "class",
+                        "nnet",
+                        "spatial",
+                        "boot",
+                        "cluster",
+                        "codetools",
+                        "foreign",
+                        "KernSmooth",
+                        "rpart",
+                        "class",
+                        "nnet",
+                        "spatial",
+                    }
                     if name not in base_packages:
-                        packages.append({'name': name, 'version': version})
+                        packages.append({"name": name, "version": version})
 
             return packages
         except subprocess.CalledProcessError:
@@ -536,7 +635,7 @@ CMD ["/bin/bash"]
         """Setup Docker BuildX for multi-arch builds"""
         # Only available for Docker runtime
         runtime_info = self.container_manager.get_runtime_info()
-        if runtime_info['runtime'] == 'docker':
+        if runtime_info["runtime"] == "docker":
             # This would need to be implemented in container_manager
             print("🔧 BuildX setup available for Docker runtime")
         else:
@@ -549,31 +648,35 @@ CMD ["/bin/bash"]
 
         dockerfile_path = self.env_dir / "Dockerfile"
         return self.container_manager.build_image(
-            dockerfile_path=dockerfile_path,
-            tag=tag,
-            context_path=self.env_dir
+            dockerfile_path=dockerfile_path, tag=tag, context_path=self.env_dir
         )
 
     def push_image(self, tag: str):
         """Push image to registry"""
         # This would need to be implemented in container_manager
         runtime_info = self.container_manager.get_runtime_info()
-        if runtime_info['runtime'] == 'docker':
+        if runtime_info["runtime"] == "docker":
             print("🔧 Image pushing available for Docker runtime")
         else:
-            print(f"⚠️  Image pushing not yet implemented for {runtime_info['runtime']} runtime")
+            print(
+                f"⚠️  Image pushing not yet implemented for {runtime_info['runtime']} runtime"
+            )
 
     def run(self, command: Optional[str] = None, additional_mounts: List[str] = None):
         """Run the environment container with auto-save monitoring"""
         print(f"🔧 run method called with command: {command}")
         # Load configuration to get the image name
         if not self.config_file.exists():
-            raise RuntimeError(f"Environment '{self.name}' not found. Run 'venvoy init' first.")
+            raise RuntimeError(
+                f"Environment '{self.name}' not found. Run 'venvoy init' first."
+            )
 
-        with open(self.config_file, 'r') as f:
+        with open(self.config_file, "r") as f:
             config = yaml.safe_load(f)
 
-        image_name = config.get('image_name', f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}")
+        image_name = config.get(
+            "image_name", f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}"
+        )
 
         # Ensure image is available
         self._ensure_image_available(image_name)
@@ -584,25 +687,26 @@ CMD ["/bin/bash"]
         # Prepare volume mounts
         home_path = self.platform.get_home_mount_path()
         volumes = {
-            home_path: {'bind': '/host-home', 'mode': 'rw'},
-            str(Path.cwd()): {'bind': '/workspace', 'mode': 'rw'}
+            home_path: {"bind": "/host-home", "mode": "rw"},
+            str(Path.cwd()): {"bind": "/workspace", "mode": "rw"},
         }
 
         # Start monitoring thread for auto-save
         import threading
+
         monitor_thread = threading.Thread(
             target=self._monitor_package_changes,
             args=(f"{self.name}-runtime",),
-            daemon=True
+            daemon=True,
         )
         monitor_thread.start()
 
         # Add additional mounts
         if additional_mounts:
             for mount in additional_mounts:
-                if ':' in mount:
-                    host_path, container_path = mount.split(':', 1)
-                    volumes[host_path] = {'bind': container_path, 'mode': 'rw'}
+                if ":" in mount:
+                    host_path, container_path = mount.split(":", 1)
+                    volumes[host_path] = {"bind": container_path, "mode": "rw"}
 
         # Determine the command to run
         if command is None:
@@ -628,14 +732,14 @@ CMD ["/bin/bash"]
                 # Convert volumes format for container manager
                 volume_mounts = {}
                 for host_path, mount_info in volumes.items():
-                    volume_mounts[host_path] = mount_info['bind']
+                    volume_mounts[host_path] = mount_info["bind"]
 
                 self.container_manager.run_container(
                     image=image_name,
                     name=f"{self.name}-runtime",
                     command=command,
                     volumes=volume_mounts,
-                    detach=False
+                    detach=False,
                 )
 
                 # Auto-save environment when container exits
@@ -655,14 +759,14 @@ CMD ["/bin/bash"]
                     # Convert volumes format for container manager
                     volume_mounts = {}
                     for host_path, mount_info in volumes.items():
-                        volume_mounts[host_path] = mount_info['bind']
+                        volume_mounts[host_path] = mount_info["bind"]
 
                     self.container_manager.run_container(
                         image=image_name,
                         name=f"{self.name}-runtime",
                         command=command,
                         volumes=volume_mounts,
-                        detach=False
+                        detach=False,
                     )
 
                     # Auto-save environment when container exits
@@ -674,14 +778,14 @@ CMD ["/bin/bash"]
                 # Convert volumes format for container manager
                 volume_mounts = {}
                 for host_path, mount_info in volumes.items():
-                    volume_mounts[host_path] = mount_info['bind']
+                    volume_mounts[host_path] = mount_info["bind"]
 
                 self.container_manager.run_container(
                     image=image_name,
                     name=f"{self.name}-runtime",
                     command=command,
                     volumes=volume_mounts,
-                    detach=False
+                    detach=False,
                 )
 
                 # Auto-save environment when container exits
@@ -698,16 +802,16 @@ CMD ["/bin/bash"]
             output_path = f"{self.name}-environment.yaml"
 
         export_data = {
-            'name': self.name,
-            'python_version': self.python_version,
-            'created': datetime.now().isoformat(),
-            'platform': self.platform.detect(),
-            'packages': self._get_installed_packages(),
-            'base_image': self.platform.get_base_image(self.python_version),
+            "name": self.name,
+            "python_version": self.python_version,
+            "created": datetime.now().isoformat(),
+            "platform": self.platform.detect(),
+            "packages": self._get_installed_packages(),
+            "base_image": self.platform.get_base_image(self.python_version),
         }
 
         output_file = Path(output_path)
-        with open(output_file, 'w') as f:
+        with open(output_file, "w") as f:
             yaml.safe_dump(export_data, f, default_flow_style=False)
 
         return str(output_file)
@@ -721,7 +825,7 @@ CMD ["/bin/bash"]
         output_file = Path(output_path)
 
         # Copy Dockerfile with modifications for standalone use
-        with open(dockerfile_path, 'r') as src, open(output_file, 'w') as dst:
+        with open(dockerfile_path, "r") as src, open(output_file, "w") as dst:
             content = src.read()
             # Add header comment
             dst.write(f"# Exported venvoy environment: {self.name}\n")
@@ -737,18 +841,20 @@ CMD ["/bin/bash"]
 
         output_file = Path(output_path)
 
-        with tarfile.open(output_file, 'w:gz') as tar:
+        with tarfile.open(output_file, "w:gz") as tar:
             # Add environment directory
             tar.add(self.env_dir, arcname=self.name)
 
             # Add export metadata
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as tmp:
                 export_info = {
-                    'name': self.name,
-                    'python_version': self.python_version,
-                    'exported': datetime.now().isoformat(),
-                    'platform': self.platform.detect(),
-                    'usage': f"Extract and run: docker build -t {self.name} {self.name}/"
+                    "name": self.name,
+                    "python_version": self.python_version,
+                    "exported": datetime.now().isoformat(),
+                    "platform": self.platform.detect(),
+                    "usage": f"Extract and run: docker build -t {self.name} {self.name}/",
                 }
                 json.dump(export_info, tmp, indent=2)
                 tmp.flush()
@@ -756,7 +862,9 @@ CMD ["/bin/bash"]
 
         return str(output_file)
 
-    def export_archive(self, output_path: Optional[str] = None, include_base: bool = False) -> str:
+    def export_archive(
+        self, output_path: Optional[str] = None, include_base: bool = False
+    ) -> str:
         """
         Export complete binary archive for long-term scientific reproducibility.
 
@@ -774,7 +882,7 @@ CMD ["/bin/bash"]
             Path to the created archive file
         """
         if output_path is None:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_path = f"{self.name}-archive-{timestamp}.tar.gz"
 
         output_file = Path(output_path)
@@ -783,12 +891,16 @@ CMD ["/bin/bash"]
 
         # Load configuration to get image name
         if not self.config_file.exists():
-            raise RuntimeError(f"Environment '{self.name}' not found. Run 'venvoy init' first.")
+            raise RuntimeError(
+                f"Environment '{self.name}' not found. Run 'venvoy init' first."
+            )
 
-        with open(self.config_file, 'r') as f:
+        with open(self.config_file, "r") as f:
             config = yaml.safe_load(f)
 
-        image_name = config.get('image_name', f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}")
+        image_name = config.get(
+            "image_name", f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}"
+        )
 
         # Ensure image is available
         self._ensure_image_available(image_name)
@@ -803,9 +915,12 @@ CMD ["/bin/bash"]
             print("🐳 Exporting Docker image...")
             image_tar = archive_dir / "docker-image.tar"
             try:
-                result = subprocess.run([
-                    'docker', 'save', '-o', str(image_tar), image_name
-                ], check=True, capture_output=True, text=True)
+                result = subprocess.run(
+                    ["docker", "save", "-o", str(image_tar), image_name],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
                 # Validate that the export was successful
                 # check=True will raise on failure, but we validate file was created
                 if not image_tar.exists():
@@ -819,7 +934,9 @@ CMD ["/bin/bash"]
                 # Log any warnings from stderr
                 if result.stderr and "warning" in result.stderr.lower():
                     print(f"⚠️  Warning during export: {result.stderr}")
-                print(f"✅ Docker image exported ({image_tar.stat().st_size / 1024 / 1024:.1f} MB)")
+                print(
+                    f"✅ Docker image exported ({image_tar.stat().st_size / 1024 / 1024:.1f} MB)"
+                )
             except subprocess.CalledProcessError as e:
                 raise RuntimeError(f"Failed to export Docker image: {e.stderr}")
 
@@ -827,42 +944,44 @@ CMD ["/bin/bash"]
             print("📋 Creating environment manifest...")
             manifest = self._create_comprehensive_manifest(image_name)
             manifest_file = archive_dir / "environment-manifest.json"
-            with open(manifest_file, 'w') as f:
+            with open(manifest_file, "w") as f:
                 json.dump(manifest, f, indent=2, default=str)
 
             # 3. Export environment configuration
             config_dir = archive_dir / "config"
             config_dir.mkdir()
             if self.env_dir.exists():
-                shutil.copytree(self.env_dir, config_dir / "environment", dirs_exist_ok=True)
+                shutil.copytree(
+                    self.env_dir, config_dir / "environment", dirs_exist_ok=True
+                )
 
             # 4. Create archive metadata
             archive_metadata = {
-                'archive_version': '1.0',
-                'created': datetime.now().isoformat(),
-                'venvoy_version': '0.1.0',
-                'archive_type': 'comprehensive_binary',
-                'environment': {
-                    'name': self.name,
-                    'python_version': self.python_version,
-                    'image_name': image_name,
-                    'platform': self.platform.detect(),
+                "archive_version": "1.0",
+                "created": datetime.now().isoformat(),
+                "venvoy_version": "0.1.0",
+                "archive_type": "comprehensive_binary",
+                "environment": {
+                    "name": self.name,
+                    "python_version": self.python_version,
+                    "image_name": image_name,
+                    "platform": self.platform.detect(),
                 },
-                'contents': {
-                    'docker_image': 'docker-image.tar',
-                    'manifest': 'environment-manifest.json',
-                    'config': 'config/',
-                    'restore_script': 'restore.sh'
+                "contents": {
+                    "docker_image": "docker-image.tar",
+                    "manifest": "environment-manifest.json",
+                    "config": "config/",
+                    "restore_script": "restore.sh",
                 },
-                'usage': {
-                    'restore_command': 'bash restore.sh',
-                    'requirements': ['docker', 'bash'],
-                    'estimated_size_mb': image_tar.stat().st_size / 1024 / 1024
-                }
+                "usage": {
+                    "restore_command": "bash restore.sh",
+                    "requirements": ["docker", "bash"],
+                    "estimated_size_mb": image_tar.stat().st_size / 1024 / 1024,
+                },
             }
 
             metadata_file = archive_dir / "archive-metadata.json"
-            with open(metadata_file, 'w') as f:
+            with open(metadata_file, "w") as f:
                 json.dump(archive_metadata, f, indent=2, default=str)
 
             # 5. Create restore script
@@ -876,7 +995,7 @@ CMD ["/bin/bash"]
 
             # 7. Create final compressed archive
             print("🗜️  Compressing archive...")
-            with tarfile.open(output_file, 'w:gz') as tar:
+            with tarfile.open(output_file, "w:gz") as tar:
                 tar.add(archive_dir, arcname=f"{self.name}-archive")
 
             # Calculate final size
@@ -906,25 +1025,29 @@ CMD ["/bin/bash"]
             Path to the created wheelhouse archive file
         """
         if output_path is None:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_path = f"{self.name}-wheelhouse-{timestamp}.tar.gz"
 
         output_file = Path(output_path)
         print("📦 Creating cross-architecture wheelhouse...")
-        print("🌐 This will download source distributions and binaries for multiple architectures")
+        print(
+            "🌐 This will download source distributions and binaries for multiple architectures"
+        )
         print("⚠️  This may take several minutes and create a large file (500MB-2GB)")
 
         # Load configuration to get image name and runtime
         if not self.config_file.exists():
-            raise RuntimeError(f"Environment '{self.name}' not found. Run 'venvoy init' first.")
+            raise RuntimeError(
+                f"Environment '{self.name}' not found. Run 'venvoy init' first."
+            )
 
-        with open(self.config_file, 'r') as f:
+        with open(self.config_file, "r") as f:
             config = yaml.safe_load(f)
 
-        runtime = config.get('runtime', self.runtime)
-        image_name = config.get('image_name')
+        runtime = config.get("runtime", self.runtime)
+        image_name = config.get("image_name")
         if not image_name:
-            if runtime == 'r':
+            if runtime == "r":
                 image_name = f"zaphodbeeblebrox3rd/venvoy:r{self.r_version}"
             else:
                 image_name = f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}"
@@ -937,7 +1060,7 @@ CMD ["/bin/bash"]
         python_packages = []
         r_packages = []
 
-        if runtime in ['python', 'mixed']:
+        if runtime in ["python", "mixed"]:
             try:
                 python_packages = self._get_installed_packages()
                 if python_packages:
@@ -945,7 +1068,7 @@ CMD ["/bin/bash"]
             except Exception as e:
                 print(f"⚠️  Warning: Could not get Python packages: {e}")
 
-        if runtime in ['r', 'mixed']:
+        if runtime in ["r", "mixed"]:
             try:
                 r_packages = self._get_installed_r_packages(image_name)
                 if r_packages:
@@ -954,10 +1077,14 @@ CMD ["/bin/bash"]
                 print(f"⚠️  Warning: Could not get R packages: {e}")
 
         if not python_packages and not r_packages:
-            raise RuntimeError("No packages found in environment. Install some packages first.")
+            raise RuntimeError(
+                "No packages found in environment. Install some packages first."
+            )
 
         total_packages = len(python_packages) + len(r_packages)
-        print(f"📦 Total packages to export: {total_packages} ({len(python_packages)} Python, {len(r_packages)} R)")
+        print(
+            f"📦 Total packages to export: {total_packages} ({len(python_packages)} Python, {len(r_packages)} R)"
+        )
 
         # Create temporary directory for wheelhouse contents
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -980,59 +1107,94 @@ CMD ["/bin/bash"]
                 print("\n🐍 Processing Python packages...")
                 # Create requirements file for downloading
                 requirements_file = wheelhouse_dir / "requirements.txt"
-                with open(requirements_file, 'w') as f:
+                with open(requirements_file, "w") as f:
                     for pkg in python_packages:
                         f.write(f"{pkg['name']}=={pkg['version']}\n")
 
                 # Download source distributions (architecture-independent)
-                print("📥 Downloading Python source distributions (architecture-independent)...")
+                print(
+                    "📥 Downloading Python source distributions (architecture-independent)..."
+                )
                 try:
-                    self._run_docker_command([
-                        'run', '--rm',
-                        '-v', f"{sdists_dir}:/workspace/sdists",
-                        '-v', f"{requirements_file}:/workspace/requirements.txt:ro",
-                        image_name,
-                        'bash', '-c', '''
+                    self._run_docker_command(
+                        [
+                            "run",
+                            "--rm",
+                            "-v",
+                            f"{sdists_dir}:/workspace/sdists",
+                            "-v",
+                            f"{requirements_file}:/workspace/requirements.txt:ro",
+                            image_name,
+                            "bash",
+                            "-c",
+                            """
                         source /opt/conda/bin/activate venvoy 2>/dev/null || true
                         pip download -r /workspace/requirements.txt -d /workspace/sdists --no-binary :all: --no-deps || true
-                        '''
-                    ], check=False)
+                        """,
+                        ],
+                        check=False,
+                    )
                     print("✅ Python source distributions downloaded")
                 except Exception as e:
-                    print(f"⚠️  Warning: Some Python source distributions may not be available: {e}")
+                    print(
+                        f"⚠️  Warning: Some Python source distributions may not be available: {e}"
+                    )
 
                 # Download wheels for multiple architectures
-                architectures = ['linux_x86_64', 'linux_aarch64', 'manylinux1_x86_64', 'manylinux2014_x86_64',
-                               'manylinux2014_aarch64', 'manylinux_2_17_x86_64', 'manylinux_2_17_aarch64']
+                architectures = [
+                    "linux_x86_64",
+                    "linux_aarch64",
+                    "manylinux1_x86_64",
+                    "manylinux2014_x86_64",
+                    "manylinux2014_aarch64",
+                    "manylinux_2_17_x86_64",
+                    "manylinux_2_17_aarch64",
+                ]
 
                 print("📥 Downloading Python wheels for multiple architectures...")
                 for arch in architectures:
                     try:
-                        self._run_docker_command([
-                            'run', '--rm',
-                            '-v', f"{wheels_dir}:/workspace/wheels",
-                            '-v', f"{requirements_file}:/workspace/requirements.txt:ro",
-                            image_name,
-                            'bash', '-c', '''
+                        self._run_docker_command(
+                            [
+                                "run",
+                                "--rm",
+                                "-v",
+                                f"{wheels_dir}:/workspace/wheels",
+                                "-v",
+                                f"{requirements_file}:/workspace/requirements.txt:ro",
+                                image_name,
+                                "bash",
+                                "-c",
+                                """
                             source /opt/conda/bin/activate venvoy 2>/dev/null || true
                             pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --platform {arch} --no-deps || true
-                            '''
-                        ], check=False)
+                            """,
+                            ],
+                            check=False,
+                        )
                     except Exception:
                         pass  # Some architectures may not have wheels available
 
                 # Also download any available wheels (will get current architecture)
                 try:
-                    self._run_docker_command([
-                        'run', '--rm',
-                        '-v', f"{wheels_dir}:/workspace/wheels",
-                        '-v', f"{requirements_file}:/workspace/requirements.txt:ro",
-                        image_name,
-                        'bash', '-c', '''
+                    self._run_docker_command(
+                        [
+                            "run",
+                            "--rm",
+                            "-v",
+                            f"{wheels_dir}:/workspace/wheels",
+                            "-v",
+                            f"{requirements_file}:/workspace/requirements.txt:ro",
+                            image_name,
+                            "bash",
+                            "-c",
+                            """
                         source /opt/conda/bin/activate venvoy 2>/dev/null || true
                         pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --no-deps || true
-                        '''
-                    ], check=False)
+                        """,
+                        ],
+                        check=False,
+                    )
                     print("✅ Python wheels downloaded")
                 except Exception as e:
                     print(f"⚠️  Warning: Some Python wheels may not be available: {e}")
@@ -1042,30 +1204,46 @@ CMD ["/bin/bash"]
                 print("\n📊 Processing R packages...")
                 # Create R package list file
                 r_packages_file = wheelhouse_dir / "r-packages.txt"
-                with open(r_packages_file, 'w') as f:
+                with open(r_packages_file, "w") as f:
                     for pkg in r_packages:
                         f.write(f"{pkg['name']}\n")
 
                 # Download R source packages (architecture-independent)
                 print("📥 Downloading R source packages (architecture-independent)...")
                 try:
-                    pkg_names = [pkg['name'] for pkg in r_packages]
-                    pkg_list_str = ', '.join([f'"{pkg}"' for pkg in pkg_names])  # noqa: F841
+                    pkg_names = [pkg["name"] for pkg in r_packages]
+                    pkg_list_str = ", ".join(
+                        [f'"{pkg}"' for pkg in pkg_names]
+                    )
+                    # Validate package list string
+                    if not pkg_list_str or not pkg_list_str.strip():
+                        raise ValueError("Package list string is empty")
+                    if len(pkg_list_str) < 3:  # Minimum: "x"
+                        raise ValueError("Package list string is too short")
 
-                    self._run_docker_command([
-                        'run', '--rm',
-                        '-v', f"{r_source_dir}:/workspace/r-source",
-                        image_name,
-                        'bash', '-c', '''
+                    self._run_docker_command(
+                        [
+                            "run",
+                            "--rm",
+                            "-v",
+                            f"{r_source_dir}:/workspace/r-source",
+                            image_name,
+                            "bash",
+                            "-c",
+                            """
                         R --slave -e "
                         options(repos = c(CRAN = 'https://cran.rstudio.com/'));
                         download.packages(c({pkg_list_str}), destdir='/workspace/r-source', type='source', repos='https://cran.rstudio.com/');
                         " || true
-                        '''
-                    ], check=False)
+                        """,
+                        ],
+                        check=False,
+                    )
                     print("✅ R source packages downloaded")
                 except Exception as e:
-                    print(f"⚠️  Warning: Some R source packages may not be available: {e}")
+                    print(
+                        f"⚠️  Warning: Some R source packages may not be available: {e}"
+                    )
 
                 # Download R binary packages for multiple architectures
                 # Note: CRAN provides binaries mainly for x86_64, so we'll try both
@@ -1073,50 +1251,68 @@ CMD ["/bin/bash"]
 
                 # Try to download binaries for x86_64 (most common)
                 try:
-                    pkg_names = [pkg['name'] for pkg in r_packages]
-                    pkg_list_str = ', '.join([f'"{pkg}"' for pkg in pkg_names])  # noqa: F841
+                    pkg_names = [pkg["name"] for pkg in r_packages]
+                    pkg_list_str = ", ".join(
+                        [f'"{pkg}"' for pkg in pkg_names]
+                    )
+                    # Validate package list string
+                    if not pkg_list_str or not pkg_list_str.strip():
+                        raise ValueError("Package list string is empty")
+                    if len(pkg_list_str) < 3:  # Minimum: "x"
+                        raise ValueError("Package list string is too short")
 
-                    self._run_docker_command([
-                        'run', '--rm',
-                        '-v', f"{r_binaries_dir}:/workspace/r-binaries",
-                        image_name,
-                        'bash', '-c', '''
+                    self._run_docker_command(
+                        [
+                            "run",
+                            "--rm",
+                            "-v",
+                            f"{r_binaries_dir}:/workspace/r-binaries",
+                            image_name,
+                            "bash",
+                            "-c",
+                            """
                         R --slave -e "
                         options(repos = c(CRAN = 'https://cran.rstudio.com/'));
                         download.packages(c({pkg_list_str}), destdir='/workspace/r-binaries', type='binary', repos='https://cran.rstudio.com/');
                         " || true
-                        '''
-                    ], check=False)
+                        """,
+                        ],
+                        check=False,
+                    )
                     print("✅ R binary packages downloaded")
                 except Exception as e:
-                    print(f"⚠️  Warning: Some R binary packages may not be available: {e}")
+                    print(
+                        f"⚠️  Warning: Some R binary packages may not be available: {e}"
+                    )
 
             # Create package manifest
             print("\n📋 Creating package manifest...")
             manifest = {
-                'created': datetime.now().isoformat(),
-                'venvoy_version': '0.1.0',
-                'wheelhouse_version': '1.0',
-                'environment': {
-                    'name': self.name,
-                    'runtime': runtime,
-                    'python_version': self.python_version if runtime in ['python', 'mixed'] else None,
-                    'r_version': self.r_version if runtime in ['r', 'mixed'] else None,
-                    'platform': self.platform.detect(),
+                "created": datetime.now().isoformat(),
+                "venvoy_version": "0.1.0",
+                "wheelhouse_version": "1.0",
+                "environment": {
+                    "name": self.name,
+                    "runtime": runtime,
+                    "python_version": (
+                        self.python_version if runtime in ["python", "mixed"] else None
+                    ),
+                    "r_version": self.r_version if runtime in ["r", "mixed"] else None,
+                    "platform": self.platform.detect(),
                 },
-                'packages': {
-                    'python': python_packages,
-                    'r': r_packages,
+                "packages": {
+                    "python": python_packages,
+                    "r": r_packages,
                 },
-                'package_count': {
-                    'python': len(python_packages),
-                    'r': len(r_packages),
-                    'total': total_packages,
+                "package_count": {
+                    "python": len(python_packages),
+                    "r": len(r_packages),
+                    "total": total_packages,
                 },
             }
 
             manifest_file = wheelhouse_dir / "manifest.json"
-            with open(manifest_file, 'w') as f:
+            with open(manifest_file, "w") as f:
                 json.dump(manifest, f, indent=2, default=str)
 
             # Create restore script
@@ -1131,8 +1327,12 @@ CMD ["/bin/bash"]
             # Count files
             sdist_count = len(list(sdists_dir.glob("*"))) if sdists_dir.exists() else 0
             wheel_count = len(list(wheels_dir.glob("*"))) if wheels_dir.exists() else 0
-            r_source_count = len(list(r_source_dir.glob("*"))) if r_source_dir.exists() else 0
-            r_binary_count = len(list(r_binaries_dir.glob("*"))) if r_binaries_dir.exists() else 0
+            r_source_count = (
+                len(list(r_source_dir.glob("*"))) if r_source_dir.exists() else 0
+            )
+            r_binary_count = (
+                len(list(r_binaries_dir.glob("*"))) if r_binaries_dir.exists() else 0
+            )
 
             print("\n📊 Package cache contents:")
             if python_packages:
@@ -1144,7 +1344,7 @@ CMD ["/bin/bash"]
 
             # Create final compressed archive
             print("\n🗜️  Compressing wheelhouse...")
-            with tarfile.open(output_file, 'w:gz') as tar:
+            with tarfile.open(output_file, "w:gz") as tar:
                 tar.add(wheelhouse_dir, arcname=f"{self.name}-wheelhouse")
 
             # Calculate final size
@@ -1175,7 +1375,7 @@ CMD ["/bin/bash"]
             temp_path = Path(temp_dir)
 
             print("📂 Extracting wheelhouse...")
-            with tarfile.open(wheelhouse_file, 'r:gz') as tar:
+            with tarfile.open(wheelhouse_file, "r:gz") as tar:
                 tar.extractall(temp_path)
 
             # Find wheelhouse directory (should be only subdirectory)
@@ -1190,14 +1390,14 @@ CMD ["/bin/bash"]
             if not manifest_file.exists():
                 raise RuntimeError("Invalid wheelhouse: missing manifest.json")
 
-            with open(manifest_file, 'r') as f:
+            with open(manifest_file, "r") as f:
                 manifest = json.load(f)
 
-            env_info = manifest['environment']
-            env_name = env_info['name']
-            runtime = env_info.get('runtime', 'python')
-            python_version = env_info.get('python_version')
-            r_version = env_info.get('r_version')
+            env_info = manifest["environment"]
+            env_name = env_info["name"]
+            runtime = env_info.get("runtime", "python")
+            python_version = env_info.get("python_version")
+            r_version = env_info.get("r_version")
 
             print(f"🔍 Wheelhouse contains environment: {env_name}")
             print(f"   Runtime: {runtime}")
@@ -1258,42 +1458,44 @@ CMD ["/bin/bash"]
                             shutil.copy2(pkg, r_binaries_dir)
 
             # Create requirements.txt from manifest (Python)
-            python_packages = manifest['packages'].get('python', [])
+            python_packages = manifest["packages"].get("python", [])
             if python_packages:
                 print("📝 Creating requirements.txt...")
                 requirements_file = target_env_dir / "requirements.txt"
-                with open(requirements_file, 'w') as f:
+                with open(requirements_file, "w") as f:
                     for pkg in python_packages:
                         f.write(f"{pkg['name']}=={pkg['version']}\n")
 
             # Create r-packages.txt from manifest (R)
-            r_packages = manifest['packages'].get('r', [])
+            r_packages = manifest["packages"].get("r", [])
             if r_packages:
                 print("📝 Creating r-packages.txt...")
                 r_packages_file = target_env_dir / "r-packages.txt"
-                with open(r_packages_file, 'w') as f:
+                with open(r_packages_file, "w") as f:
                     for pkg in r_packages:
                         f.write(f"{pkg['name']}\n")
 
             # Create config.yaml
             config = {
-                'name': env_name,
-                'runtime': runtime,
-                'python_version': python_version,
-                'r_version': r_version,
-                'created': manifest['created'],
-                'imported_from': str(wheelhouse_file),
-                'imported_at': datetime.now().isoformat(),
+                "name": env_name,
+                "runtime": runtime,
+                "python_version": python_version,
+                "r_version": r_version,
+                "created": manifest["created"],
+                "imported_from": str(wheelhouse_file),
+                "imported_at": datetime.now().isoformat(),
             }
 
             config_file = target_env_dir / "config.yaml"
-            with open(config_file, 'w') as f:
+            with open(config_file, "w") as f:
                 yaml.safe_dump(config, f, default_flow_style=False)
 
             print("\n✅ Wheelhouse imported successfully!")
             print("🚀 To build and use the environment:")
             print(f"   venvoy init --name {env_name} --force")
-            print("\n💡 Packages will be installed from local cache (no repository access needed)")
+            print(
+                "\n💡 Packages will be installed from local cache (no repository access needed)"
+            )
 
             return env_name
 
@@ -1315,15 +1517,15 @@ CMD ["/bin/bash"]
         print(f"📦 Importing venvoy environment from YAML: {yaml_file.name}")
 
         # Read YAML file
-        with open(yaml_file, 'r') as f:
+        with open(yaml_file, "r") as f:
             export_data = yaml.safe_load(f)
 
         if not export_data:
             raise RuntimeError("Invalid YAML file: empty or invalid format")
 
-        env_name = export_data.get('name', 'venvoy-env')
-        python_version = export_data.get('python_version', '3.11')
-        packages = export_data.get('packages', [])
+        env_name = export_data.get("name", "venvoy-env")
+        python_version = export_data.get("python_version", "3.11")
+        packages = export_data.get("packages", [])
 
         print(f"🔍 YAML contains environment: {env_name}")
         print(f"   Python: {python_version}")
@@ -1345,10 +1547,10 @@ CMD ["/bin/bash"]
         if packages:
             print("📝 Creating requirements.txt...")
             requirements_file = target_env_dir / "requirements.txt"
-            with open(requirements_file, 'w') as f:
+            with open(requirements_file, "w") as f:
                 for pkg in packages:
-                    pkg_name = pkg.get('name', '')
-                    pkg_version = pkg.get('version', '')
+                    pkg_name = pkg.get("name", "")
+                    pkg_version = pkg.get("version", "")
                     if pkg_name:
                         if pkg_version:
                             f.write(f"{pkg_name}=={pkg_version}\n")
@@ -1357,21 +1559,23 @@ CMD ["/bin/bash"]
 
         # Create config.yaml
         config = {
-            'name': env_name,
-            'python_version': python_version,
-            'runtime': 'python',
-            'created': export_data.get('created', datetime.now().isoformat()),
-            'imported_from': str(yaml_file),
-            'imported_at': datetime.now().isoformat(),
+            "name": env_name,
+            "python_version": python_version,
+            "runtime": "python",
+            "created": export_data.get("created", datetime.now().isoformat()),
+            "imported_from": str(yaml_file),
+            "imported_at": datetime.now().isoformat(),
         }
 
         config_file = target_env_dir / "config.yaml"
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             yaml.safe_dump(config, f, default_flow_style=False)
 
         print("\n✅ YAML imported successfully!")
         print("🚀 To build and use the environment:")
-        print(f"   venvoy init --name {env_name} --python-version {python_version} --force")
+        print(
+            f"   venvoy init --name {env_name} --python-version {python_version} --force"
+        )
 
         return env_name
 
@@ -1390,26 +1594,28 @@ CMD ["/bin/bash"]
         if not dockerfile_file.exists():
             raise FileNotFoundError(f"Dockerfile not found: {dockerfile_path}")
 
-        print(f"📦 Importing venvoy environment from Dockerfile: {dockerfile_file.name}")
+        print(
+            f"📦 Importing venvoy environment from Dockerfile: {dockerfile_file.name}"
+        )
 
         # Read Dockerfile
-        with open(dockerfile_file, 'r') as f:
+        with open(dockerfile_file, "r") as f:
             dockerfile_content = f.read()
 
         # Try to extract environment name from comments
-        env_name = 'venvoy-env'
-        python_version = '3.11'
+        env_name = "venvoy-env"
+        python_version = "3.11"
 
         # Look for venvoy export comments
-        for line in dockerfile_content.split('\n'):
-            if 'Exported venvoy environment:' in line:
+        for line in dockerfile_content.split("\n"):
+            if "Exported venvoy environment:" in line:
                 # Extract name from comment
-                parts = line.split(':')
+                parts = line.split(":")
                 if len(parts) > 1:
                     env_name = parts[1].strip()
-            elif 'FROM' in line and 'python' in line.lower():
+            elif "FROM" in line and "python" in line.lower():
                 # Try to extract Python version from FROM line
-                match = re.search(r'python:?(\d+\.\d+)', line, re.IGNORECASE)
+                match = re.search(r"python:?(\d+\.\d+)", line, re.IGNORECASE)
                 if match:
                     python_version = match.group(1)
 
@@ -1436,70 +1642,98 @@ CMD ["/bin/bash"]
         # Try to extract requirements from Dockerfile
         requirements = []
         in_requirements = False
-        for line in dockerfile_content.split('\n'):
-            if 'requirements.txt' in line.lower() and ('copy' in line.lower() or 'add' in line.lower()):
+        for line in dockerfile_content.split("\n"):
+            if "requirements.txt" in line.lower() and (
+                "copy" in line.lower() or "add" in line.lower()
+            ):
                 in_requirements = True
-            elif in_requirements and ('RUN' in line or 'pip install' in line.lower()):
+            elif in_requirements and ("RUN" in line or "pip install" in line.lower()):
                 # Extract package names from pip install commands
-                matches = re.findall(r'pip install[^&|]*?([a-zA-Z0-9_-]+(?:==[0-9.]+)?)', line)
+                matches = re.findall(
+                    r"pip install[^&|]*?([a-zA-Z0-9_-]+(?:==[0-9.]+)?)", line
+                )
                 requirements.extend(matches)
 
         # Create requirements.txt if we found packages
         if requirements:
             print("📝 Creating requirements.txt from Dockerfile...")
             requirements_file = target_env_dir / "requirements.txt"
-            with open(requirements_file, 'w') as f:
+            with open(requirements_file, "w") as f:
                 for req in requirements:
                     f.write(f"{req}\n")
 
         # Create config.yaml
         config = {
-            'name': env_name,
-            'python_version': python_version,
-            'runtime': 'python',
-            'created': datetime.now().isoformat(),
-            'imported_from': str(dockerfile_file),
-            'imported_at': datetime.now().isoformat(),
+            "name": env_name,
+            "python_version": python_version,
+            "runtime": "python",
+            "created": datetime.now().isoformat(),
+            "imported_from": str(dockerfile_file),
+            "imported_at": datetime.now().isoformat(),
         }
 
         config_file = target_env_dir / "config.yaml"
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             yaml.safe_dump(config, f, default_flow_style=False)
 
         print("\n✅ Dockerfile imported successfully!")
         print("🚀 To build and use the environment:")
-        print(f"   venvoy init --name {env_name} --python-version {python_version} --force")
+        print(
+            f"   venvoy init --name {env_name} --python-version {python_version} --force"
+        )
 
         return env_name
 
     def _create_wheelhouse_restore_script(self, script_path: Path, manifest: Dict):
         """Create restore script for the wheelhouse"""
-        env_info = manifest['environment']
-        runtime = env_info.get('runtime', 'python')
-        python_version = env_info.get('python_version')
-        r_version = env_info.get('r_version')
+        env_info = manifest["environment"]
+        runtime = env_info.get("runtime", "python")
+        python_version = env_info.get("python_version")
+        r_version = env_info.get("r_version")
 
-        python_packages = manifest['packages'].get('python', [])
-        r_packages = manifest['packages'].get('r', [])
+        python_packages = manifest["packages"].get("python", [])
+        r_packages = manifest["packages"].get("r", [])
 
         # Create Python requirements list
-        python_packages_list = '\n'.join([f"{pkg['name']}=={pkg['version']}" for pkg in python_packages]) if python_packages else ""  # noqa: F841
+        python_packages_list = (
+            "\n".join([f"{pkg['name']}=={pkg['version']}" for pkg in python_packages])
+            if python_packages
+            else ""
+        )
+        # Validate Python packages list
+        if python_packages and (not python_packages_list or not python_packages_list.strip()):
+            raise ValueError("Python packages list is empty but packages exist")
+        if python_packages_list and "==" not in python_packages_list.split("\n")[0]:
+            # Check first line has version specifier (basic validation)
+            if python_packages:
+                raise ValueError("Python packages list format is invalid")
 
         # Create R packages list
-        r_packages_list = ', '.join([f'"{pkg["name"]}"' for pkg in r_packages]) if r_packages else ""  # noqa: F841
+        r_packages_list = (
+            ", ".join([f'"{pkg["name"]}"' for pkg in r_packages]) if r_packages else ""
+        )
+        # Validate R packages list
+        if r_packages and (not r_packages_list or not r_packages_list.strip()):
+            raise ValueError("R packages list is empty but packages exist")
+        if r_packages_list and not r_packages_list.startswith('"'):
+            # Check format starts with quote (basic validation)
+            if r_packages:
+                raise ValueError("R packages list format is invalid")
 
         # Determine init command based on runtime
-        if runtime == 'r':
+        if runtime == "r":
             init_cmd = f"venvoy init --runtime r --r-version {r_version} --name {env_info['name']}"  # noqa: F841
             version_info = f"📊 R: {r_version}"  # noqa: F841
-        elif runtime == 'mixed':
+        elif runtime == "mixed":
             init_cmd = f"venvoy init --runtime mixed --python-version {python_version} --r-version {r_version} --name {env_info['name']}"  # noqa: F841
-            version_info = f"🐍 Python: {python_version}, 📊 R: {r_version}"  # noqa: F841
+            version_info = (
+                f"🐍 Python: {python_version}, 📊 R: {r_version}"  # noqa: F841
+            )
         else:
             init_cmd = f"venvoy init --name {env_info['name']} --python-version {python_version}"  # noqa: F841
             version_info = f"🐍 Python: {python_version}"  # noqa: F841
 
-        script_content = '''#!/bin/bash
+        script_content = """#!/bin/bash
 # venvoy Wheelhouse Restore Script
 # Generated: {manifest['created']}
 # Environment: {env_info['name']}
@@ -1556,20 +1790,20 @@ if [ -d "r-packages/binaries" ]; then
 fi
 
 # Create requirements.txt from manifest (Python)
-'''
+"""
 
         if python_packages:
-            script_content += '''if [ ! -z "{python_packages_list}" ]; then
+            script_content += """if [ ! -z "{python_packages_list}" ]; then
     echo "📝 Creating requirements.txt..."
     REQUIREMENTS_FILE="$ENV_DIR/requirements.txt"
     cat > "$REQUIREMENTS_FILE" <<PYEOF
 {python_packages_list}
 PYEOF
 fi
-'''
+"""
 
         if r_packages:
-            script_content += '''
+            script_content += """
 # Create R packages list
 if [ ! -z "{r_packages_list}" ]; then
     echo "📝 Creating r-packages.txt..."
@@ -1578,9 +1812,9 @@ if [ ! -z "{r_packages_list}" ]; then
 {chr(10).join([pkg['name'] for pkg in r_packages])}
 REOF
 fi
-'''
+"""
 
-        script_content += '''
+        script_content += """
 echo ""
 echo "✅ Wheelhouse restored successfully!"
 echo ""
@@ -1593,52 +1827,94 @@ fi
 if [ ! -z "{r_packages_list}" ]; then
     echo "💡 R packages will be installed from local r-packages directory (no CRAN needed)"
 fi
-'''
+"""
 
-        with open(script_path, 'w') as f:
+        with open(script_path, "w") as f:
             f.write(script_content)
 
     def _create_wheelhouse_readme(self, readme_path: Path, manifest: Dict):
         """Create README for the wheelhouse"""
-        env_info = manifest['environment']
-        runtime = env_info.get('runtime', 'python')  # noqa: F841
-        pkg_counts = manifest.get('package_count', {})
+        env_info = manifest["environment"]
+        runtime = env_info.get("runtime", "python")  # noqa: F841
+        pkg_counts = manifest.get("package_count", {})
 
         # Build version info
         version_parts = []
-        if env_info.get('python_version'):
+        if env_info.get("python_version"):
             version_parts.append(f"Python {env_info['python_version']}")
-        if env_info.get('r_version'):
+        if env_info.get("r_version"):
             version_parts.append(f"R {env_info['r_version']}")
-        version_info = ", ".join(version_parts) if version_parts else "Unknown"  # noqa: F841
+        version_info = (
+            ", ".join(version_parts) if version_parts else "Unknown"
+        )
+        # Validate version info
+        if not version_info or not version_info.strip():
+            raise ValueError("Version info is empty")
+        if version_info == "Unknown" and (env_info.get("python_version") or env_info.get("r_version")):
+            # Should have version info if versions are available
+            raise ValueError("Version info is 'Unknown' but versions are available")
 
         # Build contents section
         contents_list = []
-        if pkg_counts.get('python', 0) > 0:
-            contents_list.append("- **Python Source Distributions (sdists/)**: Architecture-independent source packages")
-            contents_list.append("- **Python Wheels (wheels/)**: Pre-built packages for multiple architectures")
-        if pkg_counts.get('r', 0) > 0:
-            contents_list.append("- **R Source Packages (r-packages/source/)**: Architecture-independent R source packages")
-            contents_list.append("- **R Binary Packages (r-packages/binaries/)**: Pre-built R packages for multiple architectures")
-        contents_list.append("- **Manifest (manifest.json)**: Package specifications and metadata")
-        contents_list.append("- **Restore Script (restore.sh)**: Automated restoration script")
+        if pkg_counts.get("python", 0) > 0:
+            contents_list.append(
+                "- **Python Source Distributions (sdists/)**: Architecture-independent source packages"
+            )
+            contents_list.append(
+                "- **Python Wheels (wheels/)**: Pre-built packages for multiple architectures"
+            )
+        if pkg_counts.get("r", 0) > 0:
+            contents_list.append(
+                "- **R Source Packages (r-packages/source/)**: Architecture-independent R source packages"
+            )
+            contents_list.append(
+                "- **R Binary Packages (r-packages/binaries/)**: Pre-built R packages for multiple architectures"
+            )
+        contents_list.append(
+            "- **Manifest (manifest.json)**: Package specifications and metadata"
+        )
+        contents_list.append(
+            "- **Restore Script (restore.sh)**: Automated restoration script"
+        )
         contents_section = "\n".join(contents_list)  # noqa: F841
 
         # Build restore instructions
         restore_instructions = []
-        if pkg_counts.get('python', 0) > 0:
+        if pkg_counts.get("python", 0) > 0:
             restore_instructions.append("```bash")
             restore_instructions.append("# Copy Python packages")
-            restore_instructions.append("mkdir -p ~/.venvoy/environments/{}/vendor".format(env_info['name']))
-            restore_instructions.append("cp -r sdists/* ~/.venvoy/environments/{}/vendor/".format(env_info['name']))
-            restore_instructions.append("cp -r wheels/* ~/.venvoy/environments/{}/vendor/".format(env_info['name']))
+            restore_instructions.append(
+                "mkdir -p ~/.venvoy/environments/{}/vendor".format(env_info["name"])
+            )
+            restore_instructions.append(
+                "cp -r sdists/* ~/.venvoy/environments/{}/vendor/".format(
+                    env_info["name"]
+                )
+            )
+            restore_instructions.append(
+                "cp -r wheels/* ~/.venvoy/environments/{}/vendor/".format(
+                    env_info["name"]
+                )
+            )
             restore_instructions.append("```")
-        if pkg_counts.get('r', 0) > 0:
+        if pkg_counts.get("r", 0) > 0:
             restore_instructions.append("```bash")
             restore_instructions.append("# Copy R packages")
-            restore_instructions.append("mkdir -p ~/.venvoy/environments/{}/r-packages/{{source,binaries}}".format(env_info['name']))
-            restore_instructions.append("cp -r r-packages/source/* ~/.venvoy/environments/{}/r-packages/source/".format(env_info['name']))
-            restore_instructions.append("cp -r r-packages/binaries/* ~/.venvoy/environments/{}/r-packages/binaries/".format(env_info['name']))
+            restore_instructions.append(
+                "mkdir -p ~/.venvoy/environments/{}/r-packages/{{source,binaries}}".format(
+                    env_info["name"]
+                )
+            )
+            restore_instructions.append(
+                "cp -r r-packages/source/* ~/.venvoy/environments/{}/r-packages/source/".format(
+                    env_info["name"]
+                )
+            )
+            restore_instructions.append(
+                "cp -r r-packages/binaries/* ~/.venvoy/environments/{}/r-packages/binaries/".format(
+                    env_info["name"]
+                )
+            )
             restore_instructions.append("```")
 
         restore_section = "\n".join(restore_instructions)  # noqa: F841
@@ -1649,7 +1925,7 @@ fi
 2. **R packages**: R will use binary packages for the target architecture if available, otherwise build from source
 3. All packages are self-contained - no repository access needed"""
 
-        readme_content = '''# venvoy Cross-Architecture Wheelhouse
+        readme_content = """# venvoy Cross-Architecture Wheelhouse
 
 ## Wheelhouse Information
 
@@ -1724,24 +2000,20 @@ R packages are distributed differently than Python:
 
 Generated by venvoy - Scientific Python and R Environment Management
 https://github.com/zaphodbeeblebrox3rd/venvoy
-'''
+"""
 
-        with open(readme_path, 'w') as f:
+        with open(readme_path, "w") as f:
             f.write(readme_content)
 
     def _create_comprehensive_manifest(self, image_name: str) -> Dict:
         manifest = {
-            'created': datetime.now().isoformat(),
-            'image_name': image_name,
-            'platform': self.platform.detect(),
-            'python_version': self.python_version,
-            'packages': {
-                'conda': [],
-                'pip': [],
-                'system': []
-            },
-            'system_info': {},
-            'dependency_tree': {}
+            "created": datetime.now().isoformat(),
+            "image_name": image_name,
+            "platform": self.platform.detect(),
+            "python_version": self.python_version,
+            "packages": {"conda": [], "pip": [], "system": []},
+            "system_info": {},
+            "dependency_tree": {},
         }
 
         try:
@@ -1749,45 +2021,83 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
             print("🔍 Analyzing package dependencies...")
 
             # Get conda packages with detailed info
-            conda_result = subprocess.run([
-                'docker', 'run', '--rm', image_name,
-                'bash', '-c', 'source /opt/conda/bin/activate venvoy && conda list --json'
-            ], capture_output=True, text=True, check=True)
+            conda_result = subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    image_name,
+                    "bash",
+                    "-c",
+                    "source /opt/conda/bin/activate venvoy && conda list --json",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
 
             conda_packages = json.loads(conda_result.stdout)
-            manifest['packages']['conda'] = conda_packages
+            manifest["packages"]["conda"] = conda_packages
 
             # Get pip packages with detailed info
-            pip_result = subprocess.run([
-                'docker', 'run', '--rm', image_name,
-                'bash', '-c', 'source /opt/conda/bin/activate venvoy && pip list --format=json'
-            ], capture_output=True, text=True, check=True)
+            pip_result = subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    image_name,
+                    "bash",
+                    "-c",
+                    "source /opt/conda/bin/activate venvoy && pip list --format=json",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
 
             pip_packages = json.loads(pip_result.stdout)
-            manifest['packages']['pip'] = pip_packages
+            manifest["packages"]["pip"] = pip_packages
 
             # Get system packages (Debian/Ubuntu)
-            system_result = subprocess.run([
-                'docker', 'run', '--rm', image_name,
-                'bash', '-c', 'dpkg-query -W -f="${Package}\\t${Version}\\t${Architecture}\\n"'
-            ], capture_output=True, text=True, check=True)
+            system_result = subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    image_name,
+                    "bash",
+                    "-c",
+                    'dpkg-query -W -f="${Package}\\t${Version}\\t${Architecture}\\n"',
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
 
             system_packages = []
-            for line in system_result.stdout.strip().split('\n'):
+            for line in system_result.stdout.strip().split("\n"):
                 if line:
-                    parts = line.split('\t')
+                    parts = line.split("\t")
                     if len(parts) >= 3:
-                        system_packages.append({
-                            'name': parts[0],
-                            'version': parts[1],
-                            'architecture': parts[2]
-                        })
-            manifest['packages']['system'] = system_packages
+                        system_packages.append(
+                            {
+                                "name": parts[0],
+                                "version": parts[1],
+                                "architecture": parts[2],
+                            }
+                        )
+            manifest["packages"]["system"] = system_packages
 
             # Get Python and system information
-            info_result = subprocess.run([
-                'docker', 'run', '--rm', image_name,
-                'bash', '-c', '''
+            info_result = subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    image_name,
+                    "bash",
+                    "-c",
+                    """
                 source /opt/conda/bin/activate venvoy
                 echo "PYTHON_VERSION=$(python --version)"
                 echo "PYTHON_PATH=$(which python)"
@@ -1795,38 +2105,52 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                 echo "OS_INFO=$(cat /etc/os-release | grep PRETTY_NAME)"
                 echo "ARCHITECTURE=$(uname -m)"
                 echo "KERNEL=$(uname -r)"
-                '''
-            ], capture_output=True, text=True, check=True)
+                """,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
 
             system_info = {}
-            for line in info_result.stdout.strip().split('\n'):
-                if '=' in line:
-                    key, value = line.split('=', 1)
+            for line in info_result.stdout.strip().split("\n"):
+                if "=" in line:
+                    key, value = line.split("=", 1)
                     system_info[key] = value
-            manifest['system_info'] = system_info
+            manifest["system_info"] = system_info
 
             # Get dependency tree for critical packages
             print("🌳 Building dependency tree...")
-            dep_result = subprocess.run([
-                'docker', 'run', '--rm', image_name,
-                'bash', '-c', 'source /opt/conda/bin/activate venvoy && pip show --verbose numpy pandas matplotlib jupyter || true'
-            ], capture_output=True, text=True, check=True)
+            dep_result = subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    image_name,
+                    "bash",
+                    "-c",
+                    "source /opt/conda/bin/activate venvoy && pip show --verbose numpy pandas matplotlib jupyter || true",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
 
             # Parse dependency information (simplified)
-            manifest['dependency_tree']['pip_show_output'] = dep_result.stdout
+            manifest["dependency_tree"]["pip_show_output"] = dep_result.stdout
 
         except subprocess.CalledProcessError as e:
             print(f"⚠️  Warning: Could not gather complete manifest: {e}")
-            manifest['warning'] = f"Incomplete manifest due to: {e}"
+            manifest["warning"] = f"Incomplete manifest due to: {e}"
         except json.JSONDecodeError as e:
             print(f"⚠️  Warning: Could not parse package JSON: {e}")
-            manifest['warning'] = f"Package parsing error: {e}"
+            manifest["warning"] = f"Package parsing error: {e}"
 
         return manifest
 
     def _create_restore_script(self, script_path: Path, metadata: Dict):
         """Create restore script for the archive"""
-        script_content = '''#!/bin/bash
+        script_content = """#!/bin/bash
 # venvoy Archive Restore Script
 # Generated: {metadata['created']}
 # Environment: {metadata['environment']['name']}
@@ -1902,14 +2226,14 @@ echo "   - Docker image: {metadata['environment']['image_name']}"
 echo "   - Configuration: ~/.venvoy/environments/{metadata['environment']['name']}"
 echo "   - Manifest: environment-manifest.json"
 echo ""
-'''
+"""
 
-        with open(script_path, 'w') as f:
+        with open(script_path, "w") as f:
             f.write(script_content)
 
     def _create_archive_readme(self, readme_path: Path, metadata: Dict):
         """Create README for the archive"""
-        readme_content = '''# venvoy Environment Archive
+        readme_content = """# venvoy Environment Archive
 
 ## Archive Information
 
@@ -2014,9 +2338,9 @@ This archive ensures bit-for-bit reproducible results by capturing:
 
 Generated by venvoy - Scientific Python Environment Management
 https://github.com/zaphodbeeblebrox3rd/venvoy
-'''
+"""
 
-        with open(readme_path, 'w') as f:
+        with open(readme_path, "w") as f:
             f.write(readme_content)
 
     def import_archive(self, archive_path: str, force: bool = False) -> str:
@@ -2041,7 +2365,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
             temp_path = Path(temp_dir)
 
             print("📂 Extracting archive...")
-            with tarfile.open(archive_file, 'r:gz') as tar:
+            with tarfile.open(archive_file, "r:gz") as tar:
                 tar.extractall(temp_path)
 
             # Find archive directory (should be only subdirectory)
@@ -2056,13 +2380,15 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
             if not metadata_file.exists():
                 raise RuntimeError("Invalid archive: missing metadata")
 
-            with open(metadata_file, 'r') as f:
+            with open(metadata_file, "r") as f:
                 metadata = json.load(f)
 
-            env_name = metadata['environment']['name']
-            python_version = metadata['environment']['python_version']
+            env_name = metadata["environment"]["name"]
+            python_version = metadata["environment"]["python_version"]
 
-            print(f"🔍 Archive contains environment: {env_name} (Python {python_version})")
+            print(
+                f"🔍 Archive contains environment: {env_name} (Python {python_version})"
+            )
             print(f"📅 Created: {metadata['created']}")
 
             # Check if environment already exists
@@ -2077,9 +2403,11 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
             if docker_image_file.exists():
                 print("🐳 Loading Docker image...")
                 try:
-                    subprocess.run([
-                        'docker', 'load', '-i', str(docker_image_file)
-                    ], check=True, capture_output=True)
+                    subprocess.run(
+                        ["docker", "load", "-i", str(docker_image_file)],
+                        check=True,
+                        capture_output=True,
+                    )
                     print("✅ Docker image loaded")
                 except subprocess.CalledProcessError as e:
                     raise RuntimeError(f"Failed to load Docker image: {e}")
@@ -2112,11 +2440,11 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
 
             # Create conda-style environment.yml
             env_data = {
-                'name': self.name,
-                'channels': ['conda-forge', 'defaults'],
-                'dependencies': [],
-                'exported': datetime.now().isoformat(),
-                'venvoy_version': '0.1.0'
+                "name": self.name,
+                "channels": ["conda-forge", "defaults"],
+                "dependencies": [],
+                "exported": datetime.now().isoformat(),
+                "venvoy_version": "0.1.0",
             }
 
             # Separate conda and pip packages
@@ -2127,41 +2455,50 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                 # Try to determine if it's available via conda-forge
                 # For simplicity, we'll put common scientific packages in conda section
                 scientific_packages = {
-                    'numpy', 'pandas', 'matplotlib', 'scipy', 'scikit-learn',
-                    'jupyter', 'ipython', 'seaborn', 'plotly', 'bokeh',
-                    'tensorflow', 'pytorch', 'torch', 'transformers'
+                    "numpy",
+                    "pandas",
+                    "matplotlib",
+                    "scipy",
+                    "scikit-learn",
+                    "jupyter",
+                    "ipython",
+                    "seaborn",
+                    "plotly",
+                    "bokeh",
+                    "tensorflow",
+                    "pytorch",
+                    "torch",
+                    "transformers",
                 }
 
-                if pkg['name'].lower() in scientific_packages:
+                if pkg["name"].lower() in scientific_packages:
                     conda_packages.append(f"{pkg['name']}={pkg['version']}")
                 else:
                     pip_packages.append(f"{pkg['name']}=={pkg['version']}")
 
             # Add conda packages
-            env_data['dependencies'].extend(conda_packages)
+            env_data["dependencies"].extend(conda_packages)
 
             # Add pip section if there are pip packages
             if pip_packages:
-                env_data['dependencies'].append({
-                    'pip': pip_packages
-                })
+                env_data["dependencies"].append({"pip": pip_packages})
 
             # Create timestamped filename
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             env_file = self.projects_dir / f"environment_{timestamp}.yml"
 
             # Save timestamped environment file
-            with open(env_file, 'w') as f:
+            with open(env_file, "w") as f:
                 yaml.safe_dump(env_data, f, default_flow_style=False, sort_keys=False)
 
             # Also maintain current environment.yml as latest
             current_env_file = self.projects_dir / "environment.yml"
-            with open(current_env_file, 'w') as f:
+            with open(current_env_file, "w") as f:
                 yaml.safe_dump(env_data, f, default_flow_style=False, sort_keys=False)
 
             # Update timestamp file
             timestamp_file = self.projects_dir / ".last_updated"
-            with open(timestamp_file, 'w') as f:
+            with open(timestamp_file, "w") as f:
                 f.write(datetime.now().isoformat())
 
             print(f"📝 Auto-saved environment to: {env_file}")
@@ -2179,39 +2516,45 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
         # Find all environment_*.yml files
         for env_file in self.projects_dir.glob("environment_*.yml"):
             try:
-                with open(env_file, 'r') as f:
+                with open(env_file, "r") as f:
                     env_data = yaml.safe_load(f)
 
                 # Extract timestamp from filename
                 filename = env_file.name
-                if filename.startswith('environment_') and filename.endswith('.yml'):
+                if filename.startswith("environment_") and filename.endswith(".yml"):
                     timestamp_str = filename[12:-4]  # Remove 'environment_' and '.yml'
 
                     try:
                         # Parse timestamp
-                        timestamp = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+                        timestamp = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
 
                         # Count packages
                         package_count = 0
                         pip_count = 0
 
-                        for dep in env_data.get('dependencies', []):
-                            if isinstance(dep, dict) and 'pip' in dep:
-                                pip_count = len(dep['pip'])
+                        for dep in env_data.get("dependencies", []):
+                            if isinstance(dep, dict) and "pip" in dep:
+                                pip_count = len(dep["pip"])
                             elif isinstance(dep, str):
                                 package_count += 1
 
-                        exports.append({
-                            'file': env_file,
-                            'timestamp': timestamp,
-                            'timestamp_str': timestamp_str,
-                            'formatted_time': timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                            'conda_packages': package_count,
-                            'pip_packages': pip_count,
-                            'total_packages': package_count + pip_count,
-                            'exported_date': env_data.get('exported', 'Unknown'),
-                            'venvoy_version': env_data.get('venvoy_version', 'Unknown')
-                        })
+                        exports.append(
+                            {
+                                "file": env_file,
+                                "timestamp": timestamp,
+                                "timestamp_str": timestamp_str,
+                                "formatted_time": timestamp.strftime(
+                                    "%Y-%m-%d %H:%M:%S"
+                                ),
+                                "conda_packages": package_count,
+                                "pip_packages": pip_count,
+                                "total_packages": package_count + pip_count,
+                                "exported_date": env_data.get("exported", "Unknown"),
+                                "venvoy_version": env_data.get(
+                                    "venvoy_version", "Unknown"
+                                ),
+                            }
+                        )
 
                     except ValueError:
                         # Skip files with invalid timestamp format
@@ -2221,7 +2564,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                 continue
 
         # Sort by timestamp (newest first)
-        exports.sort(key=lambda x: x['timestamp'], reverse=True)
+        exports.sort(key=lambda x: x["timestamp"], reverse=True)
         return exports
 
     def select_environment_export(self) -> Optional[Path]:
@@ -2231,20 +2574,26 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
         if not exports:
             return None
 
-        print(f"\n📋 Found {len(exports)} previous environment exports for '{self.name}':")
+        print(
+            f"\n📋 Found {len(exports)} previous environment exports for '{self.name}':"
+        )
         print("=" * 80)
 
         for i, export in enumerate(exports, 1):
-            print(f"{i:2d}. {export['formatted_time']} - "
-                  f"{export['total_packages']} packages "
-                  f"({export['conda_packages']} conda, {export['pip_packages']} pip)")
+            print(
+                f"{i:2d}. {export['formatted_time']} - "
+                f"{export['total_packages']} packages "
+                f"({export['conda_packages']} conda, {export['pip_packages']} pip)"
+            )
 
         print(f"{len(exports) + 1:2d}. Create new environment (skip restore)")
         print("=" * 80)
 
         while True:
             try:
-                choice = input(f"\nSelect environment to restore (1-{len(exports) + 1}): ").strip()
+                choice = input(
+                    f"\nSelect environment to restore (1-{len(exports) + 1}): "
+                ).strip()
 
                 if not choice:
                     continue
@@ -2258,7 +2607,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                     selected = exports[choice_num - 1]
                     print(f"\n✅ Selected: {selected['formatted_time']}")
                     print(f"📦 Packages: {selected['total_packages']} total")
-                    return selected['file']
+                    return selected["file"]
                 else:
                     print(f"❌ Please enter a number between 1 and {len(exports) + 1}")
 
@@ -2274,32 +2623,32 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
             print(f"🔄 Restoring environment from: {export_file.name}")
 
             # Copy the export file to requirements files
-            with open(export_file, 'r') as f:
+            with open(export_file, "r") as f:
                 env_data = yaml.safe_load(f)
 
             # Extract conda and pip dependencies
             conda_deps = []
             pip_deps = []
 
-            for dep in env_data.get('dependencies', []):
-                if isinstance(dep, dict) and 'pip' in dep:
-                    pip_deps.extend(dep['pip'])
+            for dep in env_data.get("dependencies", []):
+                if isinstance(dep, dict) and "pip" in dep:
+                    pip_deps.extend(dep["pip"])
                 elif isinstance(dep, str):
                     conda_deps.append(dep)
 
             # Write to requirements files
             if conda_deps:
                 conda_req_file = self.env_dir / "conda-requirements.txt"
-                with open(conda_req_file, 'w') as f:
+                with open(conda_req_file, "w") as f:
                     for dep in conda_deps:
                         # Convert conda format (name=version) to pip format (name==version)
-                        if '=' in dep and not dep.startswith('='):
-                            dep = dep.replace('=', '==', 1)
+                        if "=" in dep and not dep.startswith("="):
+                            dep = dep.replace("=", "==", 1)
                         f.write(f"{dep}\n")
 
             if pip_deps:
                 pip_req_file = self.env_dir / "requirements.txt"
-                with open(pip_req_file, 'w') as f:
+                with open(pip_req_file, "w") as f:
                     for dep in pip_deps:
                         f.write(f"{dep}\n")
 
@@ -2319,10 +2668,16 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
         while True:
             try:
                 # Check if signal file exists in container
-                result = self._run_docker_command([
-                    'exec', container_name,
-                    'test', '-', '/tmp/venvoy_package_changed'
-                ], capture_output=True)
+                result = self._run_docker_command(
+                    [
+                        "exec",
+                        container_name,
+                        "test",
+                        "-",
+                        "/tmp/venvoy_package_changed",
+                    ],
+                    capture_output=True,
+                )
 
                 if result.returncode == 0:
                     # Signal file exists - packages changed
@@ -2332,10 +2687,16 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                     self.auto_save_environment()
 
                     # Remove signal file
-                    self._run_docker_command([
-                        'exec', container_name,
-                        'rm', '-', '/tmp/venvoy_package_changed'
-                    ], capture_output=True)
+                    self._run_docker_command(
+                        [
+                            "exec",
+                            container_name,
+                            "rm",
+                            "-",
+                            "/tmp/venvoy_package_changed",
+                        ],
+                        capture_output=True,
+                    )
 
                 time.sleep(2)  # Check every 2 seconds
 
@@ -2359,36 +2720,43 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                 config_file = env_dir / "config.yaml"
                 if config_file.exists():
                     try:
-                        with open(config_file, 'r') as f:
+                        with open(config_file, "r") as f:
                             config = yaml.safe_load(f)
 
                         # Check if container exists
-                        containers = self.container_manager.list_containers(all_containers=True)
+                        containers = self.container_manager.list_containers(
+                            all_containers=True
+                        )
                         status = "stopped"
                         for container in containers:
                             # Container names follow pattern: venvoy-{name}-{pid}
-                            container_name = container.get('name', '')
+                            container_name = container.get("name", "")
                             if container_name.startswith(f"venvoy-{config['name']}-"):
                                 # Extract status - it might be "Up" or "Exited" or similar
-                                container_status = container.get('status', '').lower()
-                                if 'up' in container_status or 'running' in container_status:
+                                container_status = container.get("status", "").lower()
+                                if (
+                                    "up" in container_status
+                                    or "running" in container_status
+                                ):
                                     status = "running"
                                 else:
                                     status = "stopped"
                                 break
 
                         env_info = {
-                            'name': config['name'],
-                            'created': config['created'],
-                            'status': status
+                            "name": config["name"],
+                            "created": config["created"],
+                            "status": status,
                         }
                         # Add runtime-specific version info
-                        if config.get('runtime') == 'r':
-                            env_info['runtime'] = 'r'
-                            env_info['r_version'] = config.get('r_version', 'unknown')
+                        if config.get("runtime") == "r":
+                            env_info["runtime"] = "r"
+                            env_info["r_version"] = config.get("r_version", "unknown")
                         else:
-                            env_info['runtime'] = 'python'
-                            env_info['python_version'] = config.get('python_version', 'unknown')
+                            env_info["runtime"] = "python"
+                            env_info["python_version"] = config.get(
+                                "python_version", "unknown"
+                            )
                         environments.append(env_info)
                     except (yaml.YAMLError, KeyError):
                         continue
@@ -2399,15 +2767,15 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
         """Get editor configuration from config"""
         if self.config_file.exists():
             try:
-                with open(self.config_file, 'r') as f:
+                with open(self.config_file, "r") as f:
                     config = yaml.safe_load(f)
 
                 # Check new format first
-                if 'editor_type' in config and 'editor_available' in config:
-                    return config['editor_type'], config['editor_available']
+                if "editor_type" in config and "editor_available" in config:
+                    return config["editor_type"], config["editor_available"]
 
                 # Backward compatibility with old vscode_available format
-                if config.get('vscode_available', False):
+                if config.get("vscode_available", False):
                     return "vscode", True
 
             except (yaml.YAMLError, KeyError):
@@ -2437,7 +2805,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                 name=f"{self.name}-runtime",
                 command="sleep infinity",  # Keep container running
                 volumes=volumes,
-                detach=True
+                detach=True,
             )
 
             print("🚀 Container started successfully!")
@@ -2448,16 +2816,18 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
 
             # Launch Cursor with remote containers extension
             cursor_command = [
-                'cursor',
-                '--folder-uri',
-                f'vscode-remote://attached-container+{container.name}/host-home'
+                "cursor",
+                "--folder-uri",
+                f"vscode-remote://attached-container+{container.name}/host-home",
             ]
 
             try:
                 subprocess.run(cursor_command, check=True)
                 print("✅ Cursor connected to container with AI features enabled!")
                 print("🤖 Ready for AI-assisted coding!")
-                print(f"💡 When you're done, stop the container with: docker stop {container.name}")
+                print(
+                    f"💡 When you're done, stop the container with: docker stop {container.name}"
+                )
             except subprocess.CalledProcessError:
                 print("⚠️  Failed to launch Cursor. Falling back to interactive shell.")
                 # Stop the detached container and run interactively instead
@@ -2468,7 +2838,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                     name=f"{self.name}-runtime",
                     command=command,
                     volumes=volumes,
-                    detach=False
+                    detach=False,
                 )
 
         except Exception as e:
@@ -2480,7 +2850,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                 name=f"{self.name}-runtime",
                 command=command,
                 volumes=volumes,
-                detach=False
+                detach=False,
             )
 
     def _launch_with_vscode(self, image_tag: str, volumes: Dict):
@@ -2495,7 +2865,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                 name=f"{self.name}-runtime",
                 command="sleep infinity",  # Keep container running
                 volumes=volumes,
-                detach=True
+                detach=True,
             )
 
             print("🚀 Container started successfully!")
@@ -2506,15 +2876,17 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
 
             # Launch VSCode with remote containers extension
             vscode_command = [
-                'code',
-                '--folder-uri',
-                f'vscode-remote://attached-container+{container.name}/host-home'
+                "code",
+                "--folder-uri",
+                f"vscode-remote://attached-container+{container.name}/host-home",
             ]
 
             try:
                 subprocess.run(vscode_command, check=True)
                 print("✅ VSCode connected to container!")
-                print("💡 When you're done, stop the container with: docker stop {container.name}")
+                print(
+                    "💡 When you're done, stop the container with: docker stop {container.name}"
+                )
             except subprocess.CalledProcessError:
                 print("⚠️  Failed to launch VSCode. Falling back to interactive shell.")
                 # Stop the detached container and run interactively instead
@@ -2525,7 +2897,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                     name=f"{self.name}-runtime",
                     command=command,
                     volumes=volumes,
-                    detach=False
+                    detach=False,
                 )
 
         except Exception as e:
@@ -2537,18 +2909,18 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                 name=f"{self.name}-runtime",
                 command=command,
                 volumes=volumes,
-                detach=False
+                detach=False,
             )
 
     def _update_config(self, updates: Dict[str, Any]):
         """Update environment configuration"""
         if self.config_file.exists():
-            with open(self.config_file, 'r') as f:
+            with open(self.config_file, "r") as f:
                 config = yaml.safe_load(f)
         else:
             config = {}
 
         config.update(updates)
 
-        with open(self.config_file, 'w') as f:
+        with open(self.config_file, "w") as f:
             yaml.safe_dump(config, f, default_flow_style=False)

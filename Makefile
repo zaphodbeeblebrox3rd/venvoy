@@ -1,4 +1,5 @@
-.PHONY: help install bootstrap install-dev test lint format clean build upload docker-dev update upgrade
+.PHONY: help install bootstrap install-dev test lint format clean build upload \
+	docker-dev update upgrade
 
 help:
 	@echo "Available commands:"
@@ -23,7 +24,9 @@ bootstrap:
 	@if [ -f install.sh ]; then \
 		bash install.sh; \
 	else \
-		curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebros3rd/venvoy/main/install.sh | bash; \
+		curl -fsSL \
+			https://raw.githubusercontent.com/zaphodbeeblebros3rd/venvoy/main/install.sh \
+			| bash; \
 	fi
 
 # Development installation - requires Python on host
@@ -60,29 +63,41 @@ install-dev:
 # Containerized test execution
 test:
 	@echo "🧪 Running tests in container..."
-	@docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim bash -c "\
-		pip install -e . && \
-		pip install pytest pytest-cov && \
-		pytest tests/ -v --cov=src/venvoy --cov-report=html --cov-report=term"
+	@docker run --rm \
+		-v $(PWD):/workspace \
+		-w /workspace \
+		python:3.11-slim bash -c "\
+			pip install -e . && \
+			pip install pytest pytest-cov && \
+			pytest tests/ -v \
+				--cov=src/venvoy \
+				--cov-report=html \
+				--cov-report=term"
 
 # Containerized linting
 lint:
 	@echo "🔍 Running linting in container..."
-	@docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim bash -c "\
-		pip install -e . && \
-		pip install flake8 mypy black isort && \
-		flake8 src/venvoy tests/ && \
-		mypy src/venvoy && \
-		black --check src/venvoy tests/ && \
-		isort --check-only src/venvoy tests/"
+	@docker run --rm \
+		-v $(PWD):/workspace \
+		-w /workspace \
+		python:3.11-slim bash -c "\
+			pip install -e . && \
+			pip install flake8 mypy black isort && \
+			flake8 --max-line-length=120 src/venvoy tests/ && \
+			mypy src/venvoy && \
+			black --check src/venvoy tests/ && \
+			isort --check-only src/venvoy tests/"
 
 # Containerized code formatting
 format:
 	@echo "✨ Formatting code in container..."
-	@docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim bash -c "\
-		pip install black isort && \
-		black src/venvoy tests/ && \
-		isort src/venvoy tests/"
+	@docker run --rm \
+		-v $(PWD):/workspace \
+		-w /workspace \
+		python:3.11-slim bash -c "\
+			pip install black isort && \
+			black src/venvoy tests/ && \
+			isort src/venvoy tests/"
 
 clean:
 	rm -rf build/
@@ -96,30 +111,42 @@ clean:
 # Containerized package building
 build: clean
 	@echo "📦 Building package in container..."
-	@docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim bash -c "\
-		pip install build && \
-		python -m build"
+	@docker run --rm \
+		-v $(PWD):/workspace \
+		-w /workspace \
+		python:3.11-slim bash -c "\
+			pip install build && \
+			python -m build"
 
 # Check package with twine
 check-package: build
 	@echo "🔍 Checking package with twine..."
-	@docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim bash -c "\
-		pip install twine && \
-		python -m twine check dist/*"
+	@docker run --rm \
+		-v $(PWD):/workspace \
+		-w /workspace \
+		python:3.11-slim bash -c "\
+			pip install twine && \
+			python -m twine check dist/*"
 
 # Upload to TestPyPI (for testing)
 upload-test: check-package
 	@echo "📤 Uploading to TestPyPI..."
-	@docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim bash -c "\
-		pip install twine && \
-		python -m twine upload --repository testpypi dist/*"
+	@docker run --rm \
+		-v $(PWD):/workspace \
+		-w /workspace \
+		python:3.11-slim bash -c "\
+			pip install twine && \
+			python -m twine upload --repository testpypi dist/*"
 
 # Upload to PyPI (production - requires credentials)
 upload: check-package
 	@echo "📤 Uploading to PyPI..."
-	@docker run --rm -v $(PWD):/workspace -w /workspace python:3.11-slim bash -c "\
-		pip install twine && \
-		python -m twine upload dist/*"
+	@docker run --rm \
+		-v $(PWD):/workspace \
+		-w /workspace \
+		python:3.11-slim bash -c "\
+			pip install twine && \
+			python -m twine upload dist/*"
 
 # Interactive publishing script
 publish:
@@ -132,7 +159,9 @@ update:
 	@if [ -f install.sh ]; then \
 		bash install.sh; \
 	else \
-		curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebros3rd/venvoy/main/install.sh | bash; \
+		curl -fsSL \
+			https://raw.githubusercontent.com/zaphodbeeblebros3rd/venvoy/main/install.sh \
+			| bash; \
 	fi
 
 # Alias for update command

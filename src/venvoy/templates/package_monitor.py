@@ -6,26 +6,26 @@ This script runs inside the container and monitors for package changes,
 triggering auto-saves of environment.yml when packages are installed/removed.
 """
 
+import json
 import os
+import subprocess
 import sys
 import time
-import json
-import subprocess
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 
 def get_installed_packages():
     """Get current list of installed packages"""
     try:
-        result = subprocess.run([
-            'pip', 'freeze'
-        ], capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            ["pip", "freeze"], capture_output=True, text=True, check=True
+        )
 
         packages = {}
-        for line in result.stdout.strip().split('\n'):
-            if line and '==' in line:
-                name, version = line.split('==', 1)
+        for line in result.stdout.strip().split("\n"):
+            if line and "==" in line:
+                name, version = line.split("==", 1)
                 packages[name] = version
 
         return packages
@@ -35,7 +35,7 @@ def get_installed_packages():
 
 def save_package_state(packages, state_file):
     """Save current package state to file"""
-    with open(state_file, 'w') as f:
+    with open(state_file, "w") as f:
         json.dump(packages, f, indent=2)
 
 
@@ -45,7 +45,7 @@ def load_package_state(state_file):
         return {}
 
     try:
-        with open(state_file, 'r') as f:
+        with open(state_file, "r") as f:
             return json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
         return {}
@@ -54,8 +54,8 @@ def load_package_state(state_file):
 def trigger_environment_save():
     """Signal the host to save environment.yml"""
     # Create a signal file that the host can monitor
-    signal_file = Path('/tmp/venvoy_package_changed')
-    with open(signal_file, 'w') as f:
+    signal_file = Path("/tmp/venvoy_package_changed")
+    with open(signal_file, "w") as f:
         f.write(datetime.now().isoformat())
 
     print("📦 Package change detected - signaling environment save")
@@ -63,7 +63,7 @@ def trigger_environment_save():
 
 def monitor_packages():
     """Monitor for package changes"""
-    state_file = Path('/tmp/venvoy_package_state.json')
+    state_file = Path("/tmp/venvoy_package_state.json")
 
     # Get initial state
     current_packages = get_installed_packages()
@@ -83,7 +83,8 @@ def monitor_packages():
             added = set(new_packages.keys()) - set(current_packages.keys())
             removed = set(current_packages.keys()) - set(new_packages.keys())
             updated = {
-                pkg for pkg in new_packages.keys() & current_packages.keys()
+                pkg
+                for pkg in new_packages.keys() & current_packages.keys()
                 if new_packages[pkg] != current_packages[pkg]
             }
 
@@ -104,7 +105,7 @@ def monitor_packages():
 
 if __name__ == "__main__":
     # Run in background if requested
-    if len(sys.argv) > 1 and sys.argv[1] == '--daemon':
+    if len(sys.argv) > 1 and sys.argv[1] == "--daemon":
         # Fork to background
         try:
             pid = os.fork()

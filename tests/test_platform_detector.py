@@ -21,9 +21,15 @@ class TestPlatformDetector:
         info = detector.detect()
 
         expected_keys = [
-            'system', 'machine', 'architecture', 'platform',
-            'python_version', 'python_executable', 'home_directory',
-            'docker_supported', 'vscode_available'
+            "system",
+            "machine",
+            "architecture",
+            "platform",
+            "python_version",
+            "python_executable",
+            "home_directory",
+            "docker_supported",
+            "vscode_available",
         ]
 
         for key in expected_keys:
@@ -33,7 +39,7 @@ class TestPlatformDetector:
         """Test base image selection"""
         detector = PlatformDetector()
 
-        for version in ['3.9', '3.10', '3.11', '3.12', '3.13']:
+        for version in ["3.9", "3.10", "3.11", "3.12", "3.13"]:
             image = detector.get_base_image(version)
             assert image == f"python:{version}-slim"
 
@@ -41,7 +47,7 @@ class TestPlatformDetector:
         """Test Docker platform string generation"""
         detector = PlatformDetector()
         platform = detector.get_docker_platform()
-        assert platform.startswith('linux/')
+        assert platform.startswith("linux/")
 
     def test_supports_buildx(self):
         """Test BuildX support detection"""

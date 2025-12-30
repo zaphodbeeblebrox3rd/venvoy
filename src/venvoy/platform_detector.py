@@ -2,11 +2,11 @@
 Platform detection utilities for venvoy
 """
 
+import os
 import platform
 import sys
-import os
-from typing import Dict, Any
 from pathlib import Path
+from typing import Any, Dict
 
 
 class PlatformDetector:
@@ -21,18 +21,15 @@ class PlatformDetector:
     def _detect_wsl(self) -> bool:
         """Detect if running in WSL (Windows Subsystem for Linux)"""
         # Check for WSL-specific indicators
-        if self.system == 'linux':
+        if self.system == "linux":
             # Check for WSL-specific files
-            wsl_indicators = [
-                '/proc/version',
-                '/proc/sys/kernel/osrelease'
-            ]
+            wsl_indicators = ["/proc/version", "/proc/sys/kernel/osrelease"]
             for indicator in wsl_indicators:
                 if os.path.exists(indicator):
                     try:
-                        with open(indicator, 'r') as f:
+                        with open(indicator, "r") as f:
                             content = f.read().lower()
-                            if 'microsoft' in content or 'wsl' in content:
+                            if "microsoft" in content or "wsl" in content:
                                 return True
                     except Exception:
                         pass
@@ -41,35 +38,35 @@ class PlatformDetector:
     def _normalize_architecture(self) -> str:
         """Normalize architecture names to Docker platform format"""
         arch_map = {
-            'x86_64': 'amd64',
-            'amd64': 'amd64',
-            'i386': '386',
-            'i686': '386',
-            'aarch64': 'arm64',
-            'arm64': 'arm64',
+            "x86_64": "amd64",
+            "amd64": "amd64",
+            "i386": "386",
+            "i686": "386",
+            "aarch64": "arm64",
+            "arm64": "arm64",
         }
         return arch_map.get(self.machine, self.machine)
 
     def detect(self) -> Dict[str, Any]:
         """Detect comprehensive platform information"""
         return {
-            'system': self.system,
-            'machine': self.machine,
-            'architecture': self.architecture,
-            'platform': f"{self.system}/{self.architecture}",
-            'python_version': f"{sys.version_info.major}.{sys.version_info.minor}",
-            'python_executable': sys.executable,
-            'home_directory': str(Path.home()),
-            'docker_supported': self._check_docker_support(),
-            'vscode_available': self._check_vscode_available(),
-            'cursor_available': self._check_cursor_available(),
-            'is_wsl': self.is_wsl,
+            "system": self.system,
+            "machine": self.machine,
+            "architecture": self.architecture,
+            "platform": f"{self.system}/{self.architecture}",
+            "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+            "python_executable": sys.executable,
+            "home_directory": str(Path.home()),
+            "docker_supported": self._check_docker_support(),
+            "vscode_available": self._check_vscode_available(),
+            "cursor_available": self._check_cursor_available(),
+            "is_wsl": self.is_wsl,
         }
 
     def _check_docker_support(self) -> bool:
         """Check if Docker is supported on this platform"""
         # Docker is supported on all major platforms
-        return self.system in ['linux', 'darwin', 'windows']
+        return self.system in ["linux", "darwin", "windows"]
 
     def _check_vscode_available(self) -> bool:
         """Check if VSCode is available on the system"""
@@ -83,18 +80,21 @@ class PlatformDetector:
 
     def _get_vscode_paths(self) -> list:
         """Get potential VSCode installation paths for the current platform"""
-        if self.system == 'windows':
+        if self.system == "windows":
             return [
                 Path.home() / "AppData/Local/Programs/Microsoft VS Code/Code.exe",
                 Path("C:/Program Files/Microsoft VS Code/Code.exe"),
                 Path("C:/Program Files (x86)/Microsoft VS Code/Code.exe"),
             ]
-        elif self.system == 'darwin':
+        elif self.system == "darwin":
             return [
-                Path("/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"),
-                Path.home() / "Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
+                Path(
+                    "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+                ),
+                Path.home()
+                / "Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
             ]
-        elif self.system == 'linux':
+        elif self.system == "linux":
             paths = [
                 Path("/usr/bin/code"),
                 Path("/usr/local/bin/code"),
@@ -117,18 +117,19 @@ class PlatformDetector:
 
     def _get_cursor_paths(self) -> list:
         """Get potential Cursor installation paths for the current platform"""
-        if self.system == 'windows':
+        if self.system == "windows":
             return [
                 Path.home() / "AppData/Local/Programs/cursor/Cursor.exe",
                 Path("C:/Program Files/Cursor/Cursor.exe"),
                 Path("C:/Program Files (x86)/Cursor/Cursor.exe"),
             ]
-        elif self.system == 'darwin':
+        elif self.system == "darwin":
             return [
                 Path("/Applications/Cursor.app/Contents/Resources/app/bin/cursor"),
-                Path.home() / "Applications/Cursor.app/Contents/Resources/app/bin/cursor",
+                Path.home()
+                / "Applications/Cursor.app/Contents/Resources/app/bin/cursor",
             ]
-        elif self.system == 'linux':
+        elif self.system == "linux":
             paths = [
                 Path("/usr/bin/cursor"),
                 Path("/usr/local/bin/cursor"),
@@ -161,17 +162,17 @@ class PlatformDetector:
 
     def get_shell_command(self) -> str:
         """Get the appropriate shell command for the platform"""
-        if self.system == 'windows':
-            return 'powershell'
-        return '/bin/bash'
+        if self.system == "windows":
+            return "powershell"
+        return "/bin/bash"
 
     def get_home_mount_path(self) -> str:
         """Get the home directory path for Docker mounting"""
         # Use ~/.venvoy/home subdirectory instead of full home directory
         venvoy_home = Path.home() / ".venvoy" / "home"
-        if self.system == 'windows':
+        if self.system == "windows":
             # Convert Windows path to Docker-compatible format
-            return str(venvoy_home).replace('\\', '/')
+            return str(venvoy_home).replace("\\", "/")
         return str(venvoy_home)
 
     def supports_buildx(self) -> bool:
