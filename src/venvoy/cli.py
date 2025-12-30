@@ -911,7 +911,7 @@ def restore(name: str):
     help="Overwrite existing environment"
 )
 def import_archive(archive_path: str, force: bool):
-    """Import environment from a comprehensive binary archive"""
+    """Import architecture-specific environment from a comprehensive binary archive"""
     console.print(Panel.fit("📦 Importing Binary Archive", style="bold blue"))
     console.print(f"📁 Archive: {archive_path}")
     

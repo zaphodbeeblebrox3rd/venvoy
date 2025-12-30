@@ -76,7 +76,17 @@ Developers, Hobbyists, Researchers, and IT Professionals - have you had these he
 - **HPC clusters** - Work on research computing clusters without root access
 
 ### What Venvoy is Not
-Venvoy cannot eliminate hardware-level differences that affect floating-point math.  I will provide an example of a totally unavoidable difference between arm and x86_64.
+Venvoy is not a way to eliminate hardware-level differences that affect floating-point math, random number generation, etc.  Plese see docs\ARCHITECTURAL_DIFFERENCE_EXAMPLES for more detail on this issue.
+
+Here is a brief summary of strategies you can use to eliminate or at least minimize the impact of CPU architecture differences on reproducibility of your computations.  For more detail, see docs\ARCHITECTURAL_STRATEGIES.md
+1. **Use explicit precision types** - Always specify `np.float64` or `np.float32` rather than relying on defaults
+2. **Set tolerances for comparisons and document them** - Use `np.allclose()` with appropriate `rtol` and `atol` instead of exact equality, and document expected precision bounds in your code and documentation
+3. **Pin your BLAS/LAPACK backend** - Specify the OpenBLAS linear algebra library to use across the board instead of allowing the system to fall back on its own BLAS implementation.
+4. **Avoid extended precision accumulation** - Use `math.fsum()` or Kahan summation for long-running sums
+5. **Use deterministic algorithms** - Disable non-deterministic GPU operations and set `PYTHONHASHSEED`
+6. **Run validation tests across architectures** - Include numerical tolerance tests in your CI/CD pipeline
+7. **Consider fixed-point or arbitrary precision** - Use `decimal.Decimal` or `mpmath` for calculations requiring exact reproducibility
+
 
 ### 🌐 **How Cross-Platform Magic Works:**
 - **🏢 HPC Clusters & Research Computing**: Apptainer/Singularity containers without root access
