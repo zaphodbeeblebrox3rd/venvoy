@@ -11,13 +11,13 @@ from pathlib import Path
 
 class PlatformDetector:
     """Detects platform information and capabilities"""
-    
+
     def __init__(self):
         self.system = platform.system().lower()
         self.machine = platform.machine().lower()
         self.architecture = self._normalize_architecture()
         self.is_wsl = self._detect_wsl()
-        
+
     def _detect_wsl(self) -> bool:
         """Detect if running in WSL (Windows Subsystem for Linux)"""
         # Check for WSL-specific indicators
@@ -34,10 +34,10 @@ class PlatformDetector:
                             content = f.read().lower()
                             if 'microsoft' in content or 'wsl' in content:
                                 return True
-                    except:
+                    except Exception:
                         pass
         return False
-        
+
     def _normalize_architecture(self) -> str:
         """Normalize architecture names to Docker platform format"""
         arch_map = {
@@ -49,7 +49,7 @@ class PlatformDetector:
             'arm64': 'arm64',
         }
         return arch_map.get(self.machine, self.machine)
-    
+
     def detect(self) -> Dict[str, Any]:
         """Detect comprehensive platform information"""
         return {
@@ -65,22 +65,22 @@ class PlatformDetector:
             'cursor_available': self._check_cursor_available(),
             'is_wsl': self.is_wsl,
         }
-    
+
     def _check_docker_support(self) -> bool:
         """Check if Docker is supported on this platform"""
         # Docker is supported on all major platforms
         return self.system in ['linux', 'darwin', 'windows']
-    
+
     def _check_vscode_available(self) -> bool:
         """Check if VSCode is available on the system"""
         vscode_paths = self._get_vscode_paths()
         return any(Path(path).exists() for path in vscode_paths)
-    
+
     def _check_cursor_available(self) -> bool:
         """Check if Cursor is available on the system"""
         cursor_paths = self._get_cursor_paths()
         return any(Path(path).exists() for path in cursor_paths)
-    
+
     def _get_vscode_paths(self) -> list:
         """Get potential VSCode installation paths for the current platform"""
         if self.system == 'windows':
@@ -101,7 +101,7 @@ class PlatformDetector:
                 Path("/snap/bin/code"),
                 Path.home() / ".local/bin/code",
             ]
-            
+
             # If running in WSL, also check for Windows VSCode installations
             if self.is_wsl:
                 # Convert Windows paths to WSL paths
@@ -111,10 +111,10 @@ class PlatformDetector:
                     "/mnt/c/Program Files (x86)/Microsoft VS Code/Code.exe",
                 ]
                 paths.extend([Path(path) for path in windows_paths])
-            
+
             return paths
         return []
-    
+
     def _get_cursor_paths(self) -> list:
         """Get potential Cursor installation paths for the current platform"""
         if self.system == 'windows':
@@ -136,7 +136,7 @@ class PlatformDetector:
                 Path.home() / ".local/bin/cursor",
                 Path.home() / ".cursor/cursor",
             ]
-            
+
             # If running in WSL, also check for Windows Cursor installations
             if self.is_wsl:
                 # Convert Windows paths to WSL paths
@@ -146,25 +146,25 @@ class PlatformDetector:
                     "/mnt/c/Program Files (x86)/Cursor/Cursor.exe",
                 ]
                 paths.extend([Path(path) for path in windows_paths])
-            
+
             return paths
         return []
-    
+
     def get_docker_platform(self) -> str:
         """Get Docker platform string for multi-arch builds"""
         return f"linux/{self.architecture}"
-    
+
     def get_base_image(self, python_version: str) -> str:
         """Get the appropriate base image for the platform"""
         # Use official Python slim images which support multi-arch
         return f"python:{python_version}-slim"
-    
+
     def get_shell_command(self) -> str:
         """Get the appropriate shell command for the platform"""
         if self.system == 'windows':
             return 'powershell'
         return '/bin/bash'
-    
+
     def get_home_mount_path(self) -> str:
         """Get the home directory path for Docker mounting"""
         # Use ~/.venvoy/home subdirectory instead of full home directory
@@ -173,8 +173,8 @@ class PlatformDetector:
             # Convert Windows path to Docker-compatible format
             return str(venvoy_home).replace('\\', '/')
         return str(venvoy_home)
-    
+
     def supports_buildx(self) -> bool:
         """Check if Docker BuildX is supported"""
         # BuildX is supported on Docker 19.03+ on all platforms
-        return True 
+        return True

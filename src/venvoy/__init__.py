@@ -1,5 +1,6 @@
 """
-venvoy - A multi-OS, multi-architecture, immutable, portable, and shareable python environment
+venvoy - A multi-OS, multi-architecture, immutable, portable, and shareable
+python environment
 """
 
 __version__ = "0.1.0"
@@ -10,4 +11,9 @@ from .core import VenvoyEnvironment
 from .container_manager import ContainerManager, ContainerRuntime
 from .platform_detector import PlatformDetector
 
-__all__ = ["VenvoyEnvironment", "ContainerManager", "ContainerRuntime", "PlatformDetector"] 
+__all__ = [
+    "VenvoyEnvironment",
+    "ContainerManager",
+    "ContainerRuntime",
+    "PlatformDetector"
+]
