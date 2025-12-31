@@ -916,31 +916,67 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
     
     # Load environment configuration
     if [ -f "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" ]; then
-        # Extract python_version from YAML, handling single quotes, double quotes, and no quotes
-        # Use head -1 to get only the first match (top-level python_version, not nested ones)
-        PYTHON_VERSION_RAW=$(grep "^python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | head -1)
-        PYTHON_VERSION=$(echo "$PYTHON_VERSION_RAW" | sed -E "s/^python_version:[[:space:]]*['\"]?([0-9]+\.[0-9]+)['\"]?[[:space:]]*$/\1/" | tr -d '[:space:]')
+        # First, try to extract image_name directly from config (new format)
+        IMAGE_NAME_RAW=$(grep "^image_name:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | head -1)
+        IMAGE_NAME_FROM_CONFIG=$(echo "$IMAGE_NAME_RAW" | sed -E "s/^image_name:[[:space:]]*['\"]?([^'\"]+)['\"]?[[:space:]]*$/\1/" | tr -d '[:space:]')
         
-        # If that didn't work, try a more flexible pattern (but still get first match)
-        if [ -z "$PYTHON_VERSION" ] || [ "$PYTHON_VERSION" = "python_version" ] || ! echo "$PYTHON_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
-            PYTHON_VERSION_RAW=$(grep "python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | grep -v "^[[:space:]]" | head -1)
-            PYTHON_VERSION=$(echo "$PYTHON_VERSION_RAW" | sed -E "s/.*python_version:[[:space:]]*['\"]?([0-9]+\.[0-9]+)['\"]?.*/\1/" | tr -d '[:space:]')
-        fi
-        
-        # Final validation - must be in format X.Y and not contain any non-digit characters
-        if [ -z "$PYTHON_VERSION" ] || ! echo "$PYTHON_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
-            echo "❌ Could not extract python_version from config.yaml"
-            echo "   Raw line: '$PYTHON_VERSION_RAW'"
-            echo "   Extracted value: '$PYTHON_VERSION'"
-            echo "💡 Try reinitializing the environment: venvoy init --name $RUN_NAME --force"
-            exit 1
-        fi
-        
-        if [ "$CONTAINER_RUNTIME" = "podman" ]; then
-            # Podman requires fully qualified image names
-            IMAGE_NAME="docker.io/zaphodbeeblebrox3rd/venvoy:python$PYTHON_VERSION"
+        if [ -n "$IMAGE_NAME_FROM_CONFIG" ] && [ "$IMAGE_NAME_FROM_CONFIG" != "image_name" ]; then
+            # Use image_name from config if available
+            IMAGE_NAME="$IMAGE_NAME_FROM_CONFIG"
         else
-            IMAGE_NAME="zaphodbeeblebrox3rd/venvoy:python$PYTHON_VERSION"
+            # Fall back to constructing from python_version and r_version
+            # Extract python_version from YAML
+            PYTHON_VERSION_RAW=$(grep "^python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | head -1)
+            PYTHON_VERSION=$(echo "$PYTHON_VERSION_RAW" | sed -E "s/^python_version:[[:space:]]*['\"]?([0-9]+\.[0-9]+)['\"]?[[:space:]]*$/\1/" | tr -d '[:space:]')
+            
+            # If that didn't work, try a more flexible pattern
+            if [ -z "$PYTHON_VERSION" ] || [ "$PYTHON_VERSION" = "python_version" ] || ! echo "$PYTHON_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
+                PYTHON_VERSION_RAW=$(grep "python_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | grep -v "^[[:space:]]" | head -1)
+                PYTHON_VERSION=$(echo "$PYTHON_VERSION_RAW" | sed -E "s/.*python_version:[[:space:]]*['\"]?([0-9]+\.[0-9]+)['\"]?.*/\1/" | tr -d '[:space:]')
+            fi
+            
+            # Extract r_version from YAML
+            R_VERSION_RAW=$(grep "^r_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | head -1)
+            R_VERSION=$(echo "$R_VERSION_RAW" | sed -E "s/^r_version:[[:space:]]*['\"]?([0-9]+\.[0-9]+)['\"]?[[:space:]]*$/\1/" | tr -d '[:space:]')
+            
+            # If r_version not found, try flexible pattern
+            if [ -z "$R_VERSION" ] || [ "$R_VERSION" = "r_version" ] || ! echo "$R_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
+                R_VERSION_RAW=$(grep "r_version:" "$HOME/.venvoy/environments/$RUN_NAME/config.yaml" | grep -v "^[[:space:]]" | head -1)
+                R_VERSION=$(echo "$R_VERSION_RAW" | sed -E "s/.*r_version:[[:space:]]*['\"]?([0-9]+\.[0-9]+)['\"]?.*/\1/" | tr -d '[:space:]')
+            fi
+            
+            # Final validation - must have python_version
+            if [ -z "$PYTHON_VERSION" ] || ! echo "$PYTHON_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
+                echo "❌ Could not extract python_version from config.yaml"
+                echo "   Raw line: '$PYTHON_VERSION_RAW'"
+                echo "   Extracted value: '$PYTHON_VERSION'"
+                echo "💡 Try reinitializing the environment: venvoy init --name $RUN_NAME --force"
+                exit 1
+            fi
+            
+            # If r_version is missing, try to determine from python_version (backward compatibility)
+            if [ -z "$R_VERSION" ] || ! echo "$R_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
+                # Map Python version to default R version
+                case "$PYTHON_VERSION" in
+                    3.13) R_VERSION="4.5" ;;
+                    3.12) R_VERSION="4.4" ;;
+                    3.11) R_VERSION="4.3" ;;
+                    3.10) R_VERSION="4.2" ;;
+                    *)
+                        echo "⚠️  Could not determine R version for Python $PYTHON_VERSION, defaulting to 4.3"
+                        R_VERSION="4.3"
+                        ;;
+                esac
+            fi
+            
+            # Construct combined image tag
+            IMAGE_TAG="python${PYTHON_VERSION}-r${R_VERSION}"
+            if [ "$CONTAINER_RUNTIME" = "podman" ]; then
+                # Podman requires fully qualified image names
+                IMAGE_NAME="docker.io/zaphodbeeblebrox3rd/venvoy:${IMAGE_TAG}"
+            else
+                IMAGE_NAME="zaphodbeeblebrox3rd/venvoy:${IMAGE_TAG}"
+            fi
         fi
     else
         echo "❌ Environment configuration not found for '$RUN_NAME'"
@@ -975,9 +1011,8 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
     fi
     
     # Validate image name format
-    if [ -z "$IMAGE_NAME" ] || [ "$IMAGE_NAME" = "docker.io/zaphodbeeblebrox3rd/venvoy:python" ] || [ "$IMAGE_NAME" = "zaphodbeeblebrox3rd/venvoy:python" ]; then
+    if [ -z "$IMAGE_NAME" ] || [ "$IMAGE_NAME" = "docker.io/zaphodbeeblebrox3rd/venvoy:" ] || [ "$IMAGE_NAME" = "zaphodbeeblebrox3rd/venvoy:" ]; then
         echo "❌ Invalid image name format: '$IMAGE_NAME'"
-        echo "   Python version: '$PYTHON_VERSION'"
         echo "💡 Try reinitializing the environment: venvoy init --name $RUN_NAME --force"
         exit 1
     fi

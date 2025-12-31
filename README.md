@@ -5,7 +5,7 @@
 > cross-platform and cross-architecture compatibility beyond reproach.
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Python Versions](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
+![Python Versions](https://img.shields.io/badge/Python-3.10%2B-blue.svg)
 ![R Versions](https://img.shields.io/badge/R-4.2%2B-blue.svg)
 ![Docker](https://img.shields.io/badge/Docker-Supported-blue.svg)
 ![Apptainer](https://img.shields.io/badge/Apptainer-Supported-blue.svg)
@@ -114,7 +114,7 @@ Here is a brief summary of strategies you can use to eliminate or at least minim
 
 ## ✨ Features
 
-- 🐍 **Python 3.9-3.13 support** - Choose your Python version
+- 🐍 **Python 3.10-3.13 support** - Choose your Python version (paired with R versions)
 - 📊 **R 4.2-4.5 support** - Choose your R version
 - 🧠 **AI-powered editors** - Cursor (AI-first) and VSCode with AI extensions
 - 🐳 **Multi-runtime containers** - Docker, Apptainer, Singularity, and Podman
@@ -134,7 +134,7 @@ Here is a brief summary of strategies you can use to eliminate or at least minim
 The prerequisites will be handled for you automatically if they are missing:
 - **Container Runtime**: Docker, Apptainer, Singularity, or Podman (will be detected automatically)
 - **AI Editor**: Cursor (recommended) or VSCode (will prompt for installation)
-- **Python 3.9 or higher** only required for alternative/development installations
+- **Python 3.10 or higher** only required for alternative/development installations
 
 ### 🏢 HPC Cluster Support
 

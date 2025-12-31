@@ -213,7 +213,7 @@ venvoy run --name test
    ```
    Remove: `type=ref,event=branch`, `type=ref,event=pr`, `type=semver` patterns
 
-2. **Don't build architecture-specific tags**: The `build-python-amd64.sh` and `build-python-arm64.sh` scripts are for special cases only. Don't run them in CI.
+2. **Use combined images**: All images are now combined Python+R images built with `build-python-r.sh`. Architecture-specific builds are handled automatically via multi-arch manifests.
 
 3. **Regular cleanup**: Schedule periodic cleanup (monthly/quarterly) to remove old tags.
 

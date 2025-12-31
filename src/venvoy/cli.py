@@ -62,12 +62,12 @@ def main():
 @click.option(
     "--python-version",
     default="3.11",
-    type=click.Choice(["3.9", "3.10", "3.11", "3.12", "3.13"]),
+    type=click.Choice(["3.10", "3.11", "3.12", "3.13"]),
     help="Python version to use (when runtime=python)",
 )
 @click.option(
     "--r-version",
-    default="4.4",
+    default="4.3",
     type=click.Choice(["4.2", "4.3", "4.4", "4.5"]),
     help="R version to use (when runtime=r)",
 )
@@ -77,6 +77,17 @@ def main():
 )
 def init(runtime: str, python_version: str, r_version: str, name: str, force: bool):
     """Initialize a new portable Python or R environment"""
+    # Validate Python/R version combination
+    try:
+        from .core import VenvoyEnvironment
+        VenvoyEnvironment._get_combined_image_tag(python_version, r_version)
+    except ValueError as e:
+        console.print(
+            Panel.fit("❌ Invalid Version Combination", style="bold red")
+        )
+        console.print(str(e))
+        return
+    
     if runtime == "python":
         console.print(
             Panel.fit("🚀 Initializing venvoy Python environment", style="bold blue")

@@ -16,9 +16,20 @@ REGISTRY="docker.io"
 IMAGE_NAME="zaphodbeeblebrox3rd/venvoy"
 
 # Detect container runtime (Docker or Podman)
+# Check if docker is actually Docker (has buildx) or a Podman wrapper
 CONTAINER_RUNTIME=""
 if command -v docker &> /dev/null && docker info &> /dev/null; then
-    CONTAINER_RUNTIME="docker"
+    # Check if docker buildx actually works and is Docker (not Podman wrapper)
+    # Podman's buildx wrapper returns "buildah" in version, Docker returns "github.com/docker/buildx"
+    BUILDX_VERSION=$(docker buildx version 2>&1)
+    if echo "$BUILDX_VERSION" | grep -q "github.com/docker/buildx\|buildx v"; then
+        CONTAINER_RUNTIME="docker"
+    elif command -v podman &> /dev/null; then
+        # docker exists but buildx output suggests Podman wrapper
+        CONTAINER_RUNTIME="podman"
+    else
+        CONTAINER_RUNTIME="docker"
+    fi
 elif command -v podman &> /dev/null; then
     CONTAINER_RUNTIME="podman"
 else

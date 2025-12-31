@@ -1,6 +1,6 @@
 # Multi-architecture venvoy R environment image
 ARG R_VERSION=4.4
-FROM rocker/r-ver:${R_VERSION}
+FROM docker.io/rocker/r-ver:${R_VERSION}
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive

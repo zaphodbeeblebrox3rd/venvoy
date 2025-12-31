@@ -1,13 +1,14 @@
-# venvoy Base Image - Multi-architecture Python environment
-# This image is pre-built and published to Docker Hub
-# Usage: docker run --rm -it zaphodbeeblebrox3rd/venvoy:python3.11
+# venvoy Combined Image - Python and R environment
+# This image includes both Python and R in specific version pairs
+# Usage: docker run --rm -it zaphodbeeblebrox3rd/venvoy:python3.13-r4.5
 
 ARG PYTHON_VERSION=3.11
+ARG R_VERSION=4.4
 FROM python:${PYTHON_VERSION}-slim
 
 # Set labels for the image
 LABEL org.opencontainers.image.title="venvoy"
-LABEL org.opencontainers.image.description="Extremely Portable AI-ready Python environment with ultra-fast package managers"
+LABEL org.opencontainers.image.description="Extremely Portable AI-ready Python and R environment with ultra-fast package managers"
 LABEL org.opencontainers.image.url="https://github.com/zaphodbeeblebrox3rd/venvoy"
 LABEL org.opencontainers.image.source="https://github.com/zaphodbeeblebrox3rd/venvoy"
 LABEL org.opencontainers.image.vendor="zaphodbeeblebrox3rd"
@@ -18,14 +19,21 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV DEBIAN_FRONTEND=noninteractive
+ENV R_VERSION=${R_VERSION}
 ENV VENVOY_VERSION=0.1.0
 
-# Install system dependencies
+# Install comprehensive system dependencies for both Python and R
 RUN apt-get update && apt-get install -y \
+    # Build tools
     build-essential \
-    curl \
+    gfortran \
+    # Version control
     git \
+    # Network tools
+    curl \
     wget \
+    # Text processing
     vim \
     nano \
     htop \
@@ -33,11 +41,35 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     gnupg \
     lsb-release \
-    && rm -rf /var/lib/apt/lists/*
+    # LaTeX for R Markdown
+    texlive-latex-base \
+    texlive-latex-recommended \
+    texlive-fonts-recommended \
+    texlive-latex-extra \
+    # Spatial analysis libraries
+    libgdal-dev \
+    libproj-dev \
+    libgeos-dev \
+    # Database connectivity
+    libpq-dev \
+    unixodbc-dev \
+    # Image processing
+    libmagick++-dev \
+    # XML processing
+    libxml2-dev \
+    # SSL/TLS
+    libssl-dev \
+    # Compression
+    libbz2-dev \
+    liblzma-dev \
+    # Cairo graphics
+    libcairo2-dev \
+    # Fonts
+    fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Install Docker CLI (client only, no daemon) for Remote Containers extension compatibility
-# This allows Cursor/VSCode Remote Containers to work properly
-# Note: The CLI is installed but won't connect to a daemon - this is just to satisfy extension checks
 RUN install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     chmod a+r /etc/apt/keyrings/docker.gpg && \
@@ -46,7 +78,7 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     apt-get install -y docker-ce-cli && \
     rm -rf /var/lib/apt/lists/*
 
-# Install miniconda
+# Install miniconda first (needed for R installation)
 RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-$(uname -m).sh -O /tmp/miniconda.sh && \
     bash /tmp/miniconda.sh -b -p /opt/conda && \
     rm /tmp/miniconda.sh
@@ -87,6 +119,21 @@ RUN (/opt/conda/bin/conda config --set ssl_verify false 2>/dev/null || true) && 
      /opt/conda/bin/conda install -n base -c defaults mamba -y || \
      echo "mamba install failed") && \
     (/opt/conda/bin/conda config --set ssl_verify true 2>/dev/null || true)
+
+# Install R via conda-forge (more reliable than apt repositories)
+# Install R in the base environment so it's available system-wide
+# Note: Installing just r-base (not r-essentials) to reduce image size
+# Users can install R packages as needed via install.packages()
+RUN /opt/conda/bin/mamba install -n base -c conda-forge \
+    r-base=${R_VERSION} \
+    -y && \
+    ln -sf /opt/conda/bin/R /usr/local/bin/R && \
+    ln -sf /opt/conda/bin/Rscript /usr/local/bin/Rscript
+
+# Set up R environment for package installation
+RUN R -e "options(repos = c(CRAN = 'https://cran.rstudio.com/')); \
+    options(download.file.method = 'libcurl'); \
+    options(Ncpus = parallel::detectCores())"
 
 # Create venvoy environment using mamba (much faster than conda)
 RUN /opt/conda/bin/mamba create -n venvoy python=${PYTHON_VERSION} -c conda-forge -y
@@ -130,13 +177,10 @@ WORKDIR /workspace
 RUN chown venvoy:venvoy /workspace
 
 # Create /host-home mount point with proper permissions
-# This directory will be mounted at runtime, but we need it to exist
-# with proper permissions so the mounted volume is accessible
 RUN mkdir -p /host-home && \
     chmod 755 /host-home
 
 # Create entrypoint script to fix /host-home permissions
-# This script runs as root to fix permissions, then drops to the user
 RUN echo '#!/bin/bash' > /usr/local/bin/fix-host-home.sh && \
     echo 'set -e' >> /usr/local/bin/fix-host-home.sh && \
     echo '# Fix /host-home permissions if mounted and owned by root' >> /usr/local/bin/fix-host-home.sh && \
@@ -152,15 +196,22 @@ RUN echo '#!/bin/bash' > /usr/local/bin/fix-host-home.sh && \
 # Switch to user
 USER venvoy
 
+# Set up R environment
+RUN echo 'options(repos = c(CRAN = "https://cran.rstudio.com/"))' >> ~/.Rprofile && \
+    echo 'options(download.file.method = "libcurl")' >> ~/.Rprofile && \
+    echo 'options(Ncpus = parallel::detectCores())' >> ~/.Rprofile
+
 # Set up shell with better interactive experience
 RUN echo 'conda activate venvoy' >> ~/.bashrc && \
     echo 'export PS1="(🤖 venvoy) \\u@\\h:\\w\\$ "' >> ~/.bashrc && \
     echo 'echo "🚀 Welcome to your AI-ready venvoy environment!"' >> ~/.bashrc && \
     echo 'echo "🐍 Python $(python --version) with AI/ML packages"' >> ~/.bashrc && \
-    echo 'echo "📦 Package managers: mamba (fast conda), uv (ultra-fast pip), pip"' >> ~/.bashrc && \
+    echo 'echo "📊 R $(R --version | head -1 | cut -d\" \" -f3) ready for your packages"' >> ~/.bashrc && \
+    echo 'echo "📦 Package managers: mamba (fast conda), uv (ultra-fast pip), pip, install.packages() (CRAN)"' >> ~/.bashrc && \
     echo 'echo "📊 Pre-installed: numpy, pandas, matplotlib, jupyter, scikit-learn, and more"' >> ~/.bashrc && \
     echo 'echo "📂 Workspace: $(pwd)"' >> ~/.bashrc && \
     echo 'echo "💡 Home directory mounted at: /host-home"' >> ~/.bashrc
 
 # Default command
-CMD ["/bin/bash"] 
+CMD ["/bin/bash"]
+

@@ -61,6 +61,63 @@ class VenvoyEnvironment:
         venvoy_home_dir.chmod(0o755)
         self.projects_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _get_combined_image_tag(python_version: str, r_version: str) -> str:
+        """
+        Map Python and R version pairs to combined image tags.
+        
+        Valid combinations:
+        - Python 3.13 / R 4.5
+        - Python 3.12 / R 4.4
+        - Python 3.11 / R 4.3
+        - Python 3.11 / R 4.2
+        - Python 3.10 / R 4.2
+        
+        Args:
+            python_version: Python version string (e.g., "3.13")
+            r_version: R version string (e.g., "4.5")
+            
+        Returns:
+            Image tag string (e.g., "python3.13-r4.5")
+            
+        Raises:
+            ValueError: If the combination is not valid
+        """
+        # Define valid version pairs
+        valid_pairs = {
+            ("3.13", "4.5"): "python3.13-r4.5",
+            ("3.12", "4.4"): "python3.12-r4.4",
+            ("3.11", "4.3"): "python3.11-r4.3",
+            ("3.11", "4.2"): "python3.11-r4.2",
+            ("3.10", "4.2"): "python3.10-r4.2",
+        }
+        
+        pair = (python_version, r_version)
+        if pair in valid_pairs:
+            return valid_pairs[pair]
+        
+        # If exact match not found, try to find by Python version only
+        # (for backward compatibility when only Python is specified)
+        python_only_matches = {
+            "3.13": "python3.13-r4.5",
+            "3.12": "python3.12-r4.4",
+            "3.11": "python3.11-r4.3",  # Default to 4.3 for 3.11
+            "3.10": "python3.10-r4.2",
+        }
+        
+        if python_version in python_only_matches:
+            return python_only_matches[python_version]
+        
+        # If still not found, raise error with helpful message
+        valid_combinations = "\n".join(
+            f"  - Python {py} / R {r}" for (py, r) in valid_pairs.keys()
+        )
+        raise ValueError(
+            f"Invalid Python/R version combination: Python {python_version} / R {r_version}\n"
+            f"Valid combinations are:\n{valid_combinations}\n"
+            f"Please specify a valid combination."
+        )
+
     def initialize(
         self,
         force: bool = False,
@@ -81,15 +138,19 @@ class VenvoyEnvironment:
         self.env_dir.mkdir(parents=True, exist_ok=True)
         self.projects_dir.mkdir(parents=True, exist_ok=True)
 
-        # Pull the pre-built image if needed
-        if self.runtime == "python":
-            image_name = f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}"
-            print(f"📦 Setting up Python {self.python_version} environment...")
-        elif self.runtime == "r":
-            image_name = f"zaphodbeeblebrox3rd/venvoy:r{self.r_version}"
-            print(f"📊 Setting up R {self.r_version} environment...")
-        else:
-            raise ValueError(f"Unsupported runtime: {self.runtime}")
+        # Get combined image tag based on Python/R version pair
+        # All images now include both Python and R
+        try:
+            image_tag = self._get_combined_image_tag(self.python_version, self.r_version)
+            image_name = f"zaphodbeeblebrox3rd/venvoy:{image_tag}"
+            if self.runtime == "python":
+                print(f"📦 Setting up Python {self.python_version} environment (with R {self.r_version})...")
+            elif self.runtime == "r":
+                print(f"📊 Setting up R {self.r_version} environment (with Python {self.python_version})...")
+            else:
+                print(f"🚀 Setting up Python {self.python_version} / R {self.r_version} environment...")
+        except ValueError as e:
+            raise ValueError(str(e))
 
         self._ensure_image_available(image_name)
 
@@ -674,9 +735,14 @@ CMD ["/bin/bash"]
         with open(self.config_file, "r") as f:
             config = yaml.safe_load(f)
 
-        image_name = config.get(
-            "image_name", f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}"
-        )
+        image_name = config.get("image_name")
+        if not image_name:
+            # Construct combined image tag
+            image_tag = self._get_combined_image_tag(
+                config.get("python_version", self.python_version),
+                config.get("r_version", self.r_version)
+            )
+            image_name = f"zaphodbeeblebrox3rd/venvoy:{image_tag}"
 
         # Ensure image is available
         self._ensure_image_available(image_name)
@@ -898,9 +964,14 @@ CMD ["/bin/bash"]
         with open(self.config_file, "r") as f:
             config = yaml.safe_load(f)
 
-        image_name = config.get(
-            "image_name", f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}"
-        )
+        image_name = config.get("image_name")
+        if not image_name:
+            # Construct combined image tag
+            image_tag = self._get_combined_image_tag(
+                config.get("python_version", self.python_version),
+                config.get("r_version", self.r_version)
+            )
+            image_name = f"zaphodbeeblebrox3rd/venvoy:{image_tag}"
 
         # Ensure image is available
         self._ensure_image_available(image_name)
@@ -1047,10 +1118,11 @@ CMD ["/bin/bash"]
         runtime = config.get("runtime", self.runtime)
         image_name = config.get("image_name")
         if not image_name:
-            if runtime == "r":
-                image_name = f"zaphodbeeblebrox3rd/venvoy:r{self.r_version}"
-            else:
-                image_name = f"zaphodbeeblebrox3rd/venvoy:python{self.python_version}"
+            # Construct combined image tag
+            python_ver = config.get("python_version", self.python_version)
+            r_ver = config.get("r_version", self.r_version)
+            image_tag = self._get_combined_image_tag(python_ver, r_ver)
+            image_name = f"zaphodbeeblebrox3rd/venvoy:{image_tag}"
 
         # Ensure image is available
         self._ensure_image_available(image_name)

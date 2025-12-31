@@ -29,17 +29,14 @@ NAMESPACE=$(echo "$IMAGE_NAME" | cut -d'/' -f1)
 REPOSITORY_NAME=$(echo "$IMAGE_NAME" | cut -d'/' -f2)
 
 # Required tags that should NEVER be deleted
+# These are the new combined Python+R images
 REQUIRED_TAGS=(
-    "python3.9"
-    "python3.10"
-    "python3.11"
-    "python3.12"
-    "python3.13"
+    "python3.13-r4.5"
+    "python3.12-r4.4"
+    "python3.11-r4.3"
+    "python3.11-r4.2"
+    "python3.10-r4.2"
     "latest"
-    "r4.2"
-    "r4.3"
-    "r4.4"
-    "r4.5"
     "bootstrap"
 )
 
@@ -188,6 +185,18 @@ should_delete_tag() {
         return 1
     fi
     
+    # Delete old separate Python tags (e.g., python3.9, python3.10, python3.11, python3.12, python3.13)
+    # These have been replaced by combined Python+R images
+    if [[ "$tag" =~ ^python3\.(9|10|11|12|13)$ ]]; then
+        return 0
+    fi
+    
+    # Delete old separate R tags (e.g., r4.2, r4.3, r4.4, r4.5)
+    # These have been replaced by combined Python+R images
+    if [[ "$tag" =~ ^r4\.(2|3|4|5)$ ]]; then
+        return 0
+    fi
+    
     # Delete architecture-specific tags (redundant with multi-arch manifests)
     if [[ "$tag" == *"-amd64" ]] || [[ "$tag" == *"-arm64" ]]; then
         return 0
@@ -313,8 +322,8 @@ get_bearer_token() {
     echo "$token"
 }
 
-# Cache for Bearer token (to avoid requesting it for every tag)
-BEARER_TOKEN_CACHE=""
+# Note: Docker Hub API v2 uses Basic auth (username:token) for DELETE operations
+# Bearer tokens from auth.docker.io are for registry API, not Hub API
 
 # Function to get tag details including manifest digest
 get_tag_manifest_digest() {
@@ -465,16 +474,8 @@ delete_untagged_images() {
         return 0
     fi
     
-    # Get Bearer token if we don't have one cached
-    if [ -z "$BEARER_TOKEN_CACHE" ]; then
-        BEARER_TOKEN_CACHE=$(get_bearer_token)
-        if [ -z "$BEARER_TOKEN_CACHE" ]; then
-            echo "   ⚠️  Failed to obtain Bearer token for deletion" >&2
-            return 1
-        fi
-    fi
-    
     # Docker Hub API endpoint for deleting images
+    # Use Basic auth (username:token) for Docker Hub API v2
     local url="https://hub.docker.com/v2/namespaces/${NAMESPACE}/delete-images"
     
     # Build JSON payload with digests
@@ -482,7 +483,7 @@ delete_untagged_images() {
     
     local response=$(curl -s -w "\n%{http_code}" \
         -X DELETE \
-        -H "Authorization: Bearer ${BEARER_TOKEN_CACHE}" \
+        -u "${DOCKER_USERNAME}:${DOCKER_TOKEN}" \
         -H "Content-Type: application/json" \
         -H "Accept: application/json" \
         -d "$json_payload" \
@@ -499,91 +500,44 @@ delete_untagged_images() {
     fi
 }
 
-# Function to delete a tag and its manifest via Docker Hub API
+# Function to delete a tag via Docker Hub API v2
+# Uses the correct endpoint format: /v2/namespaces/{namespace}/repositories/{repository}/tags/{tag}
 delete_tag() {
     local tag=$1
     
-    # Get Bearer token if we don't have one cached
-    if [ -z "$BEARER_TOKEN_CACHE" ]; then
-        BEARER_TOKEN_CACHE=$(get_bearer_token)
-        if [ -z "$BEARER_TOKEN_CACHE" ]; then
-            echo "   ⚠️  Failed to obtain Bearer token for deletion" >&2
-            return 1
-        fi
-    fi
-    
-    # URL-encode the tag name for the API endpoint
+    # Use Docker Hub API v2 with correct endpoint format
     local encoded_tag=$(urlencode "$tag")
-    
-    # Step 1: Get the manifest digest for this tag
-    local manifest_digest=$(get_tag_manifest_digest "$tag")
-    
-    # Step 2: Delete the tag via Hub API
-    local url="https://hub.docker.com/v2/repositories/${IMAGE_NAME}/tags/${encoded_tag}/"
+    local url="https://hub.docker.com/v2/namespaces/${NAMESPACE}/repositories/${REPOSITORY_NAME}/tags/${encoded_tag}"
     
     local response=$(curl -s -w "\n%{http_code}" \
         -X DELETE \
-        -H "Authorization: Bearer ${BEARER_TOKEN_CACHE}" \
+        -u "${DOCKER_USERNAME}:${DOCKER_TOKEN}" \
         -H "Accept: application/json" \
         "$url")
     local http_code=$(echo "$response" | tail -n1)
     local body=$(echo "$response" | sed '$d')
     
-    local tag_deleted=false
     if [ "$http_code" = "204" ] || [ "$http_code" = "200" ]; then
-        tag_deleted=true
-    fi
-    
-    # If 401, the token might have expired - try getting a new one
-    if [ "$http_code" = "401" ]; then
-        BEARER_TOKEN_CACHE=$(get_bearer_token)
-        if [ -n "$BEARER_TOKEN_CACHE" ]; then
-            # Retry with new token
-            response=$(curl -s -w "\n%{http_code}" \
-                -X DELETE \
-                -H "Authorization: Bearer ${BEARER_TOKEN_CACHE}" \
-                -H "Accept: application/json" \
-                "$url")
-            http_code=$(echo "$response" | tail -n1)
-            body=$(echo "$response" | sed '$d')
-            
-            if [ "$http_code" = "204" ] || [ "$http_code" = "200" ]; then
-                tag_deleted=true
-            fi
+        return 0
+    elif [ "$http_code" = "404" ]; then
+        # Tag already deleted
+        return 0
+    elif [ "$http_code" = "401" ]; then
+        echo "   ⚠️  Authentication failed (HTTP 401)" >&2
+        echo "   💡 Docker Hub API tag deletion requires:" >&2
+        echo "      - Personal Access Token (not account password)" >&2
+        echo "      - Token with 'Read, Write, Delete' permissions" >&2
+        echo "      - Token created at: https://hub.docker.com/settings/security" >&2
+        echo "   💡 Note: Docker Hub may restrict tag deletion via API" >&2
+        echo "   💡 Alternative: Delete tags manually via Docker Hub web UI" >&2
+        if [ "${DEBUG:-false}" = "true" ]; then
+            echo "   🔍 Response: $body" >&2
         fi
-    fi
-    
-    if [ "$tag_deleted" = false ]; then
+        return 1
+    else
         echo "   ⚠️  Failed to delete tag (HTTP $http_code): $body" >&2
         return 1
     fi
-    
-    # Step 3: If we have a manifest digest, try to delete the manifest
-    if [ -n "$manifest_digest" ] && [ "$manifest_digest" != "null" ]; then
-        local encoded_digest=$(urlencode "$manifest_digest")
-        local registry_url="https://registry.hub.docker.com/v2/${IMAGE_NAME}/manifests/${encoded_digest}"
-        
-        # Get a token with manifest delete scope
-        local delete_token=$(get_bearer_token)
-        if [ -n "$delete_token" ]; then
-            response=$(curl -s -w "\n%{http_code}" \
-                -X DELETE \
-                -H "Authorization: Bearer ${delete_token}" \
-                -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-                "$registry_url" 2>/dev/null)
-            local manifest_http_code=$(echo "$response" | tail -n1)
-            
-            # Manifest deletion may return 202 (Accepted) or 404 (already deleted)
-            # Both are acceptable - the important thing is the tag is deleted
-            if [ "$manifest_http_code" = "202" ] || [ "$manifest_http_code" = "204" ] || [ "$manifest_http_code" = "404" ]; then
-                # Success - manifest deletion attempted
-                return 0
-            fi
-        fi
-    fi
-    
-    # Tag was deleted successfully, even if manifest deletion didn't work
-    return 0
 }
 
 # Main execution
@@ -681,7 +635,6 @@ fi
 
 echo ""
 echo "🗑️  Deleting tags..."
-echo "   Obtaining Bearer token for deletion..."
 deleted=0
 failed=0
 
