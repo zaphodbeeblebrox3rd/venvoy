@@ -203,7 +203,7 @@ def init(runtime: str, python_version: str, r_version: str, name: str, force: bo
             f"💡 Use 'venvoy run --name {name}' to launch an interactive shell in your environment"
         )
         console.print(
-            "🐚 Your environment will start with an enhanced AI-ready bash/conda shell"
+            "🐚 Your environment will start with an enhanced AI-ready bash shell"
         )
 
 
@@ -476,7 +476,7 @@ def history(name: str):
 
         console.print(f"{status} {export['formatted_time']}")
         console.print(
-            f"    📦 {export['total_packages']} packages ({export['conda_packages']} conda, {export['pip_packages']} pip)"
+            f"    📦 {export['total_packages']} packages ({export['python_packages']} Python, {export['r_packages']} R)"
         )
         console.print(f"    💾 {export['file'].name}")
 
@@ -579,38 +579,37 @@ def package_managers():
         "\n🚀 **venvoy** includes multiple package managers for optimal performance:\n"
     )
 
-    # Mamba info
-    console.print("🐍 **mamba** - Fast conda replacement")
-    console.print("   • ⚡ 10-100x faster dependency resolution than conda")
-    console.print("   • 🔄 Drop-in replacement for conda commands")
-    console.print("   • 📦 Best for: Scientific packages, complex dependencies")
-    console.print("   • Usage: `mamba install numpy pandas scikit-learn`")
-    console.print("   • Channels: conda-forge (default), bioconda, etc.\n")
-
     # UV info
     console.print("🦄 **uv** - Ultra-fast Python package installer")
     console.print("   • ⚡ 10-100x faster than pip for pure Python packages")
     console.print("   • 🏗️  Written in Rust for maximum performance")
-    console.print("   • 📦 Best for: Pure Python packages, web frameworks")
-    console.print("   • Usage: `uv pip install requests flask fastapi`")
+    console.print("   • 📦 Best for: All Python packages")
+    console.print("   • Usage: `uv pip install requests flask fastapi numpy pandas`")
     console.print("   • Note: Uses PyPI registry\n")
 
     # Pip info
     console.print("🐍 **pip** - Standard Python package installer")
     console.print("   • 📚 Universal compatibility")
-    console.print("   • 🔧 Fallback for packages not available elsewhere")
+    console.print("   • 🔧 Fallback for packages not available via uv")
     console.print("   • 📦 Best for: Legacy packages, special cases")
     console.print("   • Usage: `pip install some-package`\n")
 
+    # R packages info
+    console.print("📊 **R packages** - CRAN package management")
+    console.print("   • 📦 Install R packages from CRAN")
+    console.print("   • Usage: `R -e \"install.packages('tidyverse')\"`")
+    console.print("   • Or: `install.packages(c('tidyverse', 'devtools'))`\n")
+
     console.print("💡 **Recommendations:**")
     console.print(
-        "   • For AI/ML packages: `mamba install -c conda-forge tensorflow pytorch`"
+        "   • For AI/ML packages: `uv pip install tensorflow pytorch scikit-learn`"
     )
     console.print("   • For web development: `uv pip install fastapi uvicorn`")
     console.print(
-        "   • For data science: `mamba install pandas numpy matplotlib jupyter`"
+        "   • For data science: `uv pip install pandas numpy matplotlib jupyter`"
     )
     console.print("   • For quick installs: `uv pip install requests beautifulsoup4`")
+    console.print("   • For R packages: `R -e \"install.packages('tidyverse')\"`")
 
 
 @main.command()

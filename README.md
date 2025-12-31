@@ -126,7 +126,7 @@ Here is a brief summary of strategies you can use to eliminate or at least minim
 - 💾 **Multiple export formats** - YAML, Dockerfile, tarball, and comprehensive archives
 - 🤖 **AI-ready environment** - Pre-configured for AI/ML development
 - 🏠 **Home directory mounting** - Access your files from containers
-- ⚡ **Ultra-fast package managers** - mamba, uv, and pip for optimal performance
+- ⚡ **Ultra-fast package managers** - uv and pip for optimal performance
 - 🔬 **Scientific reproducibility** - Complete environment snapshots for research validation
 
 ## 📋 Prerequisites
@@ -628,7 +628,7 @@ venvoy init --runtime python --name cancer-research --python-version 3.11
 # 2. Run environment and install packages
 venvoy run --name cancer-research
 # Inside container:
-mamba install -c conda-forge pandas numpy scipy scikit-learn matplotlib seaborn
+uv pip install pandas numpy scipy scikit-learn matplotlib seaborn
 uv pip install specific-research-package==1.2.3
 
 # 3. Do your research work...
@@ -718,15 +718,15 @@ venvoy automatically tracks and saves your environment changes:
 
 ### 📝 **Automatic environment.yml Generation**
 - **Real-time monitoring**: Detects package installations/removals as they happen
-- **Smart categorization**: Separates conda and pip packages automatically
+- **Smart categorization**: Separates Python and R packages automatically
 - **Timestamped exports**: Each change creates a dated backup file
 - **Exit save**: Final save when container stops
-- **Conda-compatible**: Standard `environment.yml` format for easy sharing
+- **Simplified format**: Clean YAML format with Python and R package sections
 - **History tracking**: Retain complete environment evolution history
 
 ### 🔄 **When Auto-Save Triggers**
-1. **Package Installation**: `pip install`, `mamba install`, `uv pip install`
-2. **Package Removal**: `pip uninstall`, `mamba remove`
+1. **Package Installation**: `uv pip install`, `pip install`, `R -e "install.packages('package')"`
+2. **Package Removal**: `uv pip uninstall`, `pip uninstall`
 3. **Package Updates**: Version changes detected automatically
 4. **Container Exit**: Final state captured when session ends
 
@@ -747,30 +747,29 @@ dependencies:
 
 ## 📦 Package Manager Performance
 
-venvoy includes three package managers optimized for different use cases:
-
-### 🐍 **mamba** - Lightning-fast conda replacement
-- **10-100x faster** dependency resolution than conda
-- Drop-in replacement for conda commands
-- Best for: Scientific packages, AI/ML libraries, complex dependencies
-- Usage: `mamba install -c conda-forge tensorflow pytorch scikit-learn`
+venvoy includes package managers optimized for Python and R:
 
 ### 🦄 **uv** - Ultra-fast Python package installer  
-- **10-100x faster** than pip for pure Python packages
+- **10-100x faster** than pip for Python packages
 - Written in Rust for maximum performance
-- Best for: Web frameworks, pure Python libraries, development tools
-- Usage: `uv pip install fastapi uvicorn requests`
+- Best for: All Python packages from PyPI
+- Usage: `uv pip install fastapi uvicorn requests numpy pandas scikit-learn`
 
 ### 🐍 **pip** - Standard Python package installer
 - Universal compatibility and fallback option
 - Best for: Legacy packages, special cases
 - Usage: `pip install some-special-package`
 
-### 💡 **Smart Package Installation Strategy**
-venvoy automatically uses the best package manager for each situation:
-1. **mamba** for conda-forge packages and scientific libraries
-2. **uv** for PyPI packages and pure Python libraries  
-3. **pip** as a reliable fallback
+### 📊 **R package management** - CRAN packages
+- Install R packages from CRAN repository
+- Best for: Statistical computing, data analysis
+- Usage: `R -e "install.packages('tidyverse')"` or `install.packages(c('tidyverse', 'devtools'))`
+
+### 💡 **Package Installation Strategy**
+venvoy uses system Python with UV for optimal performance:
+1. **uv** for all Python packages (primary method)
+2. **pip** as a reliable fallback
+3. **R install.packages()** for R packages from CRAN
 
 ## 📚 Detailed Workflow
 
@@ -811,7 +810,7 @@ The `run` command launches your environment with different modes:
 **Without VSCode (Interactive Shell):**
 1. **Volume Mounting** - Mounts home directory and current workspace
 2. **User Mapping** - Maps host user ID to container user
-3. **Environment Activation** - Automatically activates conda environment
+3. **Environment Ready** - System Python and R are immediately available
 4. **Enhanced Shell** - Custom prompt with environment information
 5. **TTY Allocation** - Provides interactive terminal access
 

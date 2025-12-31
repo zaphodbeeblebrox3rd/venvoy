@@ -21,14 +21,14 @@ docker run --rm -it -v $(pwd):/workspace zaphodbeeblebrox3rd/venvoy:python3.11
 
 ## 📦 Available Tags
 
-| Tag | Python Version | Architecture | Description |
-|-----|----------------|--------------|-------------|
-| `latest` | 3.11 | amd64, arm64 | Default Python 3.11 environment |
-| `python3.9` | 3.9 | amd64, arm64 | Python 3.9 environment |
-| `python3.10` | 3.10 | amd64, arm64 | Python 3.10 environment |
-| `python3.11` | 3.11 | amd64, arm64 | Python 3.11 environment |
-| `python3.12` | 3.12 | amd64, arm64 | Python 3.12 environment |
-| `python3.13` | 3.13 | amd64, arm64 | Python 3.13 environment |
+| Tag | Python Version | R Version | Architecture | Description |
+|-----|----------------|----------|--------------|-------------|
+| `latest` | 3.11 | 4.3 | amd64, arm64 | Default Python 3.11 / R 4.3 environment |
+| `python3.13-r4.5` | 3.13 | 4.5 | amd64, arm64 | Python 3.13 / R 4.5 environment |
+| `python3.12-r4.4` | 3.12 | 4.4 | amd64, arm64 | Python 3.12 / R 4.4 environment |
+| `python3.11-r4.3` | 3.11 | 4.3 | amd64, arm64 | Python 3.11 / R 4.3 environment |
+| `python3.11-r4.2` | 3.11 | 4.2 | amd64, arm64 | Python 3.11 / R 4.2 environment |
+| `python3.10-r4.2` | 3.10 | 4.2 | amd64, arm64 | Python 3.10 / R 4.2 environment |
 
 ### 🚫 **Legacy Python Versions (Not Supported)**
 venvoy focuses on **actively supported Python versions** only. We do not provide images for:
@@ -45,10 +45,13 @@ venvoy focuses on **actively supported Python versions** only. We do not provide
 ## ✨ What's Included
 
 ### 🐍 **Python Environment**
-- **Miniconda** - Full conda package management
-- **Mamba** - 10-100x faster dependency resolution
-- **UV** - Ultra-fast Python package installer
-- **Pip** - Standard Python package installer
+- **System Python** - Python from official Debian packages
+- **UV** - Ultra-fast Python package installer (10-100x faster than pip)
+- **Pip** - Standard Python package installer (fallback)
+
+### 📊 **R Environment**
+- **System R** - R from Debian CRAN repository
+- **CRAN packages** - Install R packages via `install.packages()`
 
 ### 📊 **Pre-installed AI/ML Packages**
 - **numpy** - Numerical computing
@@ -112,14 +115,17 @@ docker run --rm -it \
 
 ### Install Additional Packages
 ```bash
-# Using mamba (fastest for scientific packages)
-mamba install -c conda-forge tensorflow pytorch
-
 # Using uv (fastest for Python packages)
-uv pip install fastapi uvicorn
+uv pip install tensorflow pytorch fastapi uvicorn
 
 # Using pip (universal fallback)
 pip install requests beautifulsoup4
+
+# Install R packages
+R -e "install.packages('tidyverse')"
+# Or interactively:
+R
+> install.packages(c('tidyverse', 'devtools'))
 ```
 
 ### **How venvoy Works on so many platforms:**

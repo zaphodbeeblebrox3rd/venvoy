@@ -78,76 +78,41 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     apt-get install -y docker-ce-cli && \
     rm -rf /var/lib/apt/lists/*
 
-# Install miniconda first (needed for R installation)
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-$(uname -m).sh -O /tmp/miniconda.sh && \
-    bash /tmp/miniconda.sh -b -p /opt/conda && \
-    rm /tmp/miniconda.sh
-
-# Add conda to PATH
-ENV PATH="/opt/conda/bin:$PATH"
-
-# Initialize conda with better error handling
-RUN /opt/conda/bin/conda --version && \
-    (/opt/conda/bin/conda init bash || /opt/conda/bin/conda init || echo "conda init not supported on this platform")
-
-# Accept Conda Terms of Service for required channels
-# This must be done before any conda operations that use these channels
-RUN /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>/dev/null || echo "ToS acceptance for main channel skipped" && \
-    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || echo "ToS acceptance for r channel skipped"
-
-# Update conda first to ensure compatibility
-# For older conda versions with SSL issues, temporarily disable SSL verification to update conda
-RUN (/opt/conda/bin/conda config --set ssl_verify false 2>/dev/null || true) && \
-    (/opt/conda/bin/conda update -n base -c defaults conda -y || \
-     /opt/conda/bin/conda update -n base -c conda-forge conda -y || \
-     echo "conda update failed, continuing") && \
-    (/opt/conda/bin/conda config --set ssl_verify true 2>/dev/null || true)
-
-# Update certifi and openssl to fix SSL issues on older conda versions
-# Temporarily disable SSL verification if needed
-RUN (/opt/conda/bin/conda config --set ssl_verify false 2>/dev/null || true) && \
-    (/opt/conda/bin/conda update -n base -c defaults certifi openssl ca-certificates -y || \
-     /opt/conda/bin/conda update -n base -c conda-forge certifi openssl ca-certificates -y || \
-     echo "certificate update failed, continuing") && \
-    (/opt/conda/bin/conda config --set ssl_verify true 2>/dev/null || true)
-
-# Install mamba for faster dependency resolution
-# Try conda-forge first, fall back to defaults if that fails
-# Temporarily disable SSL verification if needed for older conda versions
-RUN (/opt/conda/bin/conda config --set ssl_verify false 2>/dev/null || true) && \
-    (/opt/conda/bin/conda install -n base -c conda-forge mamba -y || \
-     /opt/conda/bin/conda install -n base -c defaults mamba -y || \
-     echo "mamba install failed") && \
-    (/opt/conda/bin/conda config --set ssl_verify true 2>/dev/null || true)
-
-# Install R via conda-forge (more reliable than apt repositories)
-# Install R in the base environment so it's available system-wide
-# Note: Installing just r-base (not r-essentials) to reduce image size
-# Users can install R packages as needed via install.packages()
-RUN /opt/conda/bin/mamba install -n base -c conda-forge \
-    r-base=${R_VERSION} \
-    -y && \
-    ln -sf /opt/conda/bin/R /usr/local/bin/R && \
-    ln -sf /opt/conda/bin/Rscript /usr/local/bin/Rscript
+# Install R from Debian CRAN repository
+# Note: Debian CRAN repository provides the latest R version for each Debian release
+# Version pinning may not be available, so we install the available version
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    dirmngr \
+    gnupg \
+    ca-certificates \
+    wget \
+    lsb-release \
+    && mkdir -p /etc/apt/keyrings && \
+    wget -q https://cloud.r-project.org/bin/linux/debian/marutter_pubkey.asc -O /tmp/cran_key.asc && \
+    gpg --dearmor < /tmp/cran_key.asc > /etc/apt/keyrings/cran.gpg && \
+    chmod a+r /etc/apt/keyrings/cran.gpg && \
+    rm /tmp/cran_key.asc && \
+    DEB_CODENAME=$(lsb_release -cs) && \
+    echo "deb [signed-by=/etc/apt/keyrings/cran.gpg] https://cloud.r-project.org/bin/linux/debian ${DEB_CODENAME}-cran40/" > /etc/apt/sources.list.d/cran.list && \
+    apt-get update -o Acquire::Check-Valid-Until=false -o Acquire::AllowInsecureRepositories=false 2>&1 | head -20 || true && \
+    apt-get install -y --no-install-recommends \
+    r-base \
+    r-base-core \
+    r-base-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Set up R environment for package installation
 RUN R -e "options(repos = c(CRAN = 'https://cran.rstudio.com/')); \
     options(download.file.method = 'libcurl'); \
     options(Ncpus = parallel::detectCores())"
 
-# Create venvoy environment using mamba (much faster than conda)
-RUN /opt/conda/bin/mamba create -n venvoy python=${PYTHON_VERSION} -c conda-forge -y
-
 # Install uv for ultra-fast Python package management
 RUN pip install --no-cache-dir uv
 
-# Activate environment by default
-ENV CONDA_DEFAULT_ENV=venvoy
-ENV CONDA_PREFIX=/opt/conda/envs/venvoy
-ENV PATH="/opt/conda/envs/venvoy/bin:$PATH"
-
-# Install common AI/ML packages using mamba for better dependency resolution
-RUN /opt/conda/bin/mamba install -n venvoy -c conda-forge \
+# Install common AI/ML packages using UV (system-wide installation)
+RUN uv pip install --system \
     numpy \
     pandas \
     matplotlib \
@@ -157,10 +122,6 @@ RUN /opt/conda/bin/mamba install -n venvoy -c conda-forge \
     requests \
     python-dotenv \
     scikit-learn \
-    -y
-
-# Install additional fast tools
-RUN /opt/conda/envs/venvoy/bin/pip install \
     rich \
     click \
     fastapi \
@@ -202,12 +163,11 @@ RUN echo 'options(repos = c(CRAN = "https://cran.rstudio.com/"))' >> ~/.Rprofile
     echo 'options(Ncpus = parallel::detectCores())' >> ~/.Rprofile
 
 # Set up shell with better interactive experience
-RUN echo 'conda activate venvoy' >> ~/.bashrc && \
-    echo 'export PS1="(🤖 venvoy) \\u@\\h:\\w\\$ "' >> ~/.bashrc && \
+RUN echo 'export PS1="(🤖 venvoy) \\u@\\h:\\w\\$ "' >> ~/.bashrc && \
     echo 'echo "🚀 Welcome to your AI-ready venvoy environment!"' >> ~/.bashrc && \
     echo 'echo "🐍 Python $(python --version) with AI/ML packages"' >> ~/.bashrc && \
     echo 'echo "📊 R $(R --version | head -1 | cut -d\" \" -f3) ready for your packages"' >> ~/.bashrc && \
-    echo 'echo "📦 Package managers: mamba (fast conda), uv (ultra-fast pip), pip, install.packages() (CRAN)"' >> ~/.bashrc && \
+    echo 'echo "📦 Package managers: uv (ultra-fast pip), pip, install.packages() (CRAN)"' >> ~/.bashrc && \
     echo 'echo "📊 Pre-installed: numpy, pandas, matplotlib, jupyter, scikit-learn, and more"' >> ~/.bashrc && \
     echo 'echo "📂 Workspace: $(pwd)"' >> ~/.bashrc && \
     echo 'echo "💡 Home directory mounted at: /host-home"' >> ~/.bashrc

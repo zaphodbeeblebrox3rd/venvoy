@@ -367,32 +367,11 @@ RUN apt-get update && apt-get install -y \\
     git \\
     wget \\
     vim \\
-    && rm -rf /var/lib/apt/lists/*
-
-# Install miniconda
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \\
-    bash /tmp/miniconda.sh -b -p /opt/conda && \\
-    rm /tmp/miniconda.sh
-
-# Add conda to PATH
-ENV PATH="/opt/conda/bin:$PATH"
-
-# Initialize conda
-RUN conda init bash
-
-# Install mamba for faster dependency resolution
-RUN conda install -n base -c conda-forge mamba -y
-
-# Create environment using mamba (much faster than conda)
-RUN mamba create -n venvoy python={self.python_version} -c conda-forge -y
+    && rm -rf /var/lib/apt/lists/* \\
+    && apt-get clean
 
 # Install uv for ultra-fast Python package management
 RUN pip install --no-cache-dir uv
-
-# Activate environment by default
-ENV CONDA_DEFAULT_ENV=venvoy
-ENV CONDA_PREFIX=/opt/conda/envs/venvoy
-ENV PATH="/opt/conda/envs/venvoy/bin:$PATH"
 
 # Set working directory
 WORKDIR /workspace
@@ -405,8 +384,8 @@ COPY vendor/ ./vendor/
 COPY package_monitor.py /usr/local/bin/package_monitor.py
 RUN chmod +x /usr/local/bin/package_monitor.py
 
-# Install common AI/ML packages using mamba for better dependency resolution
-RUN mamba install -n venvoy -c conda-forge \\
+# Install common AI/ML packages using UV (system-wide installation)
+RUN uv pip install --system \\
     numpy \\
     pandas \\
     matplotlib \\
@@ -414,16 +393,14 @@ RUN mamba install -n venvoy -c conda-forge \\
     jupyter \\
     ipython \\
     requests \\
-    python-dotenv \\
-    -y
+    python-dotenv
 
-# Install Python packages (prefer uv for pure Python packages, pip as fallback)
-# Note: We're in a conda environment, so no --system flag needed
+# Install Python packages (prefer uv, pip as fallback)
 RUN if [ -s requirements.txt ]; then \\
-        (uv pip install -r requirements.txt || pip install -r requirements.txt); \\
+        (uv pip install --system -r requirements.txt || pip install -r requirements.txt); \\
     fi
 RUN if [ -s requirements-dev.txt ]; then \\
-        (uv pip install -r requirements-dev.txt || pip install -r requirements-dev.txt); \\
+        (uv pip install --system -r requirements-dev.txt || pip install -r requirements-dev.txt); \\
     fi
 
 # Install packages from vendor directory if available (using uv for speed)
@@ -442,11 +419,10 @@ RUN groupadd -g $GROUP_ID venvoy && \\
 USER venvoy
 
 # Set up shell with better interactive experience
-RUN echo 'conda activate venvoy' >> ~/.bashrc && \\
-    echo 'export PS1="(🤖 venvoy) \\u@\\h:\\w$ "' >> ~/.bashrc && \\
+RUN echo 'export PS1="(🤖 venvoy) \\u@\\h:\\w$ "' >> ~/.bashrc && \\
     echo 'echo "🚀 Welcome to your AI-ready venvoy environment!"' >> ~/.bashrc && \\
     echo 'echo "🐍 Python $(python --version) with AI/ML packages"' >> ~/.bashrc && \\
-    echo 'echo "📦 Package managers: mamba (fast conda), uv (ultra-fast pip), pip"' >> ~/.bashrc && \\
+    echo 'echo "📦 Package managers: uv (ultra-fast pip), pip"' >> ~/.bashrc && \\
     echo 'echo "📊 Pre-installed: numpy, pandas, matplotlib, jupyter, and more"' >> ~/.bashrc && \\
     echo 'echo "🔍 Auto-saving environment.yml on package changes"' >> ~/.bashrc && \\
     echo 'echo "📂 Workspace: $(pwd)"' >> ~/.bashrc && \\
@@ -543,7 +519,7 @@ CMD ["/bin/bash"]
                                 image_tag,
                                 "bash",
                                 "-c",
-                                f"source /opt/conda/bin/activate venvoy && uv pip download -r /workspace/{req_filename} --dest /workspace/vendor --no-deps",
+                                f"uv pip download -r /workspace/{req_filename} --dest /workspace/vendor --no-deps",
                             ],
                             check=True,
                         )
@@ -564,7 +540,7 @@ CMD ["/bin/bash"]
                                     image_tag,
                                     "bash",
                                     "-c",
-                                    f"source /opt/conda/bin/activate venvoy && pip download -r /workspace/{req_filename} -d /workspace/vendor --no-deps",
+                                    f"pip download -r /workspace/{req_filename} -d /workspace/vendor --no-deps",
                                 ],
                                 check=True,
                             )
@@ -607,7 +583,7 @@ CMD ["/bin/bash"]
                     f"venvoy/{self.name}:{self.python_version}",
                     "bash",
                     "-c",
-                    "source /opt/conda/bin/activate venvoy && pip freeze",
+                    "pip freeze",
                 ],
                 capture_output=True,
                 text=True,
@@ -867,13 +843,33 @@ CMD ["/bin/bash"]
         if output_path is None:
             output_path = f"{self.name}-environment.yaml"
 
+        # Get Python packages
+        python_packages = self._get_installed_packages()
+        python_packages_list = [f"{pkg['name']}=={pkg['version']}" for pkg in python_packages]
+
+        # Get R packages if R is available
+        r_packages_list = []
+        try:
+            # Load config to get image name
+            if self.config_file.exists():
+                with open(self.config_file, "r") as f:
+                    config = yaml.safe_load(f)
+                image_name = config.get("image_name")
+                if image_name:
+                    r_packages = self._get_installed_r_packages(image_name)
+                    r_packages_list = [f"{pkg['name']}=={pkg['version']}" for pkg in r_packages]
+        except Exception:
+            # R packages not available or R not installed
+            pass
+
         export_data = {
             "name": self.name,
             "python_version": self.python_version,
-            "created": datetime.now().isoformat(),
-            "platform": self.platform.detect(),
-            "packages": self._get_installed_packages(),
-            "base_image": self.platform.get_base_image(self.python_version),
+            "r_version": self.r_version,
+            "python_packages": python_packages_list,
+            "r_packages": r_packages_list,
+            "exported": datetime.now().isoformat(),
+            "venvoy_version": "0.1.0",
         }
 
         output_file = Path(output_path)
@@ -1089,6 +1085,12 @@ CMD ["/bin/bash"]
         - Can be installed on any architecture without repository dependency
         - Is self-contained and doesn't require package availability
 
+        Note on package download:
+        - Currently uses `pip download` for Python packages (uv pip download not yet supported)
+        - Attempts `uv pip download` first for future-proofing, falls back to `pip download`
+        - See GitHub issue #2078 for uv download command status
+        - When uv supports download, it will automatically be used for faster downloads
+
         Args:
             output_path: Path for the wheelhouse archive file
 
@@ -1184,10 +1186,13 @@ CMD ["/bin/bash"]
                         f.write(f"{pkg['name']}=={pkg['version']}\n")
 
                 # Download source distributions (architecture-independent)
+                # Note: uv pip download is not yet supported (GitHub issue #2078), so we try it
+                # for future-proofing but will fallback to pip download
                 print(
                     "📥 Downloading Python source distributions (architecture-independent)..."
                 )
                 try:
+                    # Try uv pip download first (for future when it's supported)
                     self._run_docker_command(
                         [
                             "run",
@@ -1200,8 +1205,8 @@ CMD ["/bin/bash"]
                             "bash",
                             "-c",
                             """
-                        source /opt/conda/bin/activate venvoy 2>/dev/null || true
-                        pip download -r /workspace/requirements.txt -d /workspace/sdists --no-binary :all: --no-deps || true
+                        (uv pip download -r /workspace/requirements.txt -d /workspace/sdists --no-binary :all: --no-deps 2>/dev/null || \
+                         pip download -r /workspace/requirements.txt -d /workspace/sdists --no-binary :all: --no-deps) || true
                         """,
                         ],
                         check=False,
@@ -1224,6 +1229,8 @@ CMD ["/bin/bash"]
                 ]
 
                 print("📥 Downloading Python wheels for multiple architectures...")
+                # Note: uv pip download is not yet supported, so we try it for future-proofing
+                # but will fallback to pip download
                 for arch in architectures:
                     try:
                         self._run_docker_command(
@@ -1237,9 +1244,9 @@ CMD ["/bin/bash"]
                                 image_name,
                                 "bash",
                                 "-c",
-                                """
-                            source /opt/conda/bin/activate venvoy 2>/dev/null || true
-                            pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --platform {arch} --no-deps || true
+                                f"""
+                            (uv pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --platform {arch} --no-deps 2>/dev/null || \
+                             pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --platform {arch} --no-deps) || true
                             """,
                             ],
                             check=False,
@@ -1248,6 +1255,8 @@ CMD ["/bin/bash"]
                         pass  # Some architectures may not have wheels available
 
                 # Also download any available wheels (will get current architecture)
+                # Note: uv pip download is not yet supported, so we try it for future-proofing
+                # but will fallback to pip download
                 try:
                     self._run_docker_command(
                         [
@@ -1261,8 +1270,8 @@ CMD ["/bin/bash"]
                             "bash",
                             "-c",
                             """
-                        source /opt/conda/bin/activate venvoy 2>/dev/null || true
-                        pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --no-deps || true
+                        (uv pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --no-deps 2>/dev/null || \
+                         pip download -r /workspace/requirements.txt -d /workspace/wheels --only-binary :all: --no-deps) || true
                         """,
                         ],
                         check=False,
@@ -1597,11 +1606,30 @@ CMD ["/bin/bash"]
 
         env_name = export_data.get("name", "venvoy-env")
         python_version = export_data.get("python_version", "3.11")
-        packages = export_data.get("packages", [])
+        r_version = export_data.get("r_version", "4.4")
+        python_packages = export_data.get("python_packages", [])
+        r_packages = export_data.get("r_packages", [])
+
+        # Handle backward compatibility with old format
+        if not python_packages and "packages" in export_data:
+            # Old format - convert list of dicts to list of strings
+            packages = export_data.get("packages", [])
+            python_packages = []
+            for pkg in packages:
+                if isinstance(pkg, dict):
+                    pkg_name = pkg.get("name", "")
+                    pkg_version = pkg.get("version", "")
+                    if pkg_name:
+                        if pkg_version:
+                            python_packages.append(f"{pkg_name}=={pkg_version}")
+                        else:
+                            python_packages.append(pkg_name)
 
         print(f"🔍 YAML contains environment: {env_name}")
         print(f"   Python: {python_version}")
-        print(f"   Packages: {len(packages)} total")
+        print(f"   R: {r_version}")
+        print(f"   Python packages: {len(python_packages)}")
+        print(f"   R packages: {len(r_packages)}")
 
         # Check if environment already exists
         target_env_dir = self.config_dir / "environments" / env_name
@@ -1615,25 +1643,28 @@ CMD ["/bin/bash"]
             shutil.rmtree(target_env_dir)
         target_env_dir.mkdir(parents=True)
 
-        # Create requirements.txt from packages
-        if packages:
+        # Create requirements.txt from Python packages
+        if python_packages:
             print("📝 Creating requirements.txt...")
             requirements_file = target_env_dir / "requirements.txt"
             with open(requirements_file, "w") as f:
-                for pkg in packages:
-                    pkg_name = pkg.get("name", "")
-                    pkg_version = pkg.get("version", "")
-                    if pkg_name:
-                        if pkg_version:
-                            f.write(f"{pkg_name}=={pkg_version}\n")
-                        else:
-                            f.write(f"{pkg_name}\n")
+                for pkg in python_packages:
+                    f.write(f"{pkg}\n")
+
+        # Create r-requirements.txt from R packages
+        if r_packages:
+            print("📝 Creating r-requirements.txt...")
+            r_requirements_file = target_env_dir / "r-requirements.txt"
+            with open(r_requirements_file, "w") as f:
+                for pkg in r_packages:
+                    f.write(f"{pkg}\n")
 
         # Create config.yaml
         config = {
             "name": env_name,
             "python_version": python_version,
-            "runtime": "python",
+            "r_version": r_version,
+            "runtime": "mixed" if r_packages else "python",
             "created": export_data.get("created", datetime.now().isoformat()),
             "imported_from": str(yaml_file),
             "imported_at": datetime.now().isoformat(),
@@ -2083,7 +2114,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
             "image_name": image_name,
             "platform": self.platform.detect(),
             "python_version": self.python_version,
-            "packages": {"conda": [], "pip": [], "system": []},
+            "packages": {"pip": [], "system": []},
             "system_info": {},
             "dependency_tree": {},
         }
@@ -2091,25 +2122,6 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
         try:
             # Get detailed package information from container
             print("🔍 Analyzing package dependencies...")
-
-            # Get conda packages with detailed info
-            conda_result = subprocess.run(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    image_name,
-                    "bash",
-                    "-c",
-                    "source /opt/conda/bin/activate venvoy && conda list --json",
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-
-            conda_packages = json.loads(conda_result.stdout)
-            manifest["packages"]["conda"] = conda_packages
 
             # Get pip packages with detailed info
             pip_result = subprocess.run(
@@ -2120,7 +2132,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                     image_name,
                     "bash",
                     "-c",
-                    "source /opt/conda/bin/activate venvoy && pip list --format=json",
+                    "pip list --format=json",
                 ],
                 capture_output=True,
                 text=True,
@@ -2170,10 +2182,8 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                     "bash",
                     "-c",
                     """
-                source /opt/conda/bin/activate venvoy
                 echo "PYTHON_VERSION=$(python --version)"
                 echo "PYTHON_PATH=$(which python)"
-                echo "CONDA_VERSION=$(conda --version)"
                 echo "OS_INFO=$(cat /etc/os-release | grep PRETTY_NAME)"
                 echo "ARCHITECTURE=$(uname -m)"
                 echo "KERNEL=$(uname -r)"
@@ -2201,7 +2211,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                     image_name,
                     "bash",
                     "-c",
-                    "source /opt/conda/bin/activate venvoy && pip show --verbose numpy pandas matplotlib jupyter || true",
+                    "pip show --verbose numpy pandas matplotlib jupyter || true",
                 ],
                 capture_output=True,
                 text=True,
@@ -2507,53 +2517,34 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
     def auto_save_environment(self):
         """Auto-save environment.yml to venvoy-projects directory with timestamp"""
         try:
-            # Get current packages from container
-            packages = self._get_installed_packages()
+            # Get current Python packages from container
+            python_packages = self._get_installed_packages()
+            python_packages_list = [f"{pkg['name']}=={pkg['version']}" for pkg in python_packages]
 
-            # Create conda-style environment.yml
+            # Get R packages if available
+            r_packages_list = []
+            try:
+                if self.config_file.exists():
+                    with open(self.config_file, "r") as f:
+                        config = yaml.safe_load(f)
+                    image_name = config.get("image_name")
+                    if image_name:
+                        r_packages = self._get_installed_r_packages(image_name)
+                        r_packages_list = [f"{pkg['name']}=={pkg['version']}" for pkg in r_packages]
+            except Exception:
+                # R packages not available or R not installed
+                pass
+
+            # Create new simplified environment.yml format
             env_data = {
                 "name": self.name,
-                "channels": ["conda-forge", "defaults"],
-                "dependencies": [],
+                "python_version": self.python_version,
+                "r_version": self.r_version,
+                "python_packages": python_packages_list,
+                "r_packages": r_packages_list,
                 "exported": datetime.now().isoformat(),
                 "venvoy_version": "0.1.0",
             }
-
-            # Separate conda and pip packages
-            conda_packages = []
-            pip_packages = []
-
-            for pkg in packages:
-                # Try to determine if it's available via conda-forge
-                # For simplicity, we'll put common scientific packages in conda section
-                scientific_packages = {
-                    "numpy",
-                    "pandas",
-                    "matplotlib",
-                    "scipy",
-                    "scikit-learn",
-                    "jupyter",
-                    "ipython",
-                    "seaborn",
-                    "plotly",
-                    "bokeh",
-                    "tensorflow",
-                    "pytorch",
-                    "torch",
-                    "transformers",
-                }
-
-                if pkg["name"].lower() in scientific_packages:
-                    conda_packages.append(f"{pkg['name']}={pkg['version']}")
-                else:
-                    pip_packages.append(f"{pkg['name']}=={pkg['version']}")
-
-            # Add conda packages
-            env_data["dependencies"].extend(conda_packages)
-
-            # Add pip section if there are pip packages
-            if pip_packages:
-                env_data["dependencies"].append({"pip": pip_packages})
 
             # Create timestamped filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2600,15 +2591,10 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                         # Parse timestamp
                         timestamp = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
 
-                        # Count packages
-                        package_count = 0
-                        pip_count = 0
-
-                        for dep in env_data.get("dependencies", []):
-                            if isinstance(dep, dict) and "pip" in dep:
-                                pip_count = len(dep["pip"])
-                            elif isinstance(dep, str):
-                                package_count += 1
+                        # Count packages (new format: python_packages and r_packages)
+                        python_count = len(env_data.get("python_packages", []))
+                        r_count = len(env_data.get("r_packages", []))
+                        total_count = python_count + r_count
 
                         exports.append(
                             {
@@ -2618,9 +2604,9 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
                                 "formatted_time": timestamp.strftime(
                                     "%Y-%m-%d %H:%M:%S"
                                 ),
-                                "conda_packages": package_count,
-                                "pip_packages": pip_count,
-                                "total_packages": package_count + pip_count,
+                                "python_packages": python_count,
+                                "r_packages": r_count,
+                                "total_packages": total_count,
                                 "exported_date": env_data.get("exported", "Unknown"),
                                 "venvoy_version": env_data.get(
                                     "venvoy_version", "Unknown"
@@ -2655,7 +2641,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
             print(
                 f"{i:2d}. {export['formatted_time']} - "
                 f"{export['total_packages']} packages "
-                f"({export['conda_packages']} conda, {export['pip_packages']} pip)"
+                f"({export['python_packages']} Python, {export['r_packages']} R)"
             )
 
         print(f"{len(exports) + 1:2d}. Create new environment (skip restore)")
@@ -2694,38 +2680,42 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
         try:
             print(f"🔄 Restoring environment from: {export_file.name}")
 
-            # Copy the export file to requirements files
+            # Read the export file
             with open(export_file, "r") as f:
                 env_data = yaml.safe_load(f)
 
-            # Extract conda and pip dependencies
-            conda_deps = []
-            pip_deps = []
+            # Extract Python and R packages (new format)
+            python_deps = env_data.get("python_packages", [])
+            r_deps = env_data.get("r_packages", [])
 
-            for dep in env_data.get("dependencies", []):
-                if isinstance(dep, dict) and "pip" in dep:
-                    pip_deps.extend(dep["pip"])
-                elif isinstance(dep, str):
-                    conda_deps.append(dep)
-
-            # Write to requirements files
-            if conda_deps:
-                conda_req_file = self.env_dir / "conda-requirements.txt"
-                with open(conda_req_file, "w") as f:
-                    for dep in conda_deps:
+            # Handle backward compatibility with old format (dependencies structure)
+            if not python_deps and "dependencies" in env_data:
+                # Old format - convert to new format
+                for dep in env_data.get("dependencies", []):
+                    if isinstance(dep, dict) and "pip" in dep:
+                        python_deps.extend(dep["pip"])
+                    elif isinstance(dep, str):
                         # Convert conda format (name=version) to pip format (name==version)
                         if "=" in dep and not dep.startswith("="):
                             dep = dep.replace("=", "==", 1)
-                        f.write(f"{dep}\n")
+                        python_deps.append(dep)
 
-            if pip_deps:
+            # Write Python packages to requirements.txt
+            if python_deps:
                 pip_req_file = self.env_dir / "requirements.txt"
                 with open(pip_req_file, "w") as f:
-                    for dep in pip_deps:
+                    for dep in python_deps:
+                        f.write(f"{dep}\n")
+
+            # Write R packages to r-requirements.txt
+            if r_deps:
+                r_req_file = self.env_dir / "r-requirements.txt"
+                with open(r_req_file, "w") as f:
+                    for dep in r_deps:
                         f.write(f"{dep}\n")
 
             print("✅ Environment configuration restored")
-            print(f"📦 {len(conda_deps)} conda packages, {len(pip_deps)} pip packages")
+            print(f"📦 {len(python_deps)} Python packages, {len(r_deps)} R packages")
 
         except Exception as e:
             print(f"❌ Failed to restore environment: {e}")
@@ -2863,7 +2853,7 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
     def _get_interactive_shell_command(self) -> str:
         """Get the appropriate interactive shell command"""
         # Return a command that activates conda and starts an interactive shell
-        return '/bin/bash -c "source /opt/conda/bin/activate venvoy && echo \\"🚀 Welcome to your AI-ready venvoy environment!\\" && echo \\"🐍 Python $(python --version)\\" && echo \\"📦 Conda environment: $CONDA_DEFAULT_ENV\\" && echo \\"⚡ Package managers: mamba (fast), uv (ultra-fast), pip (standard)\\" && echo \\"🤖 AI packages: numpy, pandas, matplotlib, jupyter, and more\\" && echo \\"💡 Your home directory is mounted at /host-home\\" && echo \\"📂 Current workspace: $(pwd)\\" && echo && exec /bin/bash"'
+        return '/bin/bash -c "echo \\"🚀 Welcome to your AI-ready venvoy environment!\\" && echo \\"🐍 Python $(python --version)\\" && echo \\"⚡ Package managers: uv (ultra-fast), pip (standard)\\" && echo \\"🤖 AI packages: numpy, pandas, matplotlib, jupyter, and more\\" && echo \\"💡 Your home directory is mounted at /host-home\\" && echo \\"📂 Current workspace: $(pwd)\\" && echo && exec /bin/bash"'
 
     def _launch_with_cursor(self, image_tag: str, volumes: Dict):
         """Launch container and connect Cursor"""
