@@ -71,24 +71,67 @@ if [ "$CONTAINER_RUNTIME" = "docker" ]; then
     
     echo "✅ Bootstrap image built and pushed successfully!"
 elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
-    echo "⚠️  Podman multi-arch builds require manual manifest creation"
-    echo "   Building for current architecture only..."
-    if podman build \
+    echo "🔨 Building multi-architecture bootstrap image with Podman..."
+    # Build for amd64
+    echo "   Building for linux/amd64..."
+    AMD64_TAG="${REGISTRY}/${IMAGE_NAME}:bootstrap-amd64"
+    if ! podman build \
+        --platform linux/amd64 \
         --build-arg PYTHON_VERSION=3.11 \
         -f docker/Dockerfile.bootstrap \
-        -t ${REGISTRY}/${IMAGE_NAME}:bootstrap \
+        -t ${AMD64_TAG} \
         .; then
-        echo "📤 Pushing ${REGISTRY}/${IMAGE_NAME}:bootstrap..."
-        if podman push ${REGISTRY}/${IMAGE_NAME}:bootstrap; then
-            echo "✅ Bootstrap image built and pushed successfully!"
-        else
-            echo "❌ Failed to push bootstrap image"
-            exit 1
-        fi
-    else
-        echo "❌ Failed to build bootstrap image"
+        echo "❌ Failed to build amd64 bootstrap image"
         exit 1
     fi
+    
+    # Build for arm64
+    echo "   Building for linux/arm64..."
+    ARM64_TAG="${REGISTRY}/${IMAGE_NAME}:bootstrap-arm64"
+    if ! podman build \
+        --platform linux/arm64 \
+        --build-arg PYTHON_VERSION=3.11 \
+        -f docker/Dockerfile.bootstrap \
+        -t ${ARM64_TAG} \
+        .; then
+        echo "❌ Failed to build arm64 bootstrap image"
+        exit 1
+    fi
+    
+    # Push both architecture-specific images
+    echo "📤 Pushing architecture-specific images..."
+    if ! podman push ${AMD64_TAG}; then
+        echo "❌ Failed to push amd64 bootstrap image"
+        exit 1
+    fi
+    if ! podman push ${ARM64_TAG}; then
+        echo "❌ Failed to push arm64 bootstrap image"
+        exit 1
+    fi
+    
+    # Create and push manifest list for multi-arch
+    echo "🔗 Creating multi-architecture manifest..."
+    FINAL_TAG="${REGISTRY}/${IMAGE_NAME}:bootstrap"
+    # Remove existing manifest and image if they exist (required for Podman)
+    # Note: Podman automatically tags images with both architecture-specific and final tags
+    # When building amd64, it tags as both "bootstrap-amd64" AND "bootstrap"
+    # We need to remove the final tag (whether it's a manifest or image) before creating a new manifest
+    # This causes brief unavailability, but new manifest is created immediately
+    podman manifest rm ${FINAL_TAG} 2>/dev/null || true
+    podman rmi ${FINAL_TAG} 2>/dev/null || true
+    # Create new manifest
+    if ! podman manifest create ${FINAL_TAG} ${AMD64_TAG} ${ARM64_TAG}; then
+        echo "❌ Failed to create manifest for ${FINAL_TAG}"
+        exit 1
+    fi
+    
+    if ! podman manifest push ${FINAL_TAG} docker://${FINAL_TAG}; then
+        echo "❌ Failed to push multi-architecture manifest"
+        exit 1
+    fi
+    
+    echo "✅ Bootstrap image built and pushed successfully!"
+    echo "   Tag: ${FINAL_TAG} (amd64 + arm64)"
 fi
 
 echo ""

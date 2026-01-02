@@ -1,6 +1,13 @@
 # venvoy Combined Image - Python and R environment
 # This image includes both Python and R in specific version pairs
 # Usage: docker run --rm -it zaphodbeeblebrox3rd/venvoy:python3.13-r4.5
+#
+# Caching Strategy:
+# This Dockerfile uses BuildKit cache mounts (--mount=type=cache) to speed up rebuilds:
+# - APT package cache: /var/cache/apt and /var/lib/apt (system packages, R)
+# - Python package cache: /root/.cache/pip and /root/.cache/uv (Python packages)
+# These caches persist between builds, significantly reducing download times.
+# Requires BuildKit enabled (DOCKER_BUILDKIT=1) or Podman 4.0+
 
 ARG PYTHON_VERSION=3.11
 ARG R_VERSION=4.4
@@ -17,14 +24,17 @@ LABEL org.opencontainers.image.licenses="MIT"
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-ENV PIP_NO_CACHE_DIR=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV R_VERSION=${R_VERSION}
 ENV VENVOY_VERSION=0.1.0
+# Note: PIP_NO_CACHE_DIR is not set - we'll use BuildKit cache mounts instead
 
 # Install comprehensive system dependencies for both Python and R
-RUN apt-get update && apt-get install -y \
+# Use BuildKit cache mount for apt package cache to speed up rebuilds
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y \
     # Build tools
     build-essential \
     gfortran \
@@ -66,22 +76,27 @@ RUN apt-get update && apt-get install -y \
     libcairo2-dev \
     # Fonts
     fonts-dejavu-core \
-    && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
 # Install Docker CLI (client only, no daemon) for Remote Containers extension compatibility
-RUN install -m 0755 -d /etc/apt/keyrings && \
+# Use BuildKit cache mount for apt package cache
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     chmod a+r /etc/apt/keyrings/docker.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     apt-get update && \
     apt-get install -y docker-ce-cli && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get clean
 
 # Install R from Debian CRAN repository
 # Note: Debian CRAN repository provides the latest R version for each Debian release
 # Version pinning may not be available, so we install the available version
-RUN apt-get update && \
+# Use BuildKit cache mount for apt package cache
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
     dirmngr \
     gnupg \
@@ -100,7 +115,6 @@ RUN apt-get update && \
     r-base \
     r-base-core \
     r-base-dev \
-    && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
 # Set up R environment for package installation
@@ -109,10 +123,15 @@ RUN R -e "options(repos = c(CRAN = 'https://cran.rstudio.com/')); \
     options(Ncpus = parallel::detectCores())"
 
 # Install uv for ultra-fast Python package management
-RUN pip install --no-cache-dir uv
+# Use BuildKit cache mount for pip cache
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install uv
 
 # Install common AI/ML packages using UV (system-wide installation)
-RUN uv pip install --system \
+# Use BuildKit cache mount for uv/pip cache
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=cache,target=/root/.cache/pip \
+    uv pip install --system \
     numpy \
     pandas \
     matplotlib \

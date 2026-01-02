@@ -63,12 +63,14 @@ if [ "$CONTAINER_RUNTIME" = "docker" ]; then
 fi
 
 # Build combined images for each version pair
+FAILED_BUILDS=()
 for PAIR in "${VERSION_PAIRS[@]}"; do
     IFS=':' read -r PYTHON_VERSION R_VERSION <<< "$PAIR"
     # Validate that both versions were extracted
     if [ -z "$PYTHON_VERSION" ] || [ -z "$R_VERSION" ]; then
         echo "❌ Failed to parse version pair: $PAIR"
-        exit 1
+        FAILED_BUILDS+=("$PAIR (parse error)")
+        continue
     fi
     IMAGE_TAG="python${PYTHON_VERSION}-r${R_VERSION}"
     
@@ -77,6 +79,8 @@ for PAIR in "${VERSION_PAIRS[@]}"; do
     
     if [ "$CONTAINER_RUNTIME" = "docker" ]; then
         # Build multi-architecture image
+        # Enable BuildKit for cache mount support
+        export DOCKER_BUILDKIT=1
         docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --build-arg PYTHON_VERSION=${PYTHON_VERSION} \
@@ -95,33 +99,95 @@ for PAIR in "${VERSION_PAIRS[@]}"; do
             echo "   (This can happen immediately after push - image may need a moment to propagate)"
         fi
     elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
-        echo "⚠️  Podman multi-arch builds require manual manifest creation"
-        echo "   Building for current architecture only..."
-        if podman build \
+        echo "🔨 Building multi-architecture image with Podman..."
+        # Build for amd64
+        echo "   Building for linux/amd64..."
+        AMD64_TAG="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}-amd64"
+        if ! podman build \
+            --platform linux/amd64 \
             --build-arg PYTHON_VERSION=${PYTHON_VERSION} \
             --build-arg R_VERSION=${R_VERSION} \
             -f docker/Dockerfile.combined \
-            -t ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} \
+            -t ${AMD64_TAG} \
             .; then
-            echo "📤 Pushing ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}..."
-            if podman push ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}; then
-                echo "✅ Python ${PYTHON_VERSION} / R ${R_VERSION} image built and pushed"
-                echo "   Tag: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
-            else
-                echo "❌ Failed to push Python ${PYTHON_VERSION} / R ${R_VERSION}"
-                exit 1
-            fi
-        else
-            echo "❌ Failed to build Python ${PYTHON_VERSION} / R ${R_VERSION}"
-            exit 1
+            echo "❌ Failed to build amd64 image for Python ${PYTHON_VERSION} / R ${R_VERSION}"
+            FAILED_BUILDS+=("python${PYTHON_VERSION}-r${R_VERSION} (amd64 build failed)")
+            continue
         fi
+        
+        # Build for arm64
+        echo "   Building for linux/arm64..."
+        ARM64_TAG="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}-arm64"
+        if ! podman build \
+            --platform linux/arm64 \
+            --build-arg PYTHON_VERSION=${PYTHON_VERSION} \
+            --build-arg R_VERSION=${R_VERSION} \
+            -f docker/Dockerfile.combined \
+            -t ${ARM64_TAG} \
+            .; then
+            echo "❌ Failed to build arm64 image for Python ${PYTHON_VERSION} / R ${R_VERSION}"
+            FAILED_BUILDS+=("python${PYTHON_VERSION}-r${R_VERSION} (arm64 build failed)")
+            continue
+        fi
+        
+        # Push both architecture-specific images
+        echo "📤 Pushing architecture-specific images..."
+        if ! podman push ${AMD64_TAG}; then
+            echo "❌ Failed to push amd64 image"
+            FAILED_BUILDS+=("python${PYTHON_VERSION}-r${R_VERSION} (amd64 push failed)")
+            continue
+        fi
+        if ! podman push ${ARM64_TAG}; then
+            echo "❌ Failed to push arm64 image"
+            FAILED_BUILDS+=("python${PYTHON_VERSION}-r${R_VERSION} (arm64 push failed)")
+            continue
+        fi
+        
+        # Create and push manifest list for multi-arch
+        echo "🔗 Creating multi-architecture manifest..."
+        FINAL_TAG="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+        # Remove existing manifest and image if they exist (required for Podman)
+        # Note: Podman automatically tags images with both architecture-specific and final tags
+        # When building amd64, it tags as both "python3.11-r4.2-amd64" AND "python3.11-r4.2"
+        # We need to remove the final tag (whether it's a manifest or image) before creating a new manifest
+        # This causes brief unavailability, but new manifest is created immediately
+        podman manifest rm ${FINAL_TAG} 2>/dev/null || true
+        podman rmi ${FINAL_TAG} 2>/dev/null || true
+        # Create new manifest
+        if ! podman manifest create ${FINAL_TAG} ${AMD64_TAG} ${ARM64_TAG}; then
+            echo "❌ Failed to create manifest for ${FINAL_TAG}"
+            FAILED_BUILDS+=("python${PYTHON_VERSION}-r${R_VERSION} (manifest create failed)")
+            continue
+        fi
+        
+        if ! podman manifest push ${FINAL_TAG} docker://${FINAL_TAG}; then
+            echo "❌ Failed to push multi-architecture manifest for Python ${PYTHON_VERSION} / R ${R_VERSION}"
+            FAILED_BUILDS+=("python${PYTHON_VERSION}-r${R_VERSION} (manifest push failed)")
+            continue
+        fi
+        
+        echo "✅ Python ${PYTHON_VERSION} / R ${R_VERSION} multi-architecture image built and pushed"
+        echo "   Tag: ${FINAL_TAG} (amd64 + arm64)"
     fi
 done
+
+# Report any failed builds
+if [ ${#FAILED_BUILDS[@]} -gt 0 ]; then
+    echo ""
+    echo "⚠️  Some builds failed:"
+    for failed in "${FAILED_BUILDS[@]}"; do
+        echo "   - $failed"
+    done
+    echo ""
+    echo "Continuing with remaining builds..."
+fi
 
 # Create latest tag (Python 3.11 / R 4.3)
 echo ""
 echo "🏷️  Creating latest tag (Python 3.11 / R 4.3)..."
 if [ "$CONTAINER_RUNTIME" = "docker" ]; then
+    # Enable BuildKit for cache mount support
+    export DOCKER_BUILDKIT=1
     docker buildx build \
         --platform linux/amd64,linux/arm64 \
         --build-arg PYTHON_VERSION=3.11 \
@@ -138,24 +204,69 @@ if [ "$CONTAINER_RUNTIME" = "docker" ]; then
         echo "⚠️  Warning: latest tag may not be accessible yet"
     fi
 elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
-    if podman build \
+    echo "🔨 Building multi-architecture latest tag with Podman..."
+    # Build for amd64
+    echo "   Building for linux/amd64..."
+    AMD64_TAG="${REGISTRY}/${IMAGE_NAME}:latest-amd64"
+    if ! podman build \
+        --platform linux/amd64 \
         --build-arg PYTHON_VERSION=3.11 \
         --build-arg R_VERSION=4.3 \
         -f docker/Dockerfile.combined \
-        -t ${REGISTRY}/${IMAGE_NAME}:latest \
+        -t ${AMD64_TAG} \
         .; then
-        echo "📤 Pushing ${REGISTRY}/${IMAGE_NAME}:latest..."
-        if podman push ${REGISTRY}/${IMAGE_NAME}:latest; then
-            echo "✅ Published: ${REGISTRY}/${IMAGE_NAME}:latest"
-            echo "   Tag: ${REGISTRY}/${IMAGE_NAME}:latest (Python 3.11 / R 4.3)"
-        else
-            echo "❌ Failed to push latest tag"
-            exit 1
-        fi
-    else
-        echo "❌ Failed to build latest tag"
+        echo "❌ Failed to build amd64 image for latest tag"
         exit 1
     fi
+    
+    # Build for arm64
+    echo "   Building for linux/arm64..."
+    ARM64_TAG="${REGISTRY}/${IMAGE_NAME}:latest-arm64"
+    if ! podman build \
+        --platform linux/arm64 \
+        --build-arg PYTHON_VERSION=3.11 \
+        --build-arg R_VERSION=4.3 \
+        -f docker/Dockerfile.combined \
+        -t ${ARM64_TAG} \
+        .; then
+        echo "❌ Failed to build arm64 image for latest tag"
+        exit 1
+    fi
+    
+    # Push both architecture-specific images
+    echo "📤 Pushing architecture-specific images..."
+    if ! podman push ${AMD64_TAG}; then
+        echo "❌ Failed to push amd64 image"
+        exit 1
+    fi
+    if ! podman push ${ARM64_TAG}; then
+        echo "❌ Failed to push arm64 image"
+        exit 1
+    fi
+    
+    # Create and push manifest list for multi-arch
+    echo "🔗 Creating multi-architecture manifest..."
+    FINAL_TAG="${REGISTRY}/${IMAGE_NAME}:latest"
+    # Remove existing manifest and image if they exist (required for Podman)
+    # Note: Podman automatically tags images with both architecture-specific and final tags
+    # When building amd64, it tags as both "latest-amd64" AND "latest"
+    # We need to remove the final tag (whether it's a manifest or image) before creating a new manifest
+    # This causes brief unavailability, but new manifest is created immediately
+    podman manifest rm ${FINAL_TAG} 2>/dev/null || true
+    podman rmi ${FINAL_TAG} 2>/dev/null || true
+    # Create new manifest
+    if ! podman manifest create ${FINAL_TAG} ${AMD64_TAG} ${ARM64_TAG}; then
+        echo "❌ Failed to create manifest for ${FINAL_TAG}"
+        exit 1
+    fi
+    
+    if ! podman manifest push ${FINAL_TAG} docker://${FINAL_TAG}; then
+        echo "❌ Failed to push multi-architecture manifest"
+        exit 1
+    fi
+    
+    echo "✅ Published: ${FINAL_TAG}"
+    echo "   Tag: ${FINAL_TAG} (Python 3.11 / R 4.3, amd64 + arm64)"
 fi
 
 echo ""
