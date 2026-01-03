@@ -1381,6 +1381,7 @@ def update():
             console.print("   • Enhanced container runtime support")
             console.print("   • Improved HPC cluster compatibility")
             console.print("   • Better error handling")
+            console.print("   • Removal of dependency on conda")
 
         except RuntimeError as e:
             progress.remove_task(task)

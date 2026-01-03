@@ -1005,7 +1005,13 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
     if [ "$CONTAINER_RUNTIME" = "apptainer" ] || [ "$CONTAINER_RUNTIME" = "singularity" ]; then
         PULL_IMAGE_URI="docker://$IMAGE_NAME"
     elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
-        PULL_IMAGE_URI="$IMAGE_NAME"  # Already has docker.io prefix
+        # Podman requires fully qualified image names (docker.io/ prefix)
+        # Normalize image name if it doesn't already have the prefix
+        if [[ "$IMAGE_NAME" != docker.io/* ]] && [[ "$IMAGE_NAME" == */* ]]; then
+            PULL_IMAGE_URI="docker.io/$IMAGE_NAME"
+        else
+            PULL_IMAGE_URI="$IMAGE_NAME"
+        fi
     else
         PULL_IMAGE_URI="$IMAGE_NAME"
     fi
@@ -2040,6 +2046,7 @@ if command -v venvoy &> /dev/null; then
         echo "   🆕 New features available:"
         echo "      • Improved container runtime selection and handling"
         echo "      • New export wheelhouse option for full offline support of multi-architecture image archive independent of repository availability"
+        echo "      • Removal of dependency on conda"
     fi
     echo "   1. Run: venvoy init --python-version <python-version> --name <environment-name>"
     echo "   2. Run: venvoy run --name <environment-name>"
@@ -2062,6 +2069,7 @@ else
         echo "   🆕 New features available:"
         echo "      • Improved container runtime selection and handling"
         echo "      • New export wheelhouse option for full offline support of multi-architecture image archive independent of repository availability"
+        echo "      • Removal of dependency on conda"
     fi
     echo "   1. Run: venvoy init --python-version <python-version> --name <environment-name>"
     echo "   2. Run: venvoy run --name <environment-name>"

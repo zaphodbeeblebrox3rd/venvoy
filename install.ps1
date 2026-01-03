@@ -277,6 +277,7 @@ try {
         Write-Host "   🆕 New features available:" -ForegroundColor Cyan
         Write-Host "      • Improved container runtime selection and handling" -ForegroundColor White
         Write-Host "      • New export wheelhouse option for full offline support of multi-architecture image archive independent of repository availability" -ForegroundColor White
+        Write-Host "      • Removal of dependency on conda" -ForegroundColor White
     }
     Write-Host "   1. Run: venvoy init" -ForegroundColor White
     Write-Host "   2. Start coding with AI-powered environments!" -ForegroundColor White
@@ -286,6 +287,7 @@ try {
         Write-Host "   🆕 New features available:" -ForegroundColor Cyan
         Write-Host "      • Improved container runtime selection and handling" -ForegroundColor White
         Write-Host "      • New export wheelhouse option for full offline support of multi-architecture image archive independent of repository availability" -ForegroundColor White
+        Write-Host "      • Removal of dependency on conda" -ForegroundColor White
     }
     Write-Host "   2. Run: venvoy init" -ForegroundColor White
     Write-Host "   3. Start coding with AI-powered environments!" -ForegroundColor White

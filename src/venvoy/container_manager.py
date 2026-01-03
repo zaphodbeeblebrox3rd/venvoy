@@ -411,6 +411,8 @@ class ContainerManager:
         detach: bool = False,
     ):
         """Run a container with the specified parameters"""
+        # Normalize image name for the current runtime
+        image = self._normalize_image_name(image)
         try:
             if self.runtime == ContainerRuntime.DOCKER:
                 # For Docker, we need to return a container object
@@ -419,8 +421,10 @@ class ContainerManager:
                     import docker
 
                     client = docker.from_env()
+                    # Normalize image name (in case docker is actually Podman wrapper)
+                    normalized_image = self._normalize_image_name(image)
                     container = client.containers.run(
-                        image=image,
+                        image=normalized_image,
                         name=name,
                         command=command,
                         volumes=volumes,
