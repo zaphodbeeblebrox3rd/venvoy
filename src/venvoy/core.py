@@ -291,8 +291,10 @@ class VenvoyEnvironment:
                     docker_path = shutil.which("docker")
                     if not docker_path:
                         raise FileNotFoundError("docker not found")
+                    # Normalize image name as safety measure (in case docker is actually Podman wrapper)
+                    normalized_name = self.container_manager._normalize_image_name(image_name)
                     result = subprocess.run(
-                        [docker_path, "image", "inspect", image_name],
+                        [docker_path, "image", "inspect", normalized_name],
                         capture_output=True,
                         check=True,
                     )
@@ -312,11 +314,8 @@ class VenvoyEnvironment:
                     podman_path = shutil.which("podman")
                     if not podman_path:
                         raise FileNotFoundError("podman not found")
-                    # Podman requires fully qualified image names (docker.io/ prefix)
-                    if not image_name.startswith("docker.io/") and "/" in image_name:
-                        podman_image_name = f"docker.io/{image_name}"
-                    else:
-                        podman_image_name = image_name
+                    # Use ContainerManager's normalization method for consistency
+                    podman_image_name = self.container_manager._normalize_image_name(image_name)
                     result = subprocess.run(
                         [podman_path, "image", "inspect", podman_image_name],
                         capture_output=True,

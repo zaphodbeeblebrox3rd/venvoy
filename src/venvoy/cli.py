@@ -1365,29 +1365,11 @@ def update():
 
             console.print(f"🔧 Using {runtime} to update bootstrap image...")
 
-            # Format image URI based on container runtime
-            if runtime in ["apptainer", "singularity"]:
-                image_uri = "docker://zaphodbeeblebrox3rd/venvoy:bootstrap"
-                # For Apptainer/Singularity, use --force to overwrite existing SIF files
-                subprocess.run(
-                    [runtime, "pull", "--force", image_uri],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-            else:
-                image_uri = "zaphodbeeblebrox3rd/venvoy:bootstrap"
-                result = subprocess.run(
-                    [runtime, "pull", image_uri],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                # Validate that the pull was successful
-                # check=True will raise on failure, but we validate output for debugging
-                if result.stderr and "error" in result.stderr.lower():
-                    # Log warning but don't fail if check=True passed
-                    print(f"⚠️  Warning during image pull: {result.stderr}")
+            # Use ContainerManager's pull_image method which handles normalization
+            # For Podman, it will automatically add docker.io/ prefix
+            bootstrap_image = "zaphodbeeblebrox3rd/venvoy:bootstrap"
+            if not container_manager.pull_image(bootstrap_image):
+                raise RuntimeError("Failed to pull bootstrap image")
 
             progress.remove_task(task)
 

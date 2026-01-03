@@ -199,11 +199,41 @@ class ContainerManager:
                 result = subprocess.run(
                     [docker_path, "--version"], capture_output=True, check=True
                 )
-                # Also check if Docker daemon is accessible
-                daemon_check = subprocess.run(
-                    [docker_path, "info"], capture_output=True, check=True
-                )
-                return result.returncode == 0 and daemon_check.returncode == 0
+                if result.returncode != 0:
+                    return False
+                # Check if docker is actually Podman (Podman can masquerade as docker)
+                # Check if docker buildx exists and is actually Docker's buildx
+                try:
+                    buildx_result = subprocess.run(
+                        [docker_path, "buildx", "version"],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    buildx_output = buildx_result.stdout + buildx_result.stderr
+                    # Docker's buildx contains "github.com/docker/buildx" or "buildx v"
+                    # Podman's buildx wrapper returns "buildah" or different output
+                    if "github.com/docker/buildx" in buildx_output or "buildx v" in buildx_output:
+                        # It's actually Docker
+                        # Also check if Docker daemon is accessible
+                        daemon_check = subprocess.run(
+                            [docker_path, "info"], capture_output=True, check=True
+                        )
+                        return daemon_check.returncode == 0
+                    else:
+                        # docker exists but buildx suggests it's Podman wrapper
+                        # Don't return Docker as available if it's actually Podman
+                        return False
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    # buildx not available - could be old Docker or Podman
+                    # Check if podman also exists - if so, prefer podman detection
+                    if shutil.which("podman"):
+                        return False  # Prefer podman if both exist and buildx check fails
+                    # No podman, assume it's Docker (even if old)
+                    daemon_check = subprocess.run(
+                        [docker_path, "info"], capture_output=True, check=True
+                    )
+                    return daemon_check.returncode == 0
             elif runtime == ContainerRuntime.APPTAINER:
                 apptainer_path = shutil.which("apptainer")
                 if not apptainer_path:
@@ -290,14 +320,54 @@ class ContainerManager:
                 "is_hpc": self._is_hpc_environment(),
             }
 
+    def _normalize_image_name(self, image_name: str) -> str:
+        """
+        Normalize image name for the current runtime.
+        Podman requires fully qualified image names (docker.io/ prefix).
+        Also handles cases where docker command is actually a Podman wrapper.
+        """
+        # Check if we need to normalize (for Podman or docker that's actually Podman)
+        needs_normalization = False
+        if self.runtime == ContainerRuntime.PODMAN:
+            needs_normalization = True
+        elif self.runtime == ContainerRuntime.DOCKER:
+            # Check if docker is actually Podman wrapper
+            docker_path = shutil.which("docker")
+            if docker_path:
+                try:
+                    # Check if docker buildx is actually Docker's buildx
+                    buildx_result = subprocess.run(
+                        [docker_path, "buildx", "version"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    buildx_output = buildx_result.stdout + buildx_result.stderr
+                    # If buildx output doesn't contain Docker indicators, it might be Podman
+                    if "github.com/docker/buildx" not in buildx_output and "buildx v" not in buildx_output:
+                        # docker might be Podman wrapper, normalize to be safe
+                        needs_normalization = True
+                except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+                    # buildx check failed, check if podman exists as fallback indicator
+                    if shutil.which("podman"):
+                        needs_normalization = True
+        
+        if needs_normalization:
+            # Podman requires fully qualified image names (docker.io/ prefix)
+            # Only add prefix if it's not already there and the image has a registry path
+            if not image_name.startswith("docker.io/") and "/" in image_name:
+                return f"docker.io/{image_name}"
+        return image_name
+
     def pull_image(self, image_name: str) -> bool:
         """Pull a container image"""
         try:
+            normalized_name = self._normalize_image_name(image_name)
             if self.runtime == ContainerRuntime.DOCKER:
                 docker_path = shutil.which("docker")
                 if not docker_path:
                     raise FileNotFoundError("docker not found in PATH")
-                subprocess.run([docker_path, "pull", image_name], check=True)
+                subprocess.run([docker_path, "pull", normalized_name], check=True)
             elif self.runtime == ContainerRuntime.APPTAINER:
                 apptainer_path = shutil.which("apptainer")
                 if not apptainer_path:
@@ -306,7 +376,7 @@ class ContainerManager:
                 sif_name = image_name.replace("/", "-").replace(":", "-") + ".si"
                 sif_path = self.sif_dir / sif_name
                 subprocess.run(
-                    [apptainer_path, "pull", str(sif_path), f"docker://{image_name}"],
+                    [apptainer_path, "pull", str(sif_path), f"docker://{normalized_name}"],
                     check=True,
                 )
             elif self.runtime == ContainerRuntime.SINGULARITY:
@@ -317,19 +387,14 @@ class ContainerManager:
                 sif_name = image_name.replace("/", "-").replace(":", "-") + ".si"
                 sif_path = self.sif_dir / sif_name
                 subprocess.run(
-                    [singularity_path, "pull", str(sif_path), f"docker://{image_name}"],
+                    [singularity_path, "pull", str(sif_path), f"docker://{normalized_name}"],
                     check=True,
                 )
             elif self.runtime == ContainerRuntime.PODMAN:
                 podman_path = shutil.which("podman")
                 if not podman_path:
                     raise FileNotFoundError("podman not found in PATH")
-                # Podman requires fully qualified image names (docker.io/ prefix)
-                if not image_name.startswith("docker.io/") and "/" in image_name:
-                    podman_image_name = f"docker.io/{image_name}"
-                else:
-                    podman_image_name = image_name
-                subprocess.run([podman_path, "pull", podman_image_name], check=True)
+                subprocess.run([podman_path, "pull", normalized_name], check=True)
             return True
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             print(f"Failed to pull image {image_name}: {e}")
