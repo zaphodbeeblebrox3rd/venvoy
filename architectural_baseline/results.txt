@@ -1,0 +1,191 @@
+================================================================================
+  Architectural Baseline Test Suite
+  Testing computations prone to architectural differences
+================================================================================
+
+================================================================================
+  System Information
+================================================================================
+Platform                                : Linux-6.14.0-37-generic-x86_64-with-glibc2.39
+Architecture                            : x86_64
+Processor                               : x86_64
+Python version                          : 3.12.3
+NumPy version                           : 2.4.0
+
+NumPy Configuration:
+Build Dependencies:
+  blas:
+    detection method: pkgconfig
+    found: true
+    include directory: /opt/_internal/cpython-3.12.12/lib/python3.12/site-packages/scipy_openblas64/include
+    lib directory: /opt/_internal/cpython-3.12.12/lib/python3.12/site-packages/scipy_openblas64/lib
+    name: scipy-openblas
+    openblas configuration: OpenBLAS 0.3.30  USE64BITINT DYNAMIC_ARCH NO_AFFINITY
+      Haswell MAX_THREADS=64
+    pc file directory: /project/.openblas
+    version: 0.3.30
+  lapack:
+    detection method: pkgconfig
+    found: true
+    include directory: /opt/_internal/cpython-3.12.12/lib/python3.12/site-packages/scipy_openblas64/include
+    lib directory: /opt/_internal/cpython-3.12.12/lib/python3.12/site-packages/scipy_openblas64/lib
+    name: scipy-openblas
+    openblas configuration: OpenBLAS 0.3.30  USE64BITINT DYNAMIC_ARCH NO_AFFINITY
+      Haswell MAX_THREADS=64
+    pc file directory: /project/.openblas
+    version: 0.3.30
+Compilers:
+  c:
+    commands: cc
+    linker: ld.bfd
+    name: gcc
+    version: 14.2.1
+  c++:
+    commands: c++
+    linker: ld.bfd
+    name: gcc
+    version: 14.2.1
+  cython:
+    commands: cython
+    linker: cython
+    name: cython
+    version: 3.2.3
+Machine Information:
+  build:
+    cpu: x86_64
+    endian: little
+    family: x86_64
+    system: linux
+  host:
+    cpu: x86_64
+    endian: little
+    family: x86_64
+    system: linux
+Python Information:
+  path: /tmp/build-env-2_kfoza7/bin/python
+  version: '3.12'
+SIMD Extensions:
+  baseline:
+  - X86_V2
+  found:
+  - X86_V3
+  not found:
+  - X86_V4
+  - AVX512_ICL
+  - AVX512_SPR
+
+
+BLAS Information:
+
+================================================================================
+  Test 1: BLAS Matrix Multiplication
+================================================================================
+A @ B [0, 0]                            : 24.89784603516302752
+A @ B [50, 50]                          : 25.60307696244057141
+A @ B [99, 99]                          : 24.07850521306505698
+Sum of all elements                     : 249296.79286474021500908
+Frobenius norm                          : 2501.49073426720133284
+
+================================================================================
+  Test 2: LAPACK Eigenvalue Decomposition
+================================================================================
+First eigenvalue (smallest)             : -2.70075594813104614
+Last eigenvalue (largest)               : 25.01188289844189683
+Sum of eigenvalues                      : 24.15182571246187138
+First eigenvector [0]                   : 0.12950928957529795
+
+================================================================================
+  Test 3: LAPACK SVD Decomposition
+================================================================================
+First singular value                    : 35.28366882786956182
+Last singular value                     : 0.92655016763685638
+Sum of singular values                  : 166.73197793379145537
+U[0, 0]                                 : -0.08953903962457774
+Vt[0, 0]                                : -0.13068153046259662
+
+================================================================================
+  Test 4: Matrix Inverse
+================================================================================
+A_inv[0, 0]                             : 0.09925204654239382
+A_inv[25, 25]                           : 0.10259911385446174
+A_inv[49, 49]                           : 0.10039267346828301
+Trace of A_inv                          : 4.94268171166638215
+
+================================================================================
+  Test 5: Floating-Point Accumulation
+================================================================================
+Sum of 1e6 * 0.1                        : 100000.00000133288267534
+Difference from 100000.0                : 0.00000133288267534
+Harmonic series sum (1e5 terms)         : 12.09014612986342740
+Alternating series sum (1e5 terms)      : 0.69314218058494526
+
+================================================================================
+  Test 6: Kahan Summation vs Regular Summation
+================================================================================
+Regular sum                             : 0.00000499488250074
+Kahan sum                               : 0.00000499488250074
+Difference                              : 0.00000000000000000
+
+================================================================================
+  Test 7: Trigonometric Functions with Large Inputs
+================================================================================
+sin(1e15)                               : 0.85827279317023586
+cos(1e15)                               : -0.51319373778697031
+tan(1e15)                               : -1.67241478212758299
+sin([1e10, 1e12, 1e14, 1e15])           : [-0.48750603 -0.6112387  -0.20940831  0.85827279]
+
+================================================================================
+  Test 8: Floating-Point Edge Cases
+================================================================================
+0.1 + 0.2                               : 0.30000000000000004
+0.3                                     : 0.29999999999999999
+0.1 + 0.2 == 0.3                        : False
+Difference                              : 0.00000000000000006
+Accumulated x (1000 iterations)         : 1.00000000000000000
+
+================================================================================
+  Test 9: Large Matrix Operations
+================================================================================
+Large A @ B [0, 0]                      : 124.00074140787182841
+Large A @ B [250, 250]                  : 132.62027482686897883
+Large A @ B [499, 499]                  : 130.92946285073469426
+Large matrix first singular value       : 250.35826031865695995
+Large matrix last singular value        : 0.01208948160972510
+Large matrix inverse [0, 0]             : 0.10143002800588005
+
+================================================================================
+  Test 10: Numerical Integration
+================================================================================
+Trapezoidal integral of sin(x)*exp(-x)  : 0.50003139532099350
+Simpson integral of sin(x)*exp(-x)      : 0.50003139615435477
+
+================================================================================
+  Test 11: Linear System Solver
+================================================================================
+Solution x[0]                           : -0.01458183885579455
+Solution x[50]                          : 0.04456160348335148
+Solution x[99]                          : -0.02202110802227930
+Residual norm                           : 0.00000000000000175
+
+================================================================================
+  Test 12: Cholesky Decomposition
+================================================================================
+Cholesky L[0, 0]                        : 3.75920578208035305
+Cholesky L[25, 25]                      : 1.47595262729423760
+Cholesky L[49, 49]                      : 0.96951028268420814
+Reconstruction error                    : 0.00000000000007690
+
+================================================================================
+  Test Suite Complete
+================================================================================
+
+To compare results across architectures:
+  1. Run this script on each architecture
+  2. Save output to files (e.g., results_x86_64.txt, results_arm64.txt)
+  3. Compare using: diff results_x86_64.txt results_arm64.txt
+
+Expected differences:
+  - Most differences in last 2-4 decimal places
+  - BLAS/LAPACK operations most likely to differ
+  - Differences typically < 1e-15 relative error
+================================================================================
