@@ -395,6 +395,17 @@ fi
 INSTALL_DIR="$HOME/.venvoy/bin"
 mkdir -p "$INSTALL_DIR"
 
+# Ensure host home mount exists and is writable for container (/host-home)
+HOST_HOME_DIR="$HOME/.venvoy/home"
+if [ ! -d "$HOST_HOME_DIR" ]; then
+    mkdir -p "$HOST_HOME_DIR"
+fi
+# If owned by root or not writable, fix ownership to current user
+if [ ! -w "$HOST_HOME_DIR" ] || [ "$(stat -c %u "$HOST_HOME_DIR" 2>/dev/null || echo 0)" = "0" ]; then
+    chown "$(id -u)":"$(id -g)" "$HOST_HOME_DIR" 2>/dev/null || true
+fi
+chmod 755 "$HOST_HOME_DIR" 2>/dev/null || true
+
 # Check if venvoy is already installed
 EXISTING_INSTALL=false
 if [ -f "$INSTALL_DIR/venvoy" ]; then
