@@ -1,8 +1,10 @@
 # Environment vars, creds
 *.env
 
-# IDE
+# IDE, DEV
 .cursor
+.results.txt
+*results.txt
 
 # User-generated directory during use of venvoy
 .venvoy/

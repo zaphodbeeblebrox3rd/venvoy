@@ -289,7 +289,8 @@ def test_10_numerical_integration():
     
     # Trapezoidal integration
     dx = x[1] - x[0]
-    integral = np.trapz(y, x)
+    # Use trapezoid (NumPy 2.0+) with fallback to trapz (NumPy < 2.0)
+    integral = np.trapezoid(y, x) if hasattr(np, 'trapezoid') else np.trapz(y, x)
     print_result("Trapezoidal integral of sin(x)*exp(-x)", integral)
     
     # Simpson's rule (using scipy if available, otherwise approximate)
