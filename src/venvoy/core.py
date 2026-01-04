@@ -2859,21 +2859,76 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
         import subprocess
         import time
 
+        # Set up environment variables and working directory (matching install.sh behavior)
+        import os
+        environment_vars = {
+            "VENVOY_HOST_RUNTIME": str(self.container_manager.runtime.value) if hasattr(self.container_manager.runtime, 'value') else str(self.container_manager.runtime),
+            "VENVOY_HOST_HOME": "/host-home",
+        }
+        
         # First, start the container in detached mode
+        # Note: volumes are passed as nested dicts - ContainerManager handles conversion internally
         try:
             container = self.container_manager.run_container(
                 image=image_tag,
                 name=f"{self.name}-runtime",
                 command="sleep infinity",  # Keep container running
-                volumes=volumes,
+                volumes=volumes,  # Pass nested format - ContainerManager handles conversion
+                environment=environment_vars,
+                working_dir="/home/venvoy",
                 detach=True,
             )
 
             print("🚀 Container started successfully!")
+            
+            # Verify container is actually running before proceeding
+            import subprocess
+            runtime = self.container_manager.runtime
+            if runtime == ContainerRuntime.PODMAN:
+                podman_path = shutil.which("podman")
+                if podman_path:
+                    # Wait a moment for container to fully start
+                    time.sleep(2)
+                    # Check if container is running
+                    check_cmd = [podman_path, "ps", "--filter", f"name={container.name}", "--format", "{{.Status}}"]
+                    check_result = subprocess.run(check_cmd, capture_output=True, text=True)
+                    if check_result.returncode == 0 and check_result.stdout.strip():
+                        status = check_result.stdout.strip()
+                        if "Up" not in status and "running" not in status.lower():
+                            raise RuntimeError(f"Container {container.name} is not running. Status: {status}")
+                    else:
+                        # Container not found in ps output - might have exited
+                        # Check all containers including stopped ones
+                        check_cmd_all = [podman_path, "ps", "-a", "--filter", f"name={container.name}", "--format", "{{.Status}}"]
+                        check_result_all = subprocess.run(check_cmd_all, capture_output=True, text=True)
+                        if check_result_all.returncode == 0 and check_result_all.stdout.strip():
+                            status = check_result_all.stdout.strip()
+                            raise RuntimeError(f"Container {container.name} exited. Status: {status}")
+                        else:
+                            raise RuntimeError(f"Container {container.name} not found")
+            elif runtime == ContainerRuntime.DOCKER:
+                docker_path = shutil.which("docker")
+                if docker_path:
+                    # Wait a moment for container to fully start
+                    time.sleep(2)
+                    # Check if container is running
+                    check_cmd = [docker_path, "ps", "--filter", f"name={container.name}", "--format", "{{.Status}}"]
+                    check_result = subprocess.run(check_cmd, capture_output=True, text=True)
+                    if check_result.returncode == 0 and check_result.stdout.strip():
+                        status = check_result.stdout.strip()
+                        if "Up" not in status and "running" not in status.lower():
+                            raise RuntimeError(f"Container {container.name} is not running. Status: {status}")
+                    else:
+                        # Container not found in ps output - might have exited
+                        check_cmd_all = [docker_path, "ps", "-a", "--filter", f"name={container.name}", "--format", "{{.Status}}"]
+                        check_result_all = subprocess.run(check_cmd_all, capture_output=True, text=True)
+                        if check_result_all.returncode == 0 and check_result_all.stdout.strip():
+                            status = check_result_all.stdout.strip()
+                            raise RuntimeError(f"Container {container.name} exited. Status: {status}")
+                        else:
+                            raise RuntimeError(f"Container {container.name} not found")
+            
             print("🧠 Launching Cursor with AI assistance...")
-
-            # Give container a moment to start
-            time.sleep(2)
 
             # Launch Cursor with remote containers extension
             cursor_command = [
@@ -2919,13 +2974,23 @@ https://github.com/zaphodbeeblebrox3rd/venvoy
         import subprocess
         import time
 
+        # Set up environment variables and working directory (matching install.sh behavior)
+        import os
+        environment_vars = {
+            "VENVOY_HOST_RUNTIME": str(self.container_manager.runtime.value) if hasattr(self.container_manager.runtime, 'value') else str(self.container_manager.runtime),
+            "VENVOY_HOST_HOME": "/host-home",
+        }
+
         # First, start the container in detached mode
+        # Note: volumes are passed as nested dicts - ContainerManager handles conversion internally
         try:
             container = self.container_manager.run_container(
                 image=image_tag,
                 name=f"{self.name}-runtime",
                 command="sleep infinity",  # Keep container running
-                volumes=volumes,
+                volumes=volumes,  # Pass nested format - ContainerManager handles conversion
+                environment=environment_vars,
+                working_dir="/home/venvoy",
                 detach=True,
             )
 

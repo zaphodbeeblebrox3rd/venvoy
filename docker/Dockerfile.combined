@@ -35,6 +35,8 @@ ENV VENVOY_VERSION=0.1.0
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y \
+    # System utilities
+    sudo \
     # Build tools
     build-essential \
     gfortran \
@@ -150,7 +152,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ARG USER_ID=1000
 ARG GROUP_ID=1000
 RUN groupadd -g $GROUP_ID venvoy && \
-    useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash venvoy
+    useradd -u $USER_ID -g $GROUP_ID -m -s /bin/bash venvoy && \
+    # Add venvoy user to sudo group and configure passwordless sudo
+    usermod -aG sudo venvoy && \
+    echo "venvoy ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/venvoy && \
+    chmod 0440 /etc/sudoers.d/venvoy
 
 # Set up workspace
 WORKDIR /workspace

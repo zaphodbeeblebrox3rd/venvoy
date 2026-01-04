@@ -38,16 +38,28 @@ if command -v apptainer &> /dev/null; then
 elif command -v singularity &> /dev/null; then
     CONTAINER_RUNTIME="singularity"
 elif command -v docker &> /dev/null; then
-    # Check if Docker is accessible (not just installed)
-    if docker info &> /dev/null; then
-        CONTAINER_RUNTIME="docker"
-    elif command -v podman &> /dev/null; then
-        # Docker is installed but not accessible, use Podman instead
-        CONTAINER_RUNTIME="podman"
-        echo "⚠️  Docker found but not accessible, using Podman instead"
+    # Detect if docker is actually Podman wrapper
+    DOCKER_VERSION_OUT=$(docker --version 2>/dev/null || true)
+    if echo "$DOCKER_VERSION_OUT" | grep -qi "podman"; then
+        # docker command is a Podman shim; prefer Podman runtime
+        if command -v podman &> /dev/null; then
+            CONTAINER_RUNTIME="podman"
+            echo "⚠️  Detected docker as Podman wrapper, using Podman runtime"
+        else
+            CONTAINER_RUNTIME="docker"
+        fi
     else
-        # Docker is installed but not accessible, and Podman not available
-        CONTAINER_RUNTIME="docker"
+        # Check if Docker is accessible (not just installed)
+        if docker info &> /dev/null; then
+            CONTAINER_RUNTIME="docker"
+        elif command -v podman &> /dev/null; then
+            # Docker is installed but not accessible, use Podman instead
+            CONTAINER_RUNTIME="podman"
+            echo "⚠️  Docker found but not accessible, using Podman instead"
+        else
+            # Docker is installed but not accessible, and Podman not available
+            CONTAINER_RUNTIME="docker"
+        fi
     fi
 elif command -v podman &> /dev/null; then
     CONTAINER_RUNTIME="podman"
