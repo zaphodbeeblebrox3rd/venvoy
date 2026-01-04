@@ -1094,7 +1094,9 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
         # Start container in detached mode
         if [ "$CONTAINER_RUNTIME" = "docker" ]; then
             test_container_access "$CONTAINER_RUNTIME"
+            # Run directly as host UID/GID to avoid su prompts; fix-host-home is unnecessary when using host IDs
             docker run -d --name "$CONTAINER_NAME" \
+                --user "$(id -u):$(id -g)" \
                 -v "$PWD:/workspace" \
                 -v "$HOME/.venvoy/home:/host-home" \
                 -w /home/venvoy \
@@ -1103,17 +1105,7 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
                 -e HOST_UID="$HOST_UID" \
                 -e HOST_GID="$HOST_GID" \
                 $RUN_MOUNTS \
-                "$IMAGE_NAME" bash -c "
-                    # Fix /host-home permissions if owned by root
-                    /usr/local/bin/fix-host-home.sh
-                    # Create user with host UID/GID if it doesn't exist
-                    if ! id -u $HOST_UID >/dev/null 2>&1; then
-                        groupadd -g $HOST_GID venvoy 2>/dev/null || true
-                        useradd -u $HOST_UID -g $HOST_GID -m -s /bin/bash venvoy 2>/dev/null || true
-                    fi
-                    # Drop to user and sleep
-                    su - venvoy -c 'sleep infinity'
-                " || {
+                "$IMAGE_NAME" sleep infinity || {
                     echo "❌ Failed to start container"
                     exit 1
                 }
@@ -1572,9 +1564,9 @@ EOFLAUNCHER
     # Start in /home/venvoy (container's home) - users can cd to /workspace for their project
     if [ "$CONTAINER_RUNTIME" = "docker" ]; then
         test_container_access "$CONTAINER_RUNTIME"
-        # Docker: Run as root first to fix /host-home permissions, then drop to user
-        # Create user with host UID/GID if it doesn't exist, then fix permissions
+        # Run directly as host UID/GID to avoid su/pam issues
         docker run --rm -it \
+            --user "$(id -u):$(id -g)" \
             -v "$PWD:/workspace" \
             -v "$HOME/.venvoy/home:/host-home" \
             -w /home/venvoy \
@@ -1583,17 +1575,7 @@ EOFLAUNCHER
             -e HOST_UID="$HOST_UID" \
             -e HOST_GID="$HOST_GID" \
             $RUN_MOUNTS \
-            "$IMAGE_NAME" bash -c "
-                # Fix /host-home permissions if owned by root
-                /usr/local/bin/fix-host-home.sh
-                # Create user with host UID/GID if it doesn't exist
-                if ! id -u $HOST_UID >/dev/null 2>&1; then
-                    groupadd -g $HOST_GID venvoy 2>/dev/null || true
-                    useradd -u $HOST_UID -g $HOST_GID -m -s /bin/bash venvoy 2>/dev/null || true
-                fi
-                # Drop to user and run command
-                exec su - venvoy -c 'cd /home/venvoy && ${RUN_COMMAND:-bash}'
-            " || {
+            "$IMAGE_NAME" ${RUN_COMMAND:-bash} || {
                 echo ""
                 echo "❌ Failed to run Docker container"
                 echo "💡 Check Docker permissions or try: sudo usermod -aG docker \$USER"
