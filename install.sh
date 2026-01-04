@@ -400,10 +400,8 @@ HOST_HOME_DIR="$HOME/.venvoy/home"
 if [ ! -d "$HOST_HOME_DIR" ]; then
     mkdir -p "$HOST_HOME_DIR"
 fi
-# If owned by root or not writable, fix ownership to current user
-if [ ! -w "$HOST_HOME_DIR" ] || [ "$(stat -c %u "$HOST_HOME_DIR" 2>/dev/null || echo 0)" = "0" ]; then
-    chown "$(id -u)":"$(id -g)" "$HOST_HOME_DIR" 2>/dev/null || true
-fi
+# Always ensure ownership and perms so the container can write
+chown -R "$(id -u)":"$(id -g)" "$HOST_HOME_DIR" 2>/dev/null || true
 chmod 755 "$HOST_HOME_DIR" 2>/dev/null || true
 
 # Check if venvoy is already installed
@@ -1604,8 +1602,7 @@ EOFLAUNCHER
             $RUN_MOUNTS \
             "$IMAGE_URI" ${RUN_COMMAND:-bash}
     elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
-        # Podman: Use --userns=keep-id to map host UID/GID automatically for read/write access
-        # Mount host home to /host-home but use container's home as HOME to avoid .bashrc permission issues
+        # Podman: keep-id for host UID/GID, no id-shifting on volumes
         podman run --rm -it \
             --userns=keep-id \
             -v "$PWD:/workspace" \

@@ -62,6 +62,43 @@ class VenvoyEnvironment:
         self.projects_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
+    def _ensure_host_home_writable(host_home_path: str):
+        """
+        Ensure the host home mount point is writable by current user.
+        If the directory is owned by root or not writable, attempt to chown recursively.
+        """
+        try:
+            p = Path(host_home_path)
+            if not p.exists():
+                p.mkdir(parents=True, exist_ok=True)
+            st = p.stat()
+            # Always attempt to align ownership to current user (recursive) to avoid root-owned leftovers
+            try:
+                os.chown(host_home_path, os.getuid(), os.getgid())
+            except PermissionError:
+                pass
+            # Recursively fix child entries if root-owned
+            if st.st_uid == 0 or not os.access(host_home_path, os.W_OK):
+                for root, dirs, files in os.walk(host_home_path):
+                    for d in dirs:
+                        full = Path(root) / d
+                        try:
+                            os.chown(full, os.getuid(), os.getgid())
+                        except PermissionError:
+                            pass
+                    for f in files:
+                        full = Path(root) / f
+                        try:
+                            os.chown(full, os.getuid(), os.getgid())
+                        except PermissionError:
+                            pass
+            p.chmod(0o755)
+        except PermissionError:
+            print(f"⚠️  Warning: Cannot change ownership/permissions for {host_home_path}")
+        except Exception as e:
+            print(f"⚠️  Warning: Unexpected error ensuring host-home writable: {e}")
+
+    @staticmethod
     def _get_combined_image_tag(python_version: str, r_version: str) -> str:
         """
         Map Python and R version pairs to combined image tags.
@@ -727,6 +764,8 @@ CMD ["/bin/bash"]
 
         # Prepare volume mounts
         home_path = self.platform.get_home_mount_path()
+        # Ensure host home mount is writable; if root-owned, fix ownership
+        self._ensure_host_home_writable(home_path)
         volumes = {
             home_path: {"bind": "/host-home", "mode": "rw"},
             str(Path.cwd()): {"bind": "/workspace", "mode": "rw"},
