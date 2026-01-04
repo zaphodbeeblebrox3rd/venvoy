@@ -1148,6 +1148,7 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
                 exit 0
             fi
         elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
+            # Podman: use --userns=keep-id to map host UID to same UID inside container
             podman run -d --name "$CONTAINER_NAME" \
                 --userns=keep-id \
                 -v "$PWD:/workspace" \
@@ -1602,7 +1603,7 @@ EOFLAUNCHER
             $RUN_MOUNTS \
             "$IMAGE_URI" ${RUN_COMMAND:-bash}
     elif [ "$CONTAINER_RUNTIME" = "podman" ]; then
-        # Podman: keep-id for host UID/GID, no id-shifting on volumes
+        # Podman: use --userns=keep-id to map host UID to same UID inside container
         podman run --rm -it \
             --userns=keep-id \
             -v "$PWD:/workspace" \

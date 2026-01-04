@@ -778,8 +778,8 @@ class ContainerManager:
         if detach:
             cmd.append("-d")
 
-        # Podman needs --userns=keep-id for proper user namespace handling
-        # This ensures the container user matches the host user
+        # Use --userns=keep-id to map host UID to same UID inside container
+        # This ensures bind-mounted volumes remain readable/writable
         cmd.append("--userns=keep-id")
 
         if volumes:
