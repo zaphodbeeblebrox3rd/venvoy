@@ -148,6 +148,25 @@ Venvoy automatically detects HPC environments and uses the appropriate container
 - Identifies HPC hostname patterns (login, compute, node, hpc, cluster)
 - Adjusts runtime priority based on environment type
 
+## Choose your setup guide
+
+venvoy is used in several different ways depending on where you run it and
+whether you want the Cursor IDE or a terminal. Pick the guide that matches your
+scenario for a complete, self-contained walkthrough of installation, setup,
+configuration, and execution.
+
+- [Local machine with Cursor](docs/README_LOCAL_CURSOR.md): run venvoy on your
+  own computer and open Cursor directly in the container.
+- [Local machine in the terminal](docs/README_LOCAL_TERMINAL.md): run venvoy on
+  your own computer using an interactive shell only.
+- [HPC cluster with SLURM in the terminal](docs/README_HPC_SLURM_TERMINAL.md):
+  interactive and batch jobs on a SLURM cluster.
+- [HPC cluster with SLURM connected to local Cursor](docs/README_HPC_SLURM_CURSOR_IDE.md):
+  edit on a compute node from Cursor on your laptop, tunneled through the login
+  node.
+- [HPC cluster with PBS or Torque in the terminal](docs/README_HPC_PBS_TORQUE_TERMINAL.md):
+  interactive and batch jobs on a PBS or Torque cluster.
+
 ## 🛠️ Installation
 
 ### 🚀 **One-Liner Installation (Recommended)**
@@ -467,6 +486,8 @@ venvoy run --name my-research
 
 Venvoy is designed to work seamlessly on High-Performance Computing (HPC) clusters where Docker may not be available or require root access.
 
+For step-by-step, scenario-specific walkthroughs, see [Choose your setup guide](#choose-your-setup-guide). The sections below summarize the key concepts.
+
 ### 🔧 Automatic Runtime Detection
 
 Venvoy automatically detects your environment and chooses the best container runtime:
@@ -500,54 +521,12 @@ venvoy init --runtime python --name my-research
 
 # Run your analysis
 venvoy run --name my-research --command "python analysis.py"
-
-# Mount your data directories
-venvoy run --name my-research --mount /scratch/data:/workspace/data
-
-# Export for sharing with collaborators
-venvoy export --name my-research --format archive
 ```
 
-### 🔬 Scientific Computing Workflows
-
-**SLURM Job Submission:**
-```bash
-#!/bin/bash
-#SBATCH --job-name=venvoy-analysis
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --time=02:00:00
-
-# Load any required modules
-module load apptainer
-
-# Run venvoy environment (automatically uses Apptainer/Singularity)
-venvoy run --name my-research --command "python analysis.py"
-```
-
-**PBS Job Submission:**
-```bash
-#!/bin/bash
-#PBS -N venvoy-analysis
-#PBS -l nodes=1:ppn=1
-#PBS -l walltime=2:00:00
-
-# Run venvoy environment (automatically uses Apptainer/Singularity)
-venvoy run --name my-research --command "python analysis.py"
-```
-
-**Interactive HPC Session:**
-```bash
-# Start interactive session
-srun --pty bash
-
-# Check runtime (should show Apptainer/Singularity)
-venvoy runtime-info
-
-# Initialize and run environment
-venvoy init --name my-research
-venvoy run --name my-research --mount /scratch/data:/workspace/data
-```
+For complete, step-by-step SLURM and PBS/Torque walkthroughs (interactive and
+batch), see the scenario guides:
+- [HPC cluster with SLURM in the terminal](docs/README_HPC_SLURM_TERMINAL.md)
+- [HPC cluster with PBS or Torque in the terminal](docs/README_HPC_PBS_TORQUE_TERMINAL.md)
 
 ### 📋 HPC Best Practices
 
@@ -617,6 +596,17 @@ python -c "from venvoy.container_manager import ContainerRuntime; print(Containe
 - Contact system administrators for registry access if needed
 
 For detailed HPC documentation, see [docs/HPC_COMPATIBILITY.md](docs/HPC_COMPATIBILITY.md).
+
+### Remote development from local Cursor
+
+You can run a venvoy environment as a job on a compute node and connect to it
+from Cursor running on your laptop. `venvoy remote` starts an SSH server inside
+the container on the compute node, and `venvoy connect` on your laptop tunnels
+to it through the login node using an SSH ProxyJump and opens Cursor Remote-SSH.
+
+For the complete walkthrough, including prerequisites, options, and
+troubleshooting, see
+[HPC cluster with SLURM connected to local Cursor](docs/README_HPC_SLURM_CURSOR_IDE.md).
 
 #### 📋 Complete Scientific Reproducibility Workflows
 

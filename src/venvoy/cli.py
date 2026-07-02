@@ -1311,6 +1311,184 @@ def import_cmd(file_path: str, format: str, force: bool):
 
 
 @main.command()
+@click.argument("name_arg", required=False)
+@click.option("--name", default=None, help="Name of the environment to serve")
+@click.option(
+    "--port",
+    type=int,
+    default=None,
+    help="Port for the in-container SSH server (default: auto-select a free port)",
+)
+@click.option(
+    "--login-node",
+    default=None,
+    help="Login node hostname users SSH into (default: $VENVOY_LOGIN_NODE or $SLURM_SUBMIT_HOST)",
+)
+@click.option(
+    "--bind-address",
+    default="127.0.0.1",
+    help="Address the SSH server binds to on the compute node (127.0.0.1 is most secure)",
+)
+@click.option(
+    "--mount", multiple=True, help="Additional volume mounts (host:container)"
+)
+@click.option(
+    "--pubkey-file",
+    multiple=True,
+    help="Public key file(s) to authorize (default: your ~/.ssh/authorized_keys and ~/.ssh/*.pub)",
+)
+def remote(
+    name_arg: str,
+    name: str,
+    port: int,
+    login_node: str,
+    bind_address: str,
+    mount: tuple,
+    pubkey_file: tuple,
+):
+    """Serve an environment over SSH for a remote Cursor to connect to.
+
+    Run this ON A COMPUTE NODE inside a Slurm allocation. It starts an SSH
+    server inside the venvoy container and prints a 'venvoy connect' command to
+    run on your laptop. The connection tunnels through the login node.
+
+    Example (interactive allocation):
+        srun --pty bash
+        venvoy remote --name my-research --login-node login.hpc.example.edu
+    """
+    from .remote import REMOTE_ENABLED, RemoteError, RemoteServer
+
+    if not REMOTE_ENABLED:
+        console.print(
+            "❌ The remote bridge is disabled (REMOTE_ENABLED=False).", style="red"
+        )
+        return
+
+    env_name = name if name is not None else (name_arg if name_arg else "venvoy-env")
+    console.print(
+        Panel.fit("🛰️  Starting venvoy remote environment", style="bold magenta")
+    )
+
+    env = VenvoyEnvironment(name=env_name)
+    if not env.config_file.exists():
+        console.print(
+            f"❌ Environment '{env_name}' not found. Run 'venvoy init --name {env_name}' first.",
+            style="red",
+        )
+        return
+
+    try:
+        server = RemoteServer(
+            env=env,
+            port=port,
+            bind_address=bind_address,
+            login_node=login_node,
+            extra_mounts=list(mount),
+            authorized_key_files=list(pubkey_file) or None,
+        )
+        return server.serve()
+    except RemoteError as exc:
+        console.print(f"❌ {exc}", style="red")
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"❌ Failed to start remote environment: {exc}", style="red")
+
+
+@main.command()
+@click.argument("token", required=False)
+@click.option(
+    "--login-node",
+    default=None,
+    help="Login node hostname (overrides the value embedded in the token)",
+)
+@click.option("--alias", default=None, help="SSH host alias to create (default: venvoy-<name>)")
+@click.option(
+    "--workspace", default=None, help="Folder to open inside the container (default: /workspace)"
+)
+@click.option(
+    "--editor",
+    type=click.Choice(["cursor", "code"]),
+    default="cursor",
+    help="Editor to launch (default: cursor)",
+)
+@click.option("--no-open", is_flag=True, help="Only write the SSH config; do not launch the editor")
+@click.option("--print-config", is_flag=True, help="Print the SSH config block and exit")
+def connect(
+    token: str,
+    login_node: str,
+    alias: str,
+    workspace: str,
+    editor: str,
+    no_open: bool,
+    print_config: bool,
+):
+    """Connect local Cursor to a remote venvoy environment.
+
+    Run this ON YOUR LAPTOP using the token printed by 'venvoy remote' on the
+    cluster. It writes an SSH config entry that tunnels through the login node
+    and launches Cursor Remote-SSH into the container.
+
+    Example:
+        venvoy connect eyJ2Ijox... --login-node login.hpc.example.edu
+    """
+    from .remote import REMOTE_ENABLED, RemoteClient, RemoteError, decode_token
+
+    if not REMOTE_ENABLED:
+        console.print(
+            "❌ The remote bridge is disabled (REMOTE_ENABLED=False).", style="red"
+        )
+        return
+
+    if not token:
+        console.print("❌ A connection token is required.", style="red")
+        console.print("💡 Copy the 'venvoy connect <token>' line printed on the cluster.")
+        return
+
+    try:
+        payload = decode_token(token)
+        client = RemoteClient(
+            payload=payload,
+            login_node=login_node,
+            alias=alias,
+            workspace=workspace,
+        )
+
+        if print_config:
+            console.print(client.build_ssh_block())
+            return
+
+        client.write_ssh_config()
+        console.print(
+            Panel.fit("🔌 venvoy connection configured", style="bold green")
+        )
+        console.print(f"🔗 SSH host alias: {client.alias}")
+        console.print(f"🖥️  Compute node: {payload['compute_node']} (via {client.login_node})")
+        console.print(f"📁 Workspace: {client.workspace}")
+        console.print(f"📝 SSH config updated: {client.ssh_config}")
+
+        if no_open:
+            console.print(
+                f"\n💡 Open manually with: {editor} --folder-uri "
+                f"vscode-remote://ssh-remote+{client.alias}{client.workspace}"
+            )
+            return
+
+        console.print(f"\n🧠 Launching {editor} Remote-SSH...")
+        if client.launch_editor(editor=editor):
+            console.print("✅ Editor launched. It will install its remote server on first connect.")
+        else:
+            console.print(
+                f"⚠️  Could not launch '{editor}'. Open manually with:", style="yellow"
+            )
+            console.print(
+                f"   {editor} --folder-uri vscode-remote://ssh-remote+{client.alias}{client.workspace}"
+            )
+    except RemoteError as exc:
+        console.print(f"❌ {exc}", style="red")
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"❌ Failed to configure connection: {exc}", style="red")
+
+
+@main.command()
 def runtime_info():
     """Show information about the detected container runtime"""
     console.print(Panel.fit("🔧 Container Runtime Information", style="bold blue"))

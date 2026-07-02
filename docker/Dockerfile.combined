@@ -53,6 +53,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ca-certificates \
     gnupg \
     lsb-release \
+    # SSH server for 'venvoy remote' (Cursor Remote-SSH from a laptop)
+    openssh-server \
+    openssh-client \
     # LaTeX for R Markdown
     texlive-latex-base \
     texlive-latex-recommended \
@@ -91,6 +94,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && \
     apt-get install -y docker-ce-cli && \
     apt-get clean
+
+# Runtime directory required by sshd (used by 'venvoy remote')
+RUN mkdir -p /run/sshd && chmod 0755 /run/sshd
 
 # Install R from Debian CRAN repository
 # Note: Debian CRAN repository provides the latest R version for each Debian release

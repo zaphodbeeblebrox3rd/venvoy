@@ -33,7 +33,13 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     gnupg \
     lsb-release \
+    openssh-server \
+    openssh-client \
     && rm -rf /var/lib/apt/lists/*
+
+# Runtime directory required by sshd. Used by 'venvoy remote' to serve the
+# environment over SSH for Cursor Remote-SSH connections from a laptop.
+RUN mkdir -p /run/sshd && chmod 0755 /run/sshd
 
 # Install Docker CLI (client only, no daemon) for Remote Containers extension compatibility
 # This allows Cursor/VSCode Remote Containers to work properly

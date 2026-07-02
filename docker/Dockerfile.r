@@ -19,6 +19,9 @@ RUN apt-get update && apt-get install -y \
     # Text processing
     vim \
     nano \
+    # SSH server for 'venvoy remote' (Cursor Remote-SSH from a laptop)
+    openssh-server \
+    openssh-client \
     # LaTeX for R Markdown
     texlive-latex-base \
     texlive-latex-recommended \
@@ -45,6 +48,9 @@ RUN apt-get update && apt-get install -y \
     # Fonts
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
+
+# Runtime directory required by sshd (used by 'venvoy remote')
+RUN mkdir -p /run/sshd && chmod 0755 /run/sshd
 
 # Set up R environment for package installation
 RUN R -e "options(repos = c(CRAN = 'https://cran.rstudio.com/')); \

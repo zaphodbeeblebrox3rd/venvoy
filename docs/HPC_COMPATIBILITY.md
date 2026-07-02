@@ -123,14 +123,26 @@ Most HPC clusters already have Apptainer or Singularity installed. Check with yo
 
 ### Installing Venvoy
 
-```bash
-# Install venvoy (no root access required)
-pip install --user venvoy
+Use the bootstrap installer, which sets up the `venvoy` command in your user
+account using pipx (no root access required). Load your container runtime module
+first.
 
-# Or install in a virtual environment
-python -m venv venvoy-env
-source venvoy-env/bin/activate
-pip install venvoy
+```bash
+# Load the container runtime provided by your cluster
+module load apptainer   # or: module load singularity
+
+# Install venvoy
+curl -fsSL https://raw.githubusercontent.com/zaphodbeeblebrox3rd/venvoy/main/install.sh | bash
+
+# Ensure the venvoy command is on your PATH (pipx installs to ~/.local/bin)
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+If you prefer a direct Python-based install, venvoy can also be installed with
+pipx:
+
+```bash
+pipx install git+https://github.com/zaphodbeeblebrox3rd/venvoy.git
 ```
 
 ### Verifying Installation
