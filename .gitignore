@@ -2,7 +2,6 @@
 *.env
 
 # IDE, DEV
-.cursor
 
 # User-generated directory during use of venvoy
 .venvoy/
@@ -201,12 +200,8 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-# Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
-.cursorignore
-.cursorindexingignore
-
+# Devin
+#  Devin is an AI-powered code editor/agent. Project-level configuration lives in
+#  `.devin/` and is intended to be committed, so nothing is ignored here.
 # Singularity/Apptainer container files
 *.sif

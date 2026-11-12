@@ -1,9 +1,9 @@
-# venvoy on a local machine with Cursor
+# venvoy on a local machine with Devin
 
 This guide walks through installing, configuring, and running venvoy on your own
-computer (laptop or workstation) with the Cursor IDE. In this scenario, venvoy
-starts a container on the same machine where Cursor is installed and opens
-Cursor directly inside that container using the Dev Containers mechanism.
+computer (laptop or workstation) with the Devin IDE. In this scenario, venvoy
+starts a container on the same machine where Devin is installed and opens
+Devin directly inside that container using the Dev Containers mechanism.
 
 If you want a terminal-only experience without an editor, see
 [README_LOCAL_TERMINAL.md](README_LOCAL_TERMINAL.md). If you are working on an
@@ -12,23 +12,23 @@ HPC cluster, see the SLURM or PBS guides listed in the main
 
 ## When to use this scenario
 
-- You run venvoy on the same machine where Cursor is installed.
+- You run venvoy on the same machine where Devin is installed.
 - You have Docker (or Podman) available locally.
 - You want a full IDE experience with your environment running in a container.
 
 ## How it works
 
-Cursor connects to a locally running container using a Dev Containers URI of the
-form `vscode-remote://attached-container+<container>/host-home`. This requires a
+Devin connects to a locally running container using a Dev Containers URI of the
+form `vscode-remote://dev-container+<container>/host-home`. This requires a
 local container engine (Docker or Podman) and the container running on the same
-host as Cursor. There is no network tunneling in this scenario.
+host as Devin. There is no network tunneling in this scenario.
 
 ```mermaid
 flowchart LR
-    Cursor[Cursor IDE]
+    Devin[Devin IDE]
     Engine[Docker or Podman socket]
     Container[venvoy container]
-    Cursor -->|Dev Containers URI| Engine
+    Devin -->|Dev Containers URI| Engine
     Engine --> Container
 ```
 
@@ -37,7 +37,7 @@ flowchart LR
 - A container runtime:
   - Windows or macOS: Docker Desktop
   - Linux: Docker or Podman
-- Cursor installed and available on your PATH. Download from https://cursor.sh
+- Devin Desktop installed with the `devin-desktop` command on your PATH. Download from https://devin.ai
 - No host Python installation is required when using the one-liner installer.
 
 ## Installation
@@ -87,7 +87,7 @@ directory used for container mounts:
 venvoy setup
 ```
 
-If Cursor is installed and detected, setup reports that Cursor is configured.
+If Devin is installed and detected, setup reports that Devin is configured.
 
 ## Initialize an environment
 
@@ -117,18 +117,18 @@ To reinitialize an existing environment, add `--force`.
 venvoy stores per-environment settings in
 `~/.venvoy/environments/<name>/config.yaml`, including the editor selection.
 
-If both Cursor and VSCode are installed, or you want to change the editor later:
+If both Devin and VSCode are installed, or you want to change the editor later:
 
 ```bash
 venvoy configure --name my-project
 ```
 
-Choose Cursor to enable the Cursor integration for that environment.
+Choose Devin to enable the Devin integration for that environment.
 
-## Run and connect Cursor
+## Run and connect Devin
 
-Launch the environment. With Cursor configured, venvoy starts the container in
-the background and opens Cursor connected to it:
+Launch the environment. With Devin configured, venvoy starts the container in
+the background and opens Devin connected to it:
 
 ```bash
 venvoy run --name my-project
@@ -193,9 +193,8 @@ venvoy delete --name my-project
 
 ## Troubleshooting
 
-- Cursor does not open: confirm `cursor` runs from your terminal, and that the
-  Dev Containers/Remote extensions are installed in Cursor. venvoy falls back to
-  an interactive shell if it cannot launch Cursor.
+- Devin does not open: confirm `devin-desktop` runs from your terminal. venvoy
+  falls back to an interactive shell if it cannot launch Devin.
 - Docker not running: start Docker Desktop (Windows/macOS) or the Docker service
   (Linux), then retry `venvoy run`.
 - Permission issues on Linux: add your user to the docker group, or use Podman.

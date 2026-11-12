@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y \
     # Text processing
     vim \
     nano \
-    # SSH server for 'venvoy remote' (Cursor Remote-SSH from a laptop)
+    # SSH server for 'venvoy remote' (Devin Remote-SSH from a laptop)
     openssh-server \
     openssh-client \
     # LaTeX for R Markdown

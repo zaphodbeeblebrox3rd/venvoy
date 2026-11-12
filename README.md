@@ -116,7 +116,7 @@ Here is a brief summary of strategies you can use to eliminate or at least minim
 
 - 🐍 **Python 3.10-3.13 support** - Choose your Python version (paired with R versions)
 - 📊 **R 4.2-4.5 support** - Choose your R version
-- 🧠 **AI-powered editors** - Cursor (AI-first) and VSCode with AI extensions
+- 🧠 **AI-powered editors** - Devin (AI-first) and VSCode with AI extensions
 - 🐳 **Multi-runtime containers** - Docker, Apptainer, Singularity, and Podman
 - 🏢 **HPC compatibility** - Works on clusters without root access
 - 🔧 **Automatic runtime detection** - Chooses best container technology for your environment
@@ -133,7 +133,7 @@ Here is a brief summary of strategies you can use to eliminate or at least minim
 
 The prerequisites will be handled for you automatically if they are missing:
 - **Container Runtime**: Docker, Apptainer, Singularity, or Podman (will be detected automatically)
-- **AI Editor**: Cursor (recommended) or VSCode (will prompt for installation)
+- **AI Editor**: Devin (recommended) or VSCode (will prompt for installation)
 - **Python 3.10 or higher** only required for alternative/development installations
 
 ### 🏢 HPC Cluster Support
@@ -151,18 +151,18 @@ Venvoy automatically detects HPC environments and uses the appropriate container
 ## Choose your setup guide
 
 venvoy is used in several different ways depending on where you run it and
-whether you want the Cursor IDE or a terminal. Pick the guide that matches your
+whether you want the Devin IDE or a terminal. Pick the guide that matches your
 scenario for a complete, self-contained walkthrough of installation, setup,
 configuration, and execution.
 
-- [Local machine with Cursor](docs/README_LOCAL_CURSOR.md): run venvoy on your
-  own computer and open Cursor directly in the container.
+- [Local machine with Devin](docs/README_LOCAL_DEVIN.md): run venvoy on your
+  own computer and open Devin directly in the container.
 - [Local machine in the terminal](docs/README_LOCAL_TERMINAL.md): run venvoy on
   your own computer using an interactive shell only.
 - [HPC cluster with SLURM in the terminal](docs/README_HPC_SLURM_TERMINAL.md):
   interactive and batch jobs on a SLURM cluster.
-- [HPC cluster with SLURM connected to local Cursor](docs/README_HPC_SLURM_CURSOR_IDE.md):
-  edit on a compute node from Cursor on your laptop, tunneled through the login
+- [HPC cluster with SLURM connected to local Devin](docs/README_HPC_SLURM_DEVIN_IDE.md):
+  edit on a compute node from Devin on your laptop, tunneled through the login
   node.
 - [HPC cluster with PBS or Torque in the terminal](docs/README_HPC_PBS_TORQUE_TERMINAL.md):
   interactive and batch jobs on a PBS or Torque cluster.
@@ -364,7 +364,7 @@ venvoy init --runtime r --r-version 4.5 --name genomics-analysis
 
 > **💡 Note**: If you see an "environment already exists" error, use `--force` to reinitialize or `--name` to create a new environment with a different name.
 
-**AI Editor Integration**: During initialization, venvoy will detect available AI-powered editors (Cursor and VSCode). You'll be prompted to choose your preferred editor or can opt for an enhanced interactive shell with AI-ready environment setup.
+**AI Editor Integration**: During initialization, venvoy will detect available AI-powered editors (Devin and VSCode). You'll be prompted to choose your preferred editor or can opt for an enhanced interactive shell with AI-ready environment setup.
 
 ### 2. Run Your Environment
 ```bash
@@ -597,16 +597,16 @@ python -c "from venvoy.container_manager import ContainerRuntime; print(Containe
 
 For detailed HPC documentation, see [docs/HPC_COMPATIBILITY.md](docs/HPC_COMPATIBILITY.md).
 
-### Remote development from local Cursor
+### Remote development from local Devin
 
 You can run a venvoy environment as a job on a compute node and connect to it
-from Cursor running on your laptop. `venvoy remote` starts an SSH server inside
+from Devin running on your laptop. `venvoy remote` starts an SSH server inside
 the container on the compute node, and `venvoy connect` on your laptop tunnels
-to it through the login node using an SSH ProxyJump and opens Cursor Remote-SSH.
+to it through the login node using an SSH ProxyJump and opens Devin Remote-SSH.
 
 For the complete walkthrough, including prerequisites, options, and
 troubleshooting, see
-[HPC cluster with SLURM connected to local Cursor](docs/README_HPC_SLURM_CURSOR_IDE.md).
+[HPC cluster with SLURM connected to local Devin](docs/README_HPC_SLURM_DEVIN_IDE.md).
 
 #### 📋 Complete Scientific Reproducibility Workflows
 
@@ -903,8 +903,8 @@ sudo usermod -aG docker $USER
 
 ### AI Editor Not Detected
 
-If Cursor or VSCode isn't detected:
-1. **Cursor**: Download from [cursor.sh](https://cursor.sh)
+If Devin or VSCode isn't detected:
+1. **Devin**: Download from [devin.ai](https://devin.ai)
 2. **VSCode**: Download from [code.visualstudio.com](https://code.visualstudio.com)
 3. **Manual launch**: Use `venvoy run --command /bin/bash` for interactive shell
 

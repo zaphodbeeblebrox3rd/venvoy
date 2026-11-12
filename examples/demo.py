@@ -51,7 +51,7 @@ def main():
     
     # Show AI development tips
     print("\n🤖 AI Development Tips:")
-    print("   • Use Cursor for AI-powered coding assistance")
+    print("   • Use Devin for AI-powered coding assistance")
     print("   • Fast installs: `mamba install -c conda-forge tensorflow pytorch`")
     print("   • Quick Python packages: `uv pip install requests fastapi`")
     print("   • Pre-installed: numpy, pandas, matplotlib, jupyter")

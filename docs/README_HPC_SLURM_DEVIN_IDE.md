@@ -1,7 +1,7 @@
-# venvoy on an HPC cluster with SLURM, connected to local Cursor
+# venvoy on an HPC cluster with SLURM, connected to local Devin
 
 This guide walks through running a venvoy environment as a SLURM job on a compute
-node and connecting to it from the Cursor IDE on your laptop. The connection
+node and connecting to it from Devin on your laptop. The connection
 tunnels through the cluster login node, so the compute node is never exposed
 directly.
 
@@ -13,21 +13,21 @@ clusters, see
 ## When to use this scenario
 
 - Your cluster uses SLURM and you have SSH access to the login node.
-- You want to edit and run code on a compute node using Cursor on your laptop.
+- You want to edit and run code on a compute node using Devin on your laptop.
 - Your cluster provides Apptainer or Singularity (also works with Docker or
   Podman where available).
 
 ## How it works
 
 venvoy runs an SSH server inside the environment container on the compute node,
-bound to the compute node loopback interface. Cursor Remote-SSH on your laptop
+bound to the compute node loopback interface. Devin Remote-SSH on your laptop
 reaches it using an SSH ProxyJump through the login node. Unlike the local
-Cursor scenario, this does not use a Docker socket, so it works with Apptainer
+Devin scenario, this does not use a Docker socket, so it works with Apptainer
 and Singularity.
 
 ```mermaid
 flowchart LR
-    Laptop[Local Cursor Remote-SSH]
+    Laptop[Local Devin Remote-SSH]
     Login[Login node]
     Compute[Compute node]
     Sshd[sshd inside venvoy container]
@@ -55,7 +55,8 @@ On your laptop:
 - Your laptop SSH public key is present in `~/.ssh/authorized_keys` on the
   cluster. venvoy authorizes those same keys for the container, so the key you
   use to reach the login node also authenticates into the container.
-- Cursor is installed with the Remote-SSH extension.
+- Devin Desktop is installed. Its Remote-SSH extension is bundled, no extra
+  extensions are required.
 
 ## Installation on the cluster
 
@@ -85,15 +86,15 @@ venvoy init --runtime python --python-version 3.11 --name my-research
 venvoy keeps its container image as a SIF file in your home directory under
 `~/.venvoy/si`, and Apptainer or Singularity keeps a download cache in your home
 directory as well (`~/.apptainer/cache` or `~/.singularity/cache`). In this
-scenario, Cursor also installs its remote server into your cluster home directory
-(`~/.cursor-server`) on first connect. On clusters with small home quotas, plan
+scenario, Devin also installs its remote server into your cluster home directory
+(`~/.devin-server-insiders`) on first connect. On clusters with small home quotas, plan
 for all three. The figures below are conservative planning estimates.
 
 | Item | Python 3.12 environment | R 4.5 environment |
 | --- | --- | --- |
 | SIF image in ~/.venvoy/si | 2 to 3 GB | 4 to 6 GB |
 | Runtime download cache | 2 to 3 GB | 4 to 6 GB |
-| Cursor remote server in ~/.cursor-server | 0.3 to 0.5 GB | 0.3 to 0.5 GB |
+| Devin remote server in ~/.devin-server-insiders | 0.3 to 0.5 GB | 0.3 to 0.5 GB |
 | Home total with cache in home | 5 to 7 GB | 9 to 13 GB |
 | Home total with cache on scratch | 2.5 to 3.5 GB | 4.5 to 6.5 GB |
 
@@ -118,7 +119,7 @@ apptainer cache clean     # or: singularity cache clean
 Check actual usage at any time:
 
 ```bash
-du -sh ~/.venvoy ~/.cursor-server
+du -sh ~/.venvoy ~/.devin-server-insiders
 apptainer cache list      # or: singularity cache list
 ```
 
@@ -174,8 +175,8 @@ venvoy connect eyJ2Ijox...long-token...
 ```
 
 This writes a managed entry in your `~/.ssh/config` that tunnels through the
-login node, then launches Cursor Remote-SSH into the container. On first connect,
-Cursor installs its remote server automatically.
+login node, then launches Devin Remote-SSH into the container. On first connect,
+Devin installs its remote server automatically.
 
 ### Useful venvoy connect options
 
@@ -184,7 +185,7 @@ Cursor installs its remote server automatically.
 - `--alias <name>`: SSH host alias to create. Defaults to `venvoy-<name>`.
 - `--workspace <path>`: folder to open inside the container. Defaults to
   `/workspace`.
-- `--editor cursor|code`: editor to launch. Defaults to `cursor`.
+- `--editor devin-desktop|code`: editor to launch. Defaults to `devin-desktop`.
 - `--no-open`: write the SSH config only, do not launch the editor.
 - `--print-config`: print the SSH config block that would be written and exit.
 
@@ -194,7 +195,7 @@ Examples:
 # Provide the login node if it was not known to the job
 venvoy connect eyJ2Ijox... --login-node login.hpc.example.edu
 
-# Only configure SSH, then open Cursor manually later
+# Only configure SSH, then open Devin manually later
 venvoy connect eyJ2Ijox... --no-open
 
 # Preview the SSH config block
@@ -225,9 +226,9 @@ Releasing or ending the SLURM allocation also stops the environment.
   `~/.ssh/authorized_keys` on the cluster, or pass `--pubkey-file`.
 - Login node hostname is required: pass `--login-node` on either `venvoy remote`
   or `venvoy connect`, or set `VENVOY_LOGIN_NODE` before launching.
-- Cursor cannot connect: confirm you can `ssh login.hpc.example.edu` from your
-  laptop, that the Remote-SSH extension is installed, and try
-  `venvoy connect ... --print-config` to inspect the generated SSH entry.
+- Devin cannot connect: confirm you can `ssh login.hpc.example.edu` from your
+  laptop, and try `venvoy connect ... --print-config` to inspect the generated
+  SSH entry.
 - Direct connection blocked: if your cluster does not allow the login node to
   reach compute node loopback via a second SSH hop, re-run `venvoy remote` with
   `--bind-address 0.0.0.0` for a single-hop jump.

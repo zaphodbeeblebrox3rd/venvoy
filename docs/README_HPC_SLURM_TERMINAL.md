@@ -6,8 +6,8 @@ terminal workflow. It covers both interactive sessions and batch job
 submission. On HPC, venvoy automatically prefers Apptainer or Singularity, which
 do not require root access.
 
-If you want to connect the Cursor IDE on your laptop to a SLURM compute node,
-see [README_HPC_SLURM_CURSOR_IDE.md](README_HPC_SLURM_CURSOR_IDE.md). For PBS or
+If you want to connect Devin on your laptop to a SLURM compute node,
+see [README_HPC_SLURM_DEVIN_IDE.md](README_HPC_SLURM_DEVIN_IDE.md). For PBS or
 Torque clusters, see
 [README_HPC_PBS_TORQUE_TERMINAL.md](README_HPC_PBS_TORQUE_TERMINAL.md).
 

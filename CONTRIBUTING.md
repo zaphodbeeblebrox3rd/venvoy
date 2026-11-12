@@ -463,7 +463,7 @@ Contributors are recognized in:
 
 ### Recommended Tools
 
-- **IDE**: Cursor (AI-first) or VSCode with Python extensions
+- **IDE**: Devin (AI-first) or VSCode with Python extensions
 - **Terminal**: Modern terminal with good shell support
 - **Git**: Latest version with good merge conflict resolution
 - **Docker**: For container testing

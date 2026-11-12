@@ -2,10 +2,10 @@
 Remote development bridge for venvoy.
 
 This module lets a user run a venvoy environment as a job on an HPC compute
-node and connect to it from a local Cursor (or VSCode) instance on their
+node and connect to it from a local Devin (or VSCode) instance on their
 laptop. It works by running an SSH server *inside* the venvoy container on the
 compute node and tunneling to it through the cluster login node using SSH
-ProxyJump. Cursor's Remote-SSH then treats the container as a normal remote
+ProxyJump. Devin's Remote-SSH then treats the container as a normal remote
 host.
 
 Why not the Dev Containers "attached-container" approach used elsewhere in
@@ -17,7 +17,7 @@ Docker, and Podman.
 
 Network path:
 
-    local Cursor  --ssh-->  login node  --ssh-->  compute node  -->  sshd in container (127.0.0.1)
+    local Devin  --ssh-->  login node  --ssh-->  compute node  -->  sshd in container (127.0.0.1)
 
 The container's sshd binds to the compute node loopback by default and is
 reached with a double ProxyJump (login,compute), so no extra ports are exposed
@@ -55,7 +55,7 @@ CONTAINER_WORKDIR = "/venvoy-remote"
 # Container mount point for the user's host home (matches the rest of venvoy).
 CONTAINER_HOST_HOME = "/host-home"
 
-# Default workspace path inside the container that Cursor will open.
+# Default workspace path inside the container that the editor will open.
 CONTAINER_WORKSPACE = "/workspace"
 
 # SSH config markers so we can manage per-alias blocks idempotently.
@@ -447,7 +447,7 @@ class RemoteServer:
         print(f"  ssh user    : {payload['user']}")
         print(f"  port        : {payload['port']} (bound to {payload['bind']})")
         print("")
-        print("On your LOCAL machine (where Cursor is installed), run:")
+        print("On your LOCAL machine (where Devin is installed), run:")
         print("")
         print(f"    venvoy connect {token}")
         print("")
@@ -488,7 +488,7 @@ class RemoteClient:
     Runs on the user's laptop.
 
     Writes an SSH config entry with a ProxyJump through the login node and
-    launches Cursor Remote-SSH into the container.
+    launches Devin Remote-SSH into the container.
     """
 
     def __init__(
@@ -568,8 +568,8 @@ class RemoteClient:
         except OSError:
             pass
 
-    def launch_editor(self, editor: str = "cursor") -> bool:
-        """Open the remote container folder in Cursor (or VSCode)."""
+    def launch_editor(self, editor: str = "devin-desktop") -> bool:
+        """Open the remote container folder in Devin (or VSCode)."""
         binary = shutil.which(editor)
         if not binary:
             return False

@@ -30,6 +30,7 @@ class TestPlatformDetector:
             "home_directory",
             "docker_supported",
             "vscode_available",
+            "devin_available",
         ]
 
         for key in expected_keys:
@@ -53,3 +54,23 @@ class TestPlatformDetector:
         """Test BuildX support detection"""
         detector = PlatformDetector()
         assert detector.supports_buildx() is True
+
+    def test_wsl_editor_paths_use_windows_user(self, monkeypatch):
+        """WSL editor detection follows the Windows profile, not a fixed username."""
+        monkeypatch.setenv("USER", "researcher")
+        monkeypatch.delenv("USERNAME", raising=False)
+        detector = PlatformDetector()
+        detector.system = "linux"
+        detector.is_wsl = True
+
+        devin_paths = [path.as_posix() for path in detector._get_devin_paths()]
+        vscode_paths = [path.as_posix() for path in detector._get_vscode_paths()]
+
+        assert (
+            "/mnt/c/Users/researcher/AppData/Local/Programs/Devin/bin/devin-desktop.cmd"
+            in devin_paths
+        )
+        assert (
+            "/mnt/c/Users/researcher/AppData/Local/Programs/Microsoft VS Code/Code.exe"
+            in vscode_paths
+        )

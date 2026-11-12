@@ -12,6 +12,9 @@ from typing import Dict, List, Optional
 
 from .platform_detector import PlatformDetector
 
+# Rollback: True restores Apptainer-first selection even on laptops.
+PREFER_HPC_RUNTIMES_EVERYWHERE = False
+
 
 class ContainerRuntime(Enum):
     """Supported container runtimes"""
@@ -20,6 +23,23 @@ class ContainerRuntime(Enum):
     APPTAINER = "apptainer"
     SINGULARITY = "singularity"
     PODMAN = "podman"
+
+
+def preferred_runtimes(is_hpc: bool) -> List[ContainerRuntime]:
+    """HPC hosts prefer Apptainer or Singularity. Other hosts prefer Docker or Podman."""
+    if is_hpc or PREFER_HPC_RUNTIMES_EVERYWHERE:
+        return [
+            ContainerRuntime.APPTAINER,
+            ContainerRuntime.SINGULARITY,
+            ContainerRuntime.PODMAN,
+            ContainerRuntime.DOCKER,
+        ]
+    return [
+        ContainerRuntime.DOCKER,
+        ContainerRuntime.PODMAN,
+        ContainerRuntime.APPTAINER,
+        ContainerRuntime.SINGULARITY,
+    ]
 
 
 class ContainerManager:
@@ -78,27 +98,9 @@ class ContainerManager:
                 return runtime_map[host_runtime]
 
         is_hpc = self._is_hpc_environment()
-
-        # Check for HPC-specific runtimes first (in HPC environments)
-        if is_hpc:
-            if self._check_runtime_available(ContainerRuntime.APPTAINER):
-                return ContainerRuntime.APPTAINER
-            elif self._check_runtime_available(ContainerRuntime.SINGULARITY):
-                return ContainerRuntime.SINGULARITY
-            elif self._check_runtime_available(ContainerRuntime.PODMAN):
-                return ContainerRuntime.PODMAN
-
-        # Check for all runtimes in order of preference
-        # Prefer Apptainer > Singularity > Podman > Docker
-        # (Podman before Docker to avoid docker->podman wrapper confusion)
-        if self._check_runtime_available(ContainerRuntime.APPTAINER):
-            return ContainerRuntime.APPTAINER
-        elif self._check_runtime_available(ContainerRuntime.SINGULARITY):
-            return ContainerRuntime.SINGULARITY
-        elif self._check_runtime_available(ContainerRuntime.PODMAN):
-            return ContainerRuntime.PODMAN
-        elif self._check_runtime_available(ContainerRuntime.DOCKER):
-            return ContainerRuntime.DOCKER
+        for runtime in preferred_runtimes(is_hpc):
+            if self._check_runtime_available(runtime):
+                return runtime
 
         # If no runtime is available (e.g., running inside a container),
         # try to detect the runtime from environment variables
@@ -448,172 +450,113 @@ class ContainerManager:
         """
         # Normalize image name for the current runtime
         image = self._normalize_image_name(image)
-        
-        # Convert volumes to appropriate format based on runtime
-        # Docker Python client accepts nested format, subprocess needs simple format
-        volumes_for_docker = volumes  # Keep nested format for Docker Python client
+
+        # Subprocess run commands take host:container pairs. Callers may pass
+        # either that shape or the nested {"bind", "mode"} shape.
         volumes_for_subprocess = None
         if volumes:
             volumes_for_subprocess = {}
             for host_path, mount_info in volumes.items():
                 if isinstance(mount_info, dict):
-                    # Nested format: extract container path
                     volumes_for_subprocess[host_path] = mount_info["bind"]
                 else:
-                    # Simple format: use as-is
                     volumes_for_subprocess[host_path] = mount_info
-        
+
         try:
-            if self.runtime == ContainerRuntime.DOCKER:
-                # Check if docker is actually Podman (common setup)
-                # If so, use subprocess instead of Docker Python client to avoid issues
-                docker_path = shutil.which("docker")
-                is_podman_wrapper = False
-                if docker_path:
-                    # Check if docker is actually Podman by checking if it's a symlink or wrapper
-                    try:
-                        version_out = subprocess.run(
-                            [docker_path, "--version"], capture_output=True, text=True, timeout=5
-                        )
-                        if "podman" in (version_out.stdout + version_out.stderr).lower():
-                            is_podman_wrapper = True
-                        result = subprocess.run(
-                            [docker_path, "info", "--format", "{{.Host.Os}}"],
-                            capture_output=True,
-                            text=True,
-                            timeout=5,
-                        )
-                        # Podman often reports different info, but more reliably check if buildx exists
-                        buildx_check = subprocess.run(
-                            [docker_path, "buildx", "version"],
-                            capture_output=True,
-                            text=True,
-                            timeout=5,
-                        )
-                        if buildx_check.returncode != 0:
-                            # No buildx means it's likely Podman
-                            is_podman_wrapper = True
-                    except (subprocess.TimeoutExpired, FileNotFoundError):
-                        pass
-                
-                # For Docker, try to use Docker Python client, but fall back to subprocess for Podman wrappers
-                if not is_podman_wrapper:
-                    try:
-                        import docker
+            cmd = self._build_run_command(
+                image,
+                name,
+                command,
+                volumes_for_subprocess,
+                ports,
+                environment,
+                detach,
+                working_dir,
+            )
+            # Detached runs return immediately. Foreground runs must keep the terminal.
+            result = subprocess.run(
+                cmd, check=True, capture_output=detach, text=True
+            )
+            if detach and result.stderr and "warning" in result.stderr.lower():
+                print(f"Warning starting container: {result.stderr}")
 
-                        client = docker.from_env()
-                        # Normalize image name (in case docker is actually Podman wrapper)
-                        normalized_image = self._normalize_image_name(image)
-                        container = client.containers.run(
-                            image=normalized_image,
-                            name=name,
-                            command=command,
-                            volumes=volumes_for_docker,  # Docker Python client accepts nested format
-                            ports=ports,
-                            environment=environment,
-                            detach=detach,
-                            stdin_open=True,
-                            tty=True,
-                            remove=True,
-                            working_dir=working_dir,
-                        )
-                        return container
-                    except ImportError:
-                        # Fallback to subprocess if docker module not available
-                        pass
-                
-                # Use subprocess for Podman wrappers or if Docker Python client not available
-                cmd = self._build_run_command(
-                    image, name, command, volumes_for_subprocess, ports, environment, detach, working_dir
-                )
-                subprocess.run(cmd, check=True)
-                # Return a mock container object for compatibility
+            if detach and self.runtime == ContainerRuntime.PODMAN:
+                self._ensure_podman_detached(name)
 
-                class MockContainer:
-                    def __init__(self, name):
-                        self.name = name
+            class StartedContainer:
+                def __init__(self, container_name, runtime_manager=None):
+                    self.name = container_name
+                    self._runtime_manager = runtime_manager
 
-                return MockContainer(name)
-            else:
-                # For other runtimes, use subprocess (needs simple format)
-                cmd = self._build_run_command(
-                    image, name, command, volumes_for_subprocess, ports, environment, detach, working_dir
-                )
-                # Run with proper output handling
-                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-                # Validate that the container started successfully
-                # check=True will raise on failure, but we validate output for debugging
-                if result.stderr:
-                    error_output = result.stderr
-                    # Log warnings but don't fail if check=True passed
-                    if "warning" in error_output.lower():
-                        print(f"⚠️  Warning starting container: {error_output}")
-                
-                # For detached containers, verify they're actually running
-                if detach:
-                    import time
-                    # Wait a moment for container to start
-                    time.sleep(2)
-                    # Verify container is running
-                    if self.runtime == ContainerRuntime.PODMAN:
-                        podman_path = shutil.which("podman")
-                        if podman_path:
-                            # Check if container is running
-                            check_cmd = [podman_path, "ps", "--filter", f"name={name}", "--format", "{{.ID}}|{{.Status}}"]
-                            check_result = subprocess.run(check_cmd, capture_output=True, text=True)
-                            if check_result.returncode == 0 and check_result.stdout.strip():
-                                # Parse output: ID|Status
-                                output_lines = check_result.stdout.strip().split('\n')
-                                for line in output_lines:
-                                    if '|' in line:
-                                        container_id, status = line.split('|', 1)
-                                        if "Up" not in status and "running" not in status.lower():
-                                            # Container exited, get logs to see why
-                                            logs_cmd = [podman_path, "logs", container_id]
-                                            logs_result = subprocess.run(logs_cmd, capture_output=True, text=True)
-                                            logs = logs_result.stdout.strip() if logs_result.returncode == 0 else "Unable to retrieve logs"
-                                            raise RuntimeError(
-                                                f"Container {name} (ID: {container_id}) started but exited immediately. "
-                                                f"Status: {status}\n"
-                                                f"Container logs:\n{logs}"
-                                            )
-                            else:
-                                # Container not found in ps output - check if it exited
-                                check_cmd_all = [podman_path, "ps", "-a", "--filter", f"name={name}", "--format", "{{.ID}}|{{.Status}}"]
-                                check_result_all = subprocess.run(check_cmd_all, capture_output=True, text=True)
-                                if check_result_all.returncode == 0 and check_result_all.stdout.strip():
-                                    # Container exists but is not running
-                                    output_lines = check_result_all.stdout.strip().split('\n')
-                                    for line in output_lines:
-                                        if '|' in line:
-                                            container_id, status = line.split('|', 1)
-                                            # Get logs to see why it exited
-                                            logs_cmd = [podman_path, "logs", container_id]
-                                            logs_result = subprocess.run(logs_cmd, capture_output=True, text=True)
-                                            logs = logs_result.stdout.strip() if logs_result.returncode == 0 else "Unable to retrieve logs"
-                                            raise RuntimeError(
-                                                f"Container {name} (ID: {container_id}) exited immediately. "
-                                                f"Status: {status}\n"
-                                                f"Container logs:\n{logs}"
-                                            )
-                                else:
-                                    raise RuntimeError(f"Container {name} failed to start - not found in container list")
-                
-                # Return a mock container object for compatibility
-                class MockContainer:
-                    def __init__(self, name, runtime_manager=None):
-                        self.name = name
-                        self._runtime_manager = runtime_manager
-                    
-                    def stop(self):
-                        """Stop the container"""
-                        if self._runtime_manager:
-                            self._runtime_manager.stop_container(self.name)
+                def stop(self):
+                    if self._runtime_manager:
+                        self._runtime_manager.stop_container(self.name)
 
-                return MockContainer(name, self)
+            return StartedContainer(name, self)
         except subprocess.CalledProcessError as e:
             print(f"Failed to run container: {e}")
             return False
+
+    def _ensure_podman_detached(self, name: str) -> None:
+        """Fail with container logs when a detached Podman container exits immediately."""
+        import time
+
+        podman_path = shutil.which("podman")
+        if not podman_path:
+            return
+        time.sleep(2)
+        check_cmd = [
+            podman_path,
+            "ps",
+            "--filter",
+            f"name={name}",
+            "--format",
+            "{{.ID}}|{{.Status}}",
+        ]
+        check_result = subprocess.run(check_cmd, capture_output=True, text=True)
+        lines = []
+        if check_result.returncode == 0 and check_result.stdout.strip():
+            lines = check_result.stdout.strip().split("\n")
+        else:
+            check_all = subprocess.run(
+                [
+                    podman_path,
+                    "ps",
+                    "-a",
+                    "--filter",
+                    f"name={name}",
+                    "--format",
+                    "{{.ID}}|{{.Status}}",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if check_all.returncode == 0 and check_all.stdout.strip():
+                lines = check_all.stdout.strip().split("\n")
+            else:
+                raise RuntimeError(
+                    f"Container {name} failed to start - not found in container list"
+                )
+        for line in lines:
+            if "|" not in line:
+                continue
+            container_id, status = line.split("|", 1)
+            if "Up" in status or "running" in status.lower():
+                return
+            logs_result = subprocess.run(
+                [podman_path, "logs", container_id],
+                capture_output=True,
+                text=True,
+            )
+            logs = (
+                logs_result.stdout.strip()
+                if logs_result.returncode == 0
+                else "Unable to retrieve logs"
+            )
+            raise RuntimeError(
+                f"Container {name} (ID: {container_id}) is not running. "
+                f"Status: {status}\nContainer logs:\n{logs}"
+            )
 
     def _build_run_command(
         self,
@@ -665,6 +608,8 @@ class ContainerManager:
 
         if detach:
             cmd.append("-d")
+        else:
+            cmd.extend(["--rm", "-i", "-t"])
 
         if volumes:
             for host_path, container_path in volumes.items():
@@ -697,6 +642,7 @@ class ContainerManager:
         ports: Optional[Dict[str, str]] = None,
         environment: Optional[Dict[str, str]] = None,
         detach: bool = False,
+        working_dir: Optional[str] = None,
     ) -> List[str]:
         """Build Apptainer run command"""
         # Apptainer uses .sif files, so we need to check if the image exists
@@ -708,6 +654,9 @@ class ContainerManager:
             self.pull_image(image)
 
         cmd = ["apptainer", "run"]
+
+        if working_dir:
+            cmd.extend(["--pwd", working_dir])
 
         if volumes:
             for host_path, container_path in volumes.items():
@@ -733,12 +682,16 @@ class ContainerManager:
         ports: Optional[Dict[str, str]] = None,
         environment: Optional[Dict[str, str]] = None,
         detach: bool = False,
+        working_dir: Optional[str] = None,
     ) -> List[str]:
         """Build Singularity run command (similar to Apptainer)"""
         # Use docker:// reference for Singularity
         docker_image = f"docker://{image}"
 
         cmd = ["singularity", "exec"]
+
+        if working_dir:
+            cmd.extend(["--pwd", working_dir])
 
         if volumes:
             for host_path, container_path in volumes.items():
@@ -777,6 +730,8 @@ class ContainerManager:
 
         if detach:
             cmd.append("-d")
+        else:
+            cmd.extend(["--rm", "-i", "-t"])
 
         # Use --userns=keep-id to map host UID to same UID inside container
         # This ensures bind-mounted volumes remain readable/writable

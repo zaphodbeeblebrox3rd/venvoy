@@ -90,7 +90,7 @@ fi
 
 echo "✅ Found container runtime: $CONTAINER_RUNTIME"
 
-# Check for podman-docker if using Podman (needed for Cursor/VSCode Remote Containers)
+# Check for podman-docker if using Podman (needed for Devin/VSCode Remote Containers)
 if [ "$CONTAINER_RUNTIME" = "podman" ]; then
     # Check if podman-docker is installed
     PODMAN_DOCKER_INSTALLED=false
@@ -100,21 +100,21 @@ if [ "$CONTAINER_RUNTIME" = "podman" ]; then
         fi
     fi
     
-    # Check if Cursor or VSCode might be available
-    CURSOR_OR_VSCODE_AVAILABLE=false
-    if command -v cursor &> /dev/null || \
-       [ -f "/Applications/Cursor.app/Contents/Resources/app/bin/cursor" ] || \
-       [ -f "$HOME/Applications/Cursor.app/Contents/Resources/app/bin/cursor" ] || \
+    # Check if Devin or VSCode might be available
+    DEVIN_OR_VSCODE_AVAILABLE=false
+    if command -v devin-desktop &> /dev/null || \
+       [ -f "/Applications/Devin.app/Contents/Resources/app/bin/devin-desktop" ] || \
+       [ -f "$HOME/Applications/Devin.app/Contents/Resources/app/bin/devin-desktop" ] || \
        command -v code &> /dev/null || \
        [ -f "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" ] || \
        [ -f "$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" ]; then
-        CURSOR_OR_VSCODE_AVAILABLE=true
+        DEVIN_OR_VSCODE_AVAILABLE=true
     fi
     
-    if [ "$PODMAN_DOCKER_INSTALLED" = false ] && [ "$CURSOR_OR_VSCODE_AVAILABLE" = true ]; then
+    if [ "$PODMAN_DOCKER_INSTALLED" = false ] && [ "$DEVIN_OR_VSCODE_AVAILABLE" = true ]; then
         echo ""
-        echo "💡 Cursor/VSCode detected, but podman-docker is not installed."
-        echo "   podman-docker is recommended for Cursor/VSCode Remote Containers support with Podman."
+        echo "💡 Devin/VSCode detected, but podman-docker is not installed."
+        echo "   podman-docker is recommended for Devin/VSCode Remote Containers support with Podman."
         echo ""
         read -p "Would you like to install podman-docker now? (y/n) " -n 1 -r
         echo ""
@@ -125,28 +125,28 @@ if [ "$CONTAINER_RUNTIME" = "podman" ]; then
                         echo "📦 Installing podman-docker..."
                         sudo apt-get update && sudo apt-get install -y podman-docker || {
                             echo "⚠️  Failed to install podman-docker."
-                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and cursor into launched containers"
+                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and devin into launched containers"
                             echo "   Otherwise, you can install it manually with: sudo apt install podman-docker"
                         }
                     elif command -v dnf &> /dev/null; then
                         echo "📦 Installing podman-docker..."
                         sudo dnf install -y podman-docker || {
                             echo "⚠️  Failed to install podman-docker."
-                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and cursor into launched containers"
+                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and devin into launched containers"
                             echo "   Otherwise, you can install it manually with: sudo dnf install podman-docker"
                         }
                     elif command -v yum &> /dev/null; then
                         echo "📦 Installing podman-docker..."
                         sudo yum install -y podman-docker || {
                             echo "⚠️  Failed to install podman-docker."
-                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and cursor into launched containers"
+                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and devin into launched containers"
                             echo "   Otherwise, you can install it manually with: sudo yum install podman-docker"
                         }
                     elif command -v pacman &> /dev/null; then
                         echo "📦 Installing podman-docker..."
                         sudo pacman -S --noconfirm podman-docker || {
                             echo "⚠️  Failed to install podman-docker."
-                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and cursor into launched containers"
+                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and devin into launched containers"
                             echo "   Otherwise, you can install it manually with: sudo pacman -S podman-docker"
                         }
                     else
@@ -161,7 +161,7 @@ if [ "$CONTAINER_RUNTIME" = "podman" ]; then
                         echo "📦 Installing podman-docker..."
                         brew install podman-docker || {
                             echo "⚠️  Failed to install podman-docker."
-                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and cursor into launched containers"
+                            echo "   If you do not have sudo rights, please contact your system administrator to install podman-docker to enable connectivity from vscode and devin into launched containers"
                             echo "   Otherwise, you can install it manually with: brew install podman-docker"
                         }
                     else
@@ -175,7 +175,7 @@ if [ "$CONTAINER_RUNTIME" = "podman" ]; then
             esac
         else
             echo "ℹ️  Skipping podman-docker installation."
-            echo "   You can install it later if you want Cursor/VSCode Remote Containers support:"
+            echo "   You can install it later if you want Devin/VSCode Remote Containers support:"
             case $PLATFORM in
                 linux)
                     echo "   sudo apt install podman-docker  # or equivalent for your distro"
@@ -187,7 +187,7 @@ if [ "$CONTAINER_RUNTIME" = "podman" ]; then
         fi
         echo ""
     elif [ "$PODMAN_DOCKER_INSTALLED" = false ]; then
-        echo "💡 Tip: Install podman-docker for Cursor/VSCode Remote Containers support:"
+        echo "💡 Tip: Install podman-docker for Devin/VSCode Remote Containers support:"
         case $PLATFORM in
             linux)
                 echo "   sudo apt install podman-docker  # or equivalent for your distro"
@@ -199,11 +199,11 @@ if [ "$CONTAINER_RUNTIME" = "podman" ]; then
         echo ""
     fi
     
-    # Set up Podman socket for Cursor/VSCode Remote Containers compatibility
-    # This is critical because Cursor spawns child processes that run 'docker inspect'
+    # Set up Podman socket for Devin/VSCode Remote Containers compatibility
+    # This is critical because Devin spawns child processes that run 'docker inspect'
     # and these processes need access to the Podman socket
-    if [ "$CURSOR_OR_VSCODE_AVAILABLE" = true ] && [ "$PLATFORM" = "linux" ]; then
-        echo "🔧 Setting up Podman socket for Cursor/VSCode compatibility..."
+    if [ "$DEVIN_OR_VSCODE_AVAILABLE" = true ] && [ "$PLATFORM" = "linux" ]; then
+        echo "🔧 Setting up Podman socket for Devin/VSCode compatibility..."
         
         PODMAN_SOCKET_SETUP_SUCCESS=false
         
@@ -231,7 +231,7 @@ if [ "$CONTAINER_RUNTIME" = "podman" ]; then
             # Create environment file for Podman socket
             cat > "$ENVIRONMENT_D_DIR/podman-docker.conf" << 'ENVEOF'
 # Podman socket configuration for Docker compatibility
-# This allows Cursor, VSCode, and other tools that expect Docker to work with Podman
+# This allows Devin, VSCode, and other tools that expect Docker to work with Podman
 DOCKER_HOST=unix://${XDG_RUNTIME_DIR}/podman/podman.sock
 ENVEOF
             echo "   ✅ Created $ENVIRONMENT_D_DIR/podman-docker.conf"
@@ -255,7 +255,7 @@ ENVEOF
             cat > "$CONTAINERS_CONF_DIR/containers.conf" << CONTAINERSCONF
 [engine]
 # Use the systemd user socket for Docker-compatible tools
-# This allows Cursor/VSCode to connect to containers without DOCKER_HOST
+# This allows Devin/VSCode to connect to containers without DOCKER_HOST
 remote = false
 
 [engine.service_destinations]
@@ -265,14 +265,14 @@ CONTAINERSCONF
             echo "   ✅ Created $CONTAINERS_CONF_DIR/containers.conf"
             
             # Step 2c: Create a docker wrapper script that sets DOCKER_HOST
-            # This is critical because Cursor's child processes don't inherit environment variables
+            # This is critical because Devin's child processes don't inherit environment variables
             # and call docker directly without DOCKER_HOST set
             DOCKER_WRAPPER_DIR="$HOME/.local/bin"
             mkdir -p "$DOCKER_WRAPPER_DIR"
             
             cat > "$DOCKER_WRAPPER_DIR/docker" << 'DOCKERWRAPPER'
 #!/bin/bash
-# Docker wrapper for Podman compatibility with Cursor/VSCode
+# Docker wrapper for Podman compatibility with Devin/VSCode
 # Created by venvoy installer
 # This ensures DOCKER_HOST is set for Podman socket access
 
@@ -299,86 +299,89 @@ DOCKERWRAPPER
             fi
         fi
         
-        # Step 3: Update Cursor settings to use the docker wrapper
-        CURSOR_SETTINGS_DIR="$HOME/.config/Cursor/User"
-        if [ -d "$CURSOR_SETTINGS_DIR" ] || [ -d "$HOME/.config/Cursor" ]; then
-            mkdir -p "$CURSOR_SETTINGS_DIR"
-            CURSOR_SETTINGS="$CURSOR_SETTINGS_DIR/settings.json"
+        # Step 3: Update Devin settings to use the docker wrapper
+        DEVIN_SETTINGS_DIR="$HOME/.config/Devin/User"
+        if [ -d "$DEVIN_SETTINGS_DIR" ] || [ -d "$HOME/.config/Devin" ]; then
+            mkdir -p "$DEVIN_SETTINGS_DIR"
+            DEVIN_SETTINGS="$DEVIN_SETTINGS_DIR/settings.json"
             
             # Check if settings file exists and has content
-            if [ -f "$CURSOR_SETTINGS" ] && [ -s "$CURSOR_SETTINGS" ]; then
+            if [ -f "$DEVIN_SETTINGS" ] && [ -s "$DEVIN_SETTINGS" ]; then
                 # Backup existing settings
-                cp "$CURSOR_SETTINGS" "$CURSOR_SETTINGS.venvoy-backup" 2>/dev/null || true
+                cp "$DEVIN_SETTINGS" "$DEVIN_SETTINGS.venvoy-backup" 2>/dev/null || true
                 
                 # Check if docker settings already exist
-                if ! grep -q '"docker.dockerPath"' "$CURSOR_SETTINGS" 2>/dev/null; then
+                if ! grep -q '"remote.devinDevContainers.dockerPath"' "$DEVIN_SETTINGS" 2>/dev/null; then
                     # Add docker settings before the closing brace
                     # Use a temp file to avoid issues
                     TEMP_SETTINGS=$(mktemp)
                     # Remove trailing } and whitespace, add our settings, then close
-                    sed '$ s/}$//' "$CURSOR_SETTINGS" | sed -e :a -e '/^[[:space:]]*$/d;N;ba' > "$TEMP_SETTINGS"
-                    cat >> "$TEMP_SETTINGS" << CURSORSETTINGS
+                    sed '$ s/}$//' "$DEVIN_SETTINGS" | sed -e :a -e '/^[[:space:]]*$/d;N;ba' > "$TEMP_SETTINGS"
+                    cat >> "$TEMP_SETTINGS" << DEVINSETTINGS
 ,
-    "docker.dockerPath": "$HOME/.local/bin/docker",
+    "remote.devinDevContainers.dockerPath": "$HOME/.local/bin/docker",
     "docker.environment": {
         "DOCKER_HOST": "unix:///run/user/$(id -u)/podman/podman.sock"
-    },
-    "dev.containers.dockerPath": "$HOME/.local/bin/docker",
-    "remote.containers.dockerPath": "$HOME/.local/bin/docker"
+    }
 }
-CURSORSETTINGS
-                    mv "$TEMP_SETTINGS" "$CURSOR_SETTINGS"
-                    echo "   ✅ Updated Cursor settings for Podman (using docker wrapper)"
+DEVINSETTINGS
+                    mv "$TEMP_SETTINGS" "$DEVIN_SETTINGS"
+                    echo "   ✅ Updated Devin settings for Podman (using docker wrapper)"
                 fi
             else
                 # Create new settings file
-                cat > "$CURSOR_SETTINGS" << CURSORSETTINGS
+                cat > "$DEVIN_SETTINGS" << DEVINSETTINGS
 {
-    "docker.dockerPath": "$HOME/.local/bin/docker",
+    "remote.devinDevContainers.dockerPath": "$HOME/.local/bin/docker",
     "docker.environment": {
         "DOCKER_HOST": "unix:///run/user/$(id -u)/podman/podman.sock"
-    },
-    "dev.containers.dockerPath": "$HOME/.local/bin/docker",
-    "remote.containers.dockerPath": "$HOME/.local/bin/docker"
+    }
 }
-CURSORSETTINGS
-                echo "   ✅ Created Cursor settings for Podman (using docker wrapper)"
+DEVINSETTINGS
+                echo "   ✅ Created Devin settings for Podman (using docker wrapper)"
             fi
         fi
         
-        # Step 4: Create a local desktop file override for Cursor with DOCKER_HOST
-        if [ -f "/usr/share/applications/cursor.desktop" ]; then
+        # Step 4: Create a local desktop file override for Devin with DOCKER_HOST
+        DEVIN_DESKTOP_FILE=""
+        for candidate in devin.desktop devin-desktop.desktop; do
+            if [ -f "/usr/share/applications/$candidate" ]; then
+                DEVIN_DESKTOP_FILE="$candidate"
+                break
+            fi
+        done
+        if [ -n "$DEVIN_DESKTOP_FILE" ]; then
             LOCAL_APPS_DIR="$HOME/.local/share/applications"
             mkdir -p "$LOCAL_APPS_DIR"
             
-            # Create override that sets DOCKER_HOST before launching Cursor
-            cat > "$LOCAL_APPS_DIR/cursor.desktop" << DESKTOPEOF
+            # Create override that sets DOCKER_HOST before launching Devin
+            cat > "$LOCAL_APPS_DIR/$DEVIN_DESKTOP_FILE" << DESKTOPEOF
 [Desktop Entry]
-Name=Cursor
+Name=Devin
 Comment=The AI Code Editor.
 GenericName=Text Editor
-Exec=env DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock /usr/share/cursor/cursor %F
-Icon=co.anysphere.cursor
+Exec=env DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock /usr/bin/devin-desktop %F
+Icon=devin
 Type=Application
 StartupNotify=false
-StartupWMClass=Cursor
+StartupWMClass=Devin
 Categories=TextEditor;Development;IDE;
-MimeType=application/x-cursor-workspace;
+MimeType=application/x-devin-workspace;
 Actions=new-empty-window;
-Keywords=cursor;
+Keywords=devin;
 
 [Desktop Action new-empty-window]
 Name=New Empty Window
-Exec=env DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock /usr/share/cursor/cursor --new-window %F
-Icon=co.anysphere.cursor
+Exec=env DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock /usr/bin/devin-desktop --new-window %F
+Icon=devin
 DESKTOPEOF
             # Update desktop database
             update-desktop-database "$LOCAL_APPS_DIR" 2>/dev/null || true
-            echo "   ✅ Created Cursor desktop launcher with DOCKER_HOST"
+            echo "   ✅ Created Devin desktop launcher with DOCKER_HOST"
         fi
         
         if [ "$PODMAN_SOCKET_SETUP_SUCCESS" = true ]; then
-            echo "   ✅ Podman socket setup complete for Cursor/VSCode"
+            echo "   ✅ Podman socket setup complete for Devin/VSCode"
             echo ""
             echo "   ⚠️  IMPORTANT: You may need to log out and back in, or reboot,"
             echo "      for the DOCKER_HOST environment variable to take effect in GUI apps."
@@ -695,14 +698,14 @@ test_container_access() {
     fi
 }
 
-# Function to check if Cursor is available
-check_cursor_available() {
-    command -v cursor &> /dev/null || \
-    [ -f "/Applications/Cursor.app/Contents/Resources/app/bin/cursor" ] || \
-    [ -f "$HOME/Applications/Cursor.app/Contents/Resources/app/bin/cursor" ] || \
-    [ -f "/usr/bin/cursor" ] || \
-    [ -f "/usr/local/bin/cursor" ] || \
-    [ -f "$HOME/.local/bin/cursor" ]
+# Function to check if Devin is available
+check_devin_available() {
+    command -v devin-desktop &> /dev/null || \
+    [ -f "/Applications/Devin.app/Contents/Resources/app/bin/devin-desktop" ] || \
+    [ -f "$HOME/Applications/Devin.app/Contents/Resources/app/bin/devin-desktop" ] || \
+    [ -f "/usr/bin/devin-desktop" ] || \
+    [ -f "/usr/local/bin/devin-desktop" ] || \
+    [ -f "$HOME/.local/bin/devin-desktop" ]
 }
 
 # Function to check if VSCode is available
@@ -718,19 +721,19 @@ check_vscode_available() {
 # Function to get editor command path
 get_editor_command() {
     local editor="$1"
-    if [ "$editor" = "cursor" ]; then
-        if command -v cursor &> /dev/null; then
-            echo "cursor"
-        elif [ -f "/Applications/Cursor.app/Contents/Resources/app/bin/cursor" ]; then
-            echo "/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
-        elif [ -f "$HOME/Applications/Cursor.app/Contents/Resources/app/bin/cursor" ]; then
-            echo "$HOME/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
-        elif [ -f "/usr/bin/cursor" ]; then
-            echo "/usr/bin/cursor"
-        elif [ -f "/usr/local/bin/cursor" ]; then
-            echo "/usr/local/bin/cursor"
-        elif [ -f "$HOME/.local/bin/cursor" ]; then
-            echo "$HOME/.local/bin/cursor"
+    if [ "$editor" = "devin" ]; then
+        if command -v devin-desktop &> /dev/null; then
+            echo "devin-desktop"
+        elif [ -f "/Applications/Devin.app/Contents/Resources/app/bin/devin-desktop" ]; then
+            echo "/Applications/Devin.app/Contents/Resources/app/bin/devin-desktop"
+        elif [ -f "$HOME/Applications/Devin.app/Contents/Resources/app/bin/devin-desktop" ]; then
+            echo "$HOME/Applications/Devin.app/Contents/Resources/app/bin/devin-desktop"
+        elif [ -f "/usr/bin/devin-desktop" ]; then
+            echo "/usr/bin/devin-desktop"
+        elif [ -f "/usr/local/bin/devin-desktop" ]; then
+            echo "/usr/local/bin/devin-desktop"
+        elif [ -f "$HOME/.local/bin/devin-desktop" ]; then
+            echo "$HOME/.local/bin/devin-desktop"
         fi
     elif [ "$editor" = "vscode" ]; then
         if command -v code &> /dev/null; then
@@ -1073,10 +1076,10 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
     HOST_GID=$(id -g)
     
     # Check for available editors
-    CURSOR_AVAILABLE=false
+    DEVIN_AVAILABLE=false
     VSCODE_AVAILABLE=false
-    if check_cursor_available; then
-        CURSOR_AVAILABLE=true
+    if check_devin_available; then
+        DEVIN_AVAILABLE=true
     elif check_vscode_available; then
         VSCODE_AVAILABLE=true
     fi
@@ -1085,18 +1088,23 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
     CONTAINER_NAME="venvoy-${RUN_NAME}-$$"
     
     # Hex-encode the container name for the vscode-remote URI
-    # Cursor/VSCode Dev Containers expects the container name to be hex-encoded in the URI
+    # VSCode Dev Containers expects the container name to be hex-encoded in the URI
     CONTAINER_NAME_HEX=$(echo -n "$CONTAINER_NAME" | xxd -p | tr -d '\n')
+    # Devin's dev containers extension expects a hex-encoded JSON container config
+    CONTAINER_CONFIG_HEX=$(echo -n "{\"containerId\":\"${CONTAINER_NAME}\"}" | xxd -p | tr -d '\n')
     
     # If editor is available and no custom command specified, launch editor
-    if [ -z "$RUN_COMMAND" ] && { [ "$CURSOR_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; }; then
-        # Determine which editor to use (prefer Cursor)
-        if [ "$CURSOR_AVAILABLE" = true ]; then
-            EDITOR_TYPE="cursor"
-            EDITOR_CMD=$(get_editor_command "cursor")
+    if [ -z "$RUN_COMMAND" ] && { [ "$DEVIN_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; }; then
+        # Determine which editor to use (prefer Devin)
+        if [ "$DEVIN_AVAILABLE" = true ]; then
+            EDITOR_TYPE="devin"
+            EDITOR_CMD=$(get_editor_command "devin")
+            # Devin Desktop resolves dev-container+<hex(JSON {"containerId": ...})>
+            REMOTE_URI="vscode-remote://dev-container+${CONTAINER_CONFIG_HEX}/host-home"
         else
             EDITOR_TYPE="vscode"
             EDITOR_CMD=$(get_editor_command "vscode")
+            REMOTE_URI="vscode-remote://attached-container+${CONTAINER_NAME_HEX}/host-home"
         fi
         
         echo "🚀 Starting container in background..."
@@ -1126,25 +1134,25 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
             sleep 2
             
             # Launch editor connected to container
-            if [ "$EDITOR_TYPE" = "cursor" ]; then
-                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME_HEX}/host-home" 2>/dev/null || {
-                    echo "⚠️  Failed to launch Cursor. Stopping container and falling back to shell..."
+            if [ "$EDITOR_TYPE" = "devin" ]; then
+                "$EDITOR_CMD" --folder-uri "${REMOTE_URI}" 2>/dev/null || {
+                    echo "⚠️  Failed to launch Devin. Stopping container and falling back to shell..."
                     docker stop "$CONTAINER_NAME" >/dev/null 2>&1
                     docker rm "$CONTAINER_NAME" >/dev/null 2>&1
-                    CURSOR_AVAILABLE=false
+                    DEVIN_AVAILABLE=false
                     VSCODE_AVAILABLE=false
                 }
             else
-                "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME_HEX}/host-home" 2>/dev/null || {
+                "$EDITOR_CMD" --folder-uri "${REMOTE_URI}" 2>/dev/null || {
                     echo "⚠️  Failed to launch VSCode. Stopping container and falling back to shell..."
                     docker stop "$CONTAINER_NAME" >/dev/null 2>&1
                     docker rm "$CONTAINER_NAME" >/dev/null 2>&1
-                    CURSOR_AVAILABLE=false
+                    DEVIN_AVAILABLE=false
                     VSCODE_AVAILABLE=false
                 }
             fi
             
-            if [ "$CURSOR_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; then
+            if [ "$DEVIN_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; then
                 echo "✅ $EDITOR_TYPE connected to container!"
                 echo "💡 Container is running in background: $CONTAINER_NAME"
                 echo "💡 When you're done, stop the container with: venvoy exit --name $RUN_NAME"
@@ -1168,9 +1176,9 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
             # Wait a moment for container to be ready
             sleep 2
             
-            # For Podman, Cursor/VSCode Remote Containers needs Docker-compatible API
+            # For Podman, Devin/VSCode Remote Containers needs Docker-compatible API
             # Priority order for socket detection:
-            # 1. Systemd user socket (most reliable for Cursor - set up during install)
+            # 1. Systemd user socket (most reliable for Devin - set up during install)
             # 2. XDG_RUNTIME_DIR socket
             # 3. System Docker socket (if accessible)
             # 4. System Podman socket (if accessible)
@@ -1228,7 +1236,7 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
                     echo "✅ Using existing user Podman socket: $PODMAN_SOCKET"
                 else
                     if ! pgrep -f "podman system service.*$PODMAN_SOCKET" > /dev/null; then
-                        echo "🔧 Starting Podman API service for Cursor/VSCode..."
+                        echo "🔧 Starting Podman API service for Devin/VSCode..."
                         podman system service --time=0 unix://"$PODMAN_SOCKET" > /dev/null 2>&1 &
                         PODMAN_SERVICE_PID=$!
                         
@@ -1245,7 +1253,7 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
                             echo "✅ Podman API service started: $PODMAN_SOCKET"
                         else
                             echo "⚠️  Warning: Podman API service socket not accessible"
-                            echo "   Cursor Remote Containers may not work properly"
+                            echo "   Devin Remote Containers may not work properly"
                         fi
                     else
                         # Service is running, check if socket is accessible
@@ -1263,7 +1271,7 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
                 if DOCKER_HOST="${DOCKER_HOST:-}" docker inspect "$CONTAINER_NAME" > /dev/null 2>&1; then
                     echo "✅ Verified container access for Remote Containers"
                 else
-                    echo "⚠️  Warning: Cannot verify container access - Cursor may have issues"
+                    echo "⚠️  Warning: Cannot verify container access - Devin may have issues"
                     echo "   Attempting to fix socket permissions..."
                     
                     # Try to make socket accessible if it's a user socket
@@ -1276,13 +1284,13 @@ if [ "$1" = "run" ] && [ "$2" != "--help" ] && [ "$2" != "-h" ]; then
                 fi
             fi
             
-            # For Cursor/VSCode Remote Containers, we need to ensure the socket is accessible
+            # For Devin/VSCode Remote Containers, we need to ensure the socket is accessible
             # Create a helper script that sets up the environment and launches the editor
-            # This script ensures Cursor can access Docker/Podman
+            # This script ensures Devin can access Docker/Podman
             EDITOR_LAUNCHER=$(mktemp)
             cat > "$EDITOR_LAUNCHER" << EOFLAUNCHER
 #!/bin/bash
-# Launcher script for Cursor/VSCode with proper Docker/Podman socket access
+# Launcher script for Devin/VSCode with proper Docker/Podman socket access
 # This ensures the editor can run 'docker inspect' successfully
 
 # Priority order for socket detection (same as main script):
@@ -1313,21 +1321,21 @@ if command -v docker > /dev/null 2>&1; then
     if ! docker inspect "${CONTAINER_NAME}" > /dev/null 2>&1; then
         echo "Warning: docker inspect failed for ${CONTAINER_NAME}" >&2
         echo "DOCKER_HOST=\${DOCKER_HOST:-<unset>}" >&2
-        echo "This may cause Cursor Remote Containers to fail" >&2
+        echo "This may cause Devin Remote Containers to fail" >&2
     fi
 fi
 
 # Launch the editor with the container URI (hex-encoded container name)
-exec "$EDITOR_CMD" --folder-uri "vscode-remote://attached-container+${CONTAINER_NAME_HEX}/host-home" "\$@"
+exec "$EDITOR_CMD" --folder-uri "${REMOTE_URI}" "\$@"
 EOFLAUNCHER
             chmod +x "$EDITOR_LAUNCHER"
             
-            # CRITICAL: Cursor spawns child processes that run 'docker inspect'
+            # CRITICAL: Devin spawns child processes that run 'docker inspect'
             # These processes need access to the Podman socket
             # We check for the user socket first (most reliable), then fall back
             
             echo ""
-            echo "🔍 Pre-flight check: Verifying Cursor can access Docker/Podman..."
+            echo "🔍 Pre-flight check: Verifying Devin can access Docker/Podman..."
             
             SOCKET_ISSUE=false
             XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
@@ -1380,7 +1388,7 @@ EOFLAUNCHER
             fi
             
             # Final test: docker inspect without explicitly setting DOCKER_HOST
-            # This simulates what Cursor's child processes will do
+            # This simulates what Devin's child processes will do
             if [ "$SOCKET_ISSUE" = false ]; then
                 # Temporarily unset to test default behavior
                 SAVED_DOCKER_HOST="${DOCKER_HOST:-}"
@@ -1391,8 +1399,8 @@ EOFLAUNCHER
                     # Try with the user socket explicitly
                     if DOCKER_HOST="unix://$SYSTEMD_USER_SOCKET" docker inspect "$CONTAINER_NAME" > /dev/null 2>&1; then
                         echo "✅ docker inspect works with DOCKER_HOST set"
-                        echo "   ⚠️  Note: Cursor may still have issues if DOCKER_HOST is not in environment"
-                        echo "   💡 If Cursor fails, log out and back in to apply environment changes"
+                        echo "   ⚠️  Note: Devin may still have issues if DOCKER_HOST is not in environment"
+                        echo "   💡 If Devin fails, log out and back in to apply environment changes"
                     else
                         echo "❌ docker inspect FAILED"
                         SOCKET_ISSUE=true
@@ -1407,7 +1415,7 @@ EOFLAUNCHER
             # If there's a socket issue, provide guidance and offer alternatives
             if [ "$SOCKET_ISSUE" = true ]; then
                 echo ""
-                echo "⚠️  Socket access issue detected - Cursor may fail!"
+                echo "⚠️  Socket access issue detected - Devin may fail!"
                 echo ""
                 echo "   🔧 RECOMMENDED FIXES (try in order):"
                 echo ""
@@ -1423,48 +1431,48 @@ EOFLAUNCHER
                 echo ""
                 
                 # Don't exit - let the user try anyway, maybe the launcher script will work
-                echo "   Attempting to launch Cursor anyway..."
+                echo "   Attempting to launch Devin anyway..."
             else
-                echo "✅ All checks passed - Cursor should work!"
+                echo "✅ All checks passed - Devin should work!"
             fi
             
             # Launch editor connected to container
-            if [ "$EDITOR_TYPE" = "cursor" ]; then
-                # Launch Cursor in background and capture any immediate errors
-                "$EDITOR_LAUNCHER" > /tmp/cursor-launch.log 2>&1 &
-                CURSOR_PID=$!
+            if [ "$EDITOR_TYPE" = "devin" ]; then
+                # Launch Devin in background and capture any immediate errors
+                "$EDITOR_LAUNCHER" > /tmp/devin-launch.log 2>&1 &
+                DEVIN_PID=$!
                 
-                # Wait a moment to see if Cursor starts successfully
+                # Wait a moment to see if Devin starts successfully
                 sleep 3
                 
-                # Check if Cursor process is still running and if there were errors
-                if ! kill -0 "$CURSOR_PID" 2>/dev/null; then
+                # Check if Devin process is still running and if there were errors
+                if ! kill -0 "$DEVIN_PID" 2>/dev/null; then
                     # Process died, check the log
-                    if grep -qi "docker\|socket\|permission" /tmp/cursor-launch.log 2>/dev/null; then
-                        CURSOR_ERROR=1
+                    if grep -qi "docker\|socket\|permission" /tmp/devin-launch.log 2>/dev/null; then
+                        DEVIN_ERROR=1
                     fi
                 fi
                 
-                # Also check if Cursor window opened (heuristic: check for cursor processes)
-                if ! pgrep -f "[Cc]ursor" > /dev/null 2>&1; then
+                # Also check if Devin window opened (heuristic: check for devin processes)
+                if ! pgrep -f "[Dd]evin" > /dev/null 2>&1; then
                     sleep 2  # Give it more time
-                    if ! pgrep -f "[Cc]ursor" > /dev/null 2>&1; then
-                        CURSOR_ERROR=1
+                    if ! pgrep -f "[Dd]evin" > /dev/null 2>&1; then
+                        DEVIN_ERROR=1
                     fi
                 fi
                 
                 # Clean up launcher
                 rm -f "$EDITOR_LAUNCHER"
                 
-                # Check if Cursor launched successfully
-                if [ "${CURSOR_ERROR:-0}" = "1" ]; then
+                # Check if Devin launched successfully
+                if [ "${DEVIN_ERROR:-0}" = "1" ]; then
                     echo ""
-                    echo "⚠️  Failed to launch Cursor with Remote Containers extension."
+                    echo "⚠️  Failed to launch Devin with Remote Containers extension."
                     echo ""
                     if [ "$CONTAINER_RUNTIME" = "podman" ]; then
-                        echo "💡 Cursor's Remote Containers extension requires Docker-compatible API."
+                        echo "💡 Devin's Remote Containers extension requires Docker-compatible API."
                         echo ""
-                        echo "   The issue: Cursor tries to run 'docker inspect' but it fails with Podman."
+                        echo "   The issue: Devin tries to run 'docker inspect' but it fails with Podman."
                         echo ""
                         echo "   ⚠️  RECOMMENDED SOLUTION: Install podman-docker"
                         echo "   This makes the 'docker' command work with Podman automatically:"
@@ -1473,7 +1481,7 @@ EOFLAUNCHER
                         echo "      sudo dnf install podman-docker    # Fedora/RHEL"
                         echo "      sudo pacman -S podman-docker      # Arch Linux"
                         echo ""
-                        echo "   After installing, restart Cursor and try again."
+                        echo "   After installing, restart Devin and try again."
                         echo ""
                         echo "   Alternative solutions (if podman-docker not available):"
                         echo "   1. Make Podman socket accessible (if using system socket):"
@@ -1486,7 +1494,7 @@ EOFLAUNCHER
                         else
                             echo "      export DOCKER_HOST=\"unix://\$HOME/.local/share/containers/podman-socket/podman.sock\""
                         fi
-                        echo "      Then restart Cursor from a new terminal."
+                        echo "      Then restart Devin from a new terminal."
                         echo ""
                         echo "   3. Use interactive shell instead:"
                         echo "      venvoy run --name $RUN_NAME --command /bin/bash"
@@ -1499,7 +1507,7 @@ EOFLAUNCHER
                     echo "Stopping container and falling back to shell..."
                     podman stop "$CONTAINER_NAME" >/dev/null 2>&1
                     podman rm "$CONTAINER_NAME" >/dev/null 2>&1
-                    CURSOR_AVAILABLE=false
+                    DEVIN_AVAILABLE=false
                     VSCODE_AVAILABLE=false
                 fi
             else
@@ -1549,12 +1557,12 @@ EOFLAUNCHER
                     echo "Stopping container and falling back to shell..."
                     podman stop "$CONTAINER_NAME" >/dev/null 2>&1
                     podman rm "$CONTAINER_NAME" >/dev/null 2>&1
-                    CURSOR_AVAILABLE=false
+                    DEVIN_AVAILABLE=false
                     VSCODE_AVAILABLE=false
                 fi
             fi
             
-            if [ "$CURSOR_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; then
+            if [ "$DEVIN_AVAILABLE" = true ] || [ "$VSCODE_AVAILABLE" = true ]; then
                 echo "✅ $EDITOR_TYPE connected to container!"
                 echo "💡 Container is running in background: $CONTAINER_NAME"
                 echo "💡 When you're done, stop the container with: venvoy exit --name $RUN_NAME"
@@ -1566,7 +1574,7 @@ EOFLAUNCHER
     
     # No editor available or editor launch failed - use interactive shell
     echo "🚀 Starting container..."
-    if [ "$CURSOR_AVAILABLE" = false ] && [ "$VSCODE_AVAILABLE" = false ]; then
+    if [ "$DEVIN_AVAILABLE" = false ] && [ "$VSCODE_AVAILABLE" = false ]; then
         echo "   No editor detected - launching interactive shell..."
     else
         echo "   Editor launch failed - falling back to interactive shell..."
@@ -2056,7 +2064,7 @@ if command -v venvoy &> /dev/null; then
     fi
     echo "   1. Run: venvoy init --python-version <python-version> --name <environment-name>"
     echo "   2. Run: venvoy run --name <environment-name>"
-    echo "      (This will automatically launch Cursor/VSCode if available)"
+    echo "      (This will automatically launch Devin/VSCode if available)"
     echo "   3. Start coding with AI-powered environments!"
 else
     echo "   ⚠️  venvoy not found in current PATH"
@@ -2079,7 +2087,7 @@ else
     fi
     echo "   1. Run: venvoy init --python-version <python-version> --name <environment-name>"
     echo "   2. Run: venvoy run --name <environment-name>"
-    echo "      (This will automatically launch Cursor/VSCode if available)"
+    echo "      (This will automatically launch Devin/VSCode if available)"
     echo "   3. Start coding with AI-powered environments!"
 fi
 

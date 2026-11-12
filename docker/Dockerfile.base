@@ -38,11 +38,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Runtime directory required by sshd. Used by 'venvoy remote' to serve the
-# environment over SSH for Cursor Remote-SSH connections from a laptop.
+# environment over SSH for Devin Remote-SSH connections from a laptop.
 RUN mkdir -p /run/sshd && chmod 0755 /run/sshd
 
 # Install Docker CLI (client only, no daemon) for Remote Containers extension compatibility
-# This allows Cursor/VSCode Remote Containers to work properly
+# This allows Devin/VSCode Remote Containers to work properly
 # Note: The CLI is installed but won't connect to a daemon - this is just to satisfy extension checks
 RUN install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
@@ -52,61 +52,19 @@ RUN install -m 0755 -d /etc/apt/keyrings && \
     apt-get install -y docker-ce-cli && \
     rm -rf /var/lib/apt/lists/*
 
-# Install miniconda
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-$(uname -m).sh -O /tmp/miniconda.sh && \
-    bash /tmp/miniconda.sh -b -p /opt/conda && \
-    rm /tmp/miniconda.sh
+# Rollback: 0 installs packages with uv into the image Python.
+# Set INSTALL_MINICONDA=1 only to reject the build until the Miniconda
+# steps are restored from git history. Those steps are not in this file.
+ARG INSTALL_MINICONDA=0
+RUN if [ "$INSTALL_MINICONDA" = "1" ]; then \
+      echo "INSTALL_MINICONDA=1 needs the Miniconda steps restored from git history." >&2; \
+      exit 1; \
+    fi
 
-# Add conda to PATH
-ENV PATH="/opt/conda/bin:$PATH"
-
-# Initialize conda with better error handling
-RUN /opt/conda/bin/conda --version && \
-    (/opt/conda/bin/conda init bash || /opt/conda/bin/conda init || echo "conda init not supported on this platform")
-
-# Accept Conda Terms of Service for required channels
-# This must be done before any conda operations that use these channels
-RUN /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>/dev/null || echo "ToS acceptance for main channel skipped" && \
-    /opt/conda/bin/conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || echo "ToS acceptance for r channel skipped"
-
-# Update conda first to ensure compatibility
-# For older conda versions with SSL issues, temporarily disable SSL verification to update conda
-RUN (/opt/conda/bin/conda config --set ssl_verify false 2>/dev/null || true) && \
-    (/opt/conda/bin/conda update -n base -c defaults conda -y || \
-     /opt/conda/bin/conda update -n base -c conda-forge conda -y || \
-     echo "conda update failed, continuing") && \
-    (/opt/conda/bin/conda config --set ssl_verify true 2>/dev/null || true)
-
-# Update certifi and openssl to fix SSL issues on older conda versions
-# Temporarily disable SSL verification if needed
-RUN (/opt/conda/bin/conda config --set ssl_verify false 2>/dev/null || true) && \
-    (/opt/conda/bin/conda update -n base -c defaults certifi openssl ca-certificates -y || \
-     /opt/conda/bin/conda update -n base -c conda-forge certifi openssl ca-certificates -y || \
-     echo "certificate update failed, continuing") && \
-    (/opt/conda/bin/conda config --set ssl_verify true 2>/dev/null || true)
-
-# Install mamba for faster dependency resolution
-# Try conda-forge first, fall back to defaults if that fails
-# Temporarily disable SSL verification if needed for older conda versions
-RUN (/opt/conda/bin/conda config --set ssl_verify false 2>/dev/null || true) && \
-    (/opt/conda/bin/conda install -n base -c conda-forge mamba -y || \
-     /opt/conda/bin/conda install -n base -c defaults mamba -y || \
-     echo "mamba install failed") && \
-    (/opt/conda/bin/conda config --set ssl_verify true 2>/dev/null || true)
-
-# Create venvoy environment using mamba (much faster than conda)
-RUN /opt/conda/bin/mamba create -n venvoy python=${PYTHON_VERSION} -c conda-forge -y
-
-# Install uv for ultra-fast Python package management
+# Install uv into the base image Python. Package installs use uv, not conda.
 RUN pip install --no-cache-dir uv
 
-# Activate environment by default
-ENV CONDA_DEFAULT_ENV=venvoy
-ENV CONDA_PREFIX=/opt/conda/envs/venvoy
-ENV PATH="/opt/conda/envs/venvoy/bin:$PATH"
-
-# Install common AI/ML packages using mamba for better dependency resolution
-RUN /opt/conda/bin/mamba install -n venvoy -c conda-forge \
+RUN uv pip install --system --no-cache \
     numpy \
     pandas \
     matplotlib \
@@ -116,10 +74,6 @@ RUN /opt/conda/bin/mamba install -n venvoy -c conda-forge \
     requests \
     python-dotenv \
     scikit-learn \
-    -y
-
-# Install additional fast tools
-RUN /opt/conda/envs/venvoy/bin/pip install \
     rich \
     click \
     fastapi \
@@ -159,14 +113,13 @@ RUN echo '#!/bin/bash' > /usr/local/bin/fix-host-home.sh && \
 USER venvoy
 
 # Set up shell with better interactive experience
-RUN echo 'conda activate venvoy' >> ~/.bashrc && \
-    echo 'export PS1="(🤖 venvoy) \\u@\\h:\\w\\$ "' >> ~/.bashrc && \
-    echo 'echo "🚀 Welcome to your AI-ready venvoy environment!"' >> ~/.bashrc && \
-    echo 'echo "🐍 Python $(python --version) with AI/ML packages"' >> ~/.bashrc && \
-    echo 'echo "📦 Package managers: mamba (fast conda), uv (ultra-fast pip), pip"' >> ~/.bashrc && \
-    echo 'echo "📊 Pre-installed: numpy, pandas, matplotlib, jupyter, scikit-learn, and more"' >> ~/.bashrc && \
-    echo 'echo "📂 Workspace: $(pwd)"' >> ~/.bashrc && \
-    echo 'echo "💡 Home directory mounted at: /host-home"' >> ~/.bashrc
+RUN echo 'export PS1="(venvoy) \\u@\\h:\\w\\$ "' >> ~/.bashrc && \
+    echo 'echo "Welcome to your venvoy environment"' >> ~/.bashrc && \
+    echo 'echo "Python $(python --version)"' >> ~/.bashrc && \
+    echo 'echo "Package managers: uv, pip"' >> ~/.bashrc && \
+    echo 'echo "Pre-installed: numpy, pandas, matplotlib, jupyter, scikit-learn"' >> ~/.bashrc && \
+    echo 'echo "Workspace: $(pwd)"' >> ~/.bashrc && \
+    echo 'echo "Home directory mounted at: /host-home"' >> ~/.bashrc
 
 # Default command
 CMD ["/bin/bash"] 

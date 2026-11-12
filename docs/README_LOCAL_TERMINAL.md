@@ -5,8 +5,8 @@ computer (laptop or workstation) using an interactive shell only, without an
 IDE. venvoy starts a container locally and drops you into an enhanced,
 AI-ready bash shell.
 
-If you want the Cursor IDE experience instead, see
-[README_LOCAL_CURSOR.md](README_LOCAL_CURSOR.md). If you are working on an HPC
+If you want the Devin IDE experience instead, see
+[README_LOCAL_DEVIN.md](README_LOCAL_DEVIN.md). If you are working on an HPC
 cluster, see the SLURM or PBS guides listed in the main
 [README](../README.md).
 

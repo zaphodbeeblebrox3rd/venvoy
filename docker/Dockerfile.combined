@@ -13,6 +13,10 @@ ARG PYTHON_VERSION=3.11
 ARG R_VERSION=4.4
 FROM python:${PYTHON_VERSION}-slim
 
+# ARG before FROM is only visible to FROM. Re-declare so ENV below can see it.
+# Rollback: delete this line and the image stops recording R_VERSION.
+ARG R_VERSION
+
 # Set labels for the image
 LABEL org.opencontainers.image.title="venvoy"
 LABEL org.opencontainers.image.description="Extremely Portable AI-ready Python and R environment with ultra-fast package managers"
@@ -53,7 +57,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ca-certificates \
     gnupg \
     lsb-release \
-    # SSH server for 'venvoy remote' (Cursor Remote-SSH from a laptop)
+    # SSH server for 'venvoy remote' (Devin Remote-SSH from a laptop)
     openssh-server \
     openssh-client \
     # LaTeX for R Markdown

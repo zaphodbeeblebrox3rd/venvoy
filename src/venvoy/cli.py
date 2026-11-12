@@ -11,7 +11,6 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .container_manager import ContainerManager, ContainerRuntime
 from .core import VenvoyEnvironment
-from .docker_manager import DockerManager
 from .platform_detector import PlatformDetector
 
 console = Console()
@@ -35,15 +34,14 @@ def main():
         venvoy init             # Initialize new environment (Python or R)
         venvoy run              # Launch environment
         venvoy runtime-info     # Show container runtime information
-        venvoy export           # Export for sharing (yaml/dockerfile/tarball/archive/wheelhouse)
-        venvoy import           # Import from exported file (yaml/dockerfile/tarball/archive/wheelhouse)
+        venvoy export           # Export a YAML snapshot of the environment
+        venvoy import           # Import a YAML snapshot
         venvoy history          # View environment history
         venvoy update/upgrade   # Update venvoy to latest version
         venvoy exit/deactivate  # Exit virtual environment (same as 'deactivate')
 
     Scientific Reproducibility:
-        venvoy export --format archive    # Create comprehensive binary archive
-        venvoy import archive.tar.gz --format archive  # Restore from binary archive
+        venvoy export --format yaml    # Snapshot the environment as YAML
 
     HPC Support:
         venvoy runtime-info     # Check what runtime will be used
@@ -136,10 +134,10 @@ def init(runtime: str, python_version: str, r_version: str, name: str, force: bo
         progress.update(task, description="Detecting available editors...")
         # Just detect editors, don't prompt for installation
         vscode_available = container_manager.platform._check_vscode_available()
-        cursor_available = container_manager.platform._check_cursor_available()
+        devin_available = container_manager.platform._check_devin_available()
 
-        if cursor_available:
-            editor_type, editor_available = "cursor", True
+        if devin_available:
+            editor_type, editor_available = "devin", True
         elif vscode_available:
             editor_type, editor_available = "vscode", True
         else:
@@ -186,12 +184,12 @@ def init(runtime: str, python_version: str, r_version: str, name: str, force: bo
         console.print(f"📊 R {r_version} runtime ready")
 
     if editor_available:
-        if editor_type == "cursor":
+        if editor_type == "devin":
             console.print(
                 f"💡 Use 'venvoy run --name {name}' to start working in your environment"
             )
             console.print(
-                "🧠 Cursor will automatically connect to your container with AI assistance"
+                "🧠 Devin will automatically connect to your container with AI assistance"
             )
         elif editor_type == "vscode":
             console.print(
@@ -306,46 +304,22 @@ def run(name_arg: str, name: str, command: str, mount: tuple):
     "--format",
     default="yaml",
     type=click.Choice(["yaml", "dockerfile", "tarball", "archive", "wheelhouse"]),
-    help="Export format",
+    help="Export format. yaml is the snapshot. Other choices are retired.",
 )
 @click.option("--output", help="Output file path")
 def export(name: str, format: str, output: str):
-    """Export environment for sharing/archival
+    """Export an environment as a YAML snapshot.
 
-    Formats:
-    - yaml: Environment specification (requirements.txt style)
-    - dockerfile: Standalone Dockerfile for custom builds
-    - tarball: Complete offline package with dependencies
-    - archive: Comprehensive binary archive for scientific reproducibility (architecture-specific)
-    - wheelhouse: Cross-architecture package cache with source distributions and multi-arch wheels
-
-    The 'archive' format creates a large file (1-5GB) containing the complete
-    Docker image, system packages, and metadata for long-term archival and
-    regulatory compliance. Use this for scientific reproducibility when
-    package abandonment or PyPI changes are a concern.
-
-    The 'wheelhouse' format creates a cross-architecture package cache containing:
-    - Python: Source distributions (architecture-independent) and wheels for multiple architectures
-    - R: Source packages and binary packages for multiple architectures
-    This allows installation on any architecture (amd64, arm64) without depending on
-    repository availability (PyPI/CRAN), while remaining compatible across different CPU architectures.
+    dockerfile, tarball, archive, and wheelhouse are retired. YAML is the snapshot format.
     """
-    if format == "archive":
+    if format != "yaml":
         console.print(
-            Panel.fit("📦 Creating Comprehensive Binary Archive", style="bold red")
+            f"{format} export is retired. YAML is the environment snapshot format."
         )
-        console.print(
-            "⚠️  [yellow]This creates a large file (1-5GB) for long-term scientific reproducibility[/yellow]"
-        )
-    elif format == "wheelhouse":
-        console.print(
-            Panel.fit("📦 Creating Cross-Architecture Wheelhouse", style="bold cyan")
-        )
-        console.print(
-            "🌐 [cyan]This creates a package cache compatible across architectures (amd64, arm64)[/cyan]"
-        )
-    else:
-        console.print(Panel.fit("📤 Exporting environment", style="bold yellow"))
+        console.print(f"Use: venvoy export --name {name} --format yaml")
+        return
+
+    console.print(Panel.fit("Exporting environment", style="bold yellow"))
 
     with Progress(
         SpinnerColumn(),
@@ -353,52 +327,12 @@ def export(name: str, format: str, output: str):
         console=console,
     ) as progress:
         task = progress.add_task("Exporting environment...", total=None)
-
         env = VenvoyEnvironment(name=name)
-
-        if format == "yaml":
-            progress.update(task, description="Generating environment.yaml...")
-            output_path = env.export_yaml(output)
-        elif format == "dockerfile":
-            progress.update(task, description="Generating Dockerfile...")
-            output_path = env.export_dockerfile(output)
-        elif format == "tarball":
-            progress.update(task, description="Creating tarball...")
-            output_path = env.export_tarball(output)
-        elif format == "archive":
-            progress.update(
-                task, description="Creating comprehensive binary archive..."
-            )
-            output_path = env.export_archive(output)
-        elif format == "wheelhouse":
-            progress.update(
-                task, description="Creating cross-architecture wheelhouse..."
-            )
-            output_path = env.export_wheelhouse(output)
-
+        progress.update(task, description="Generating environment.yaml...")
+        output_path = env.export_yaml(output)
         progress.remove_task(task)
 
-    if format == "archive":
-        console.print(f"✅ [green]Comprehensive archive created:[/green] {output_path}")
-        console.print(
-            "🔬 [cyan]This archive ensures bit-for-bit reproducible results[/cyan]"
-        )
-        console.print(
-            "📁 [dim]Contains complete Docker image, system packages, and metadata[/dim]"
-        )
-    elif format == "wheelhouse":
-        console.print(
-            f"✅ [green]Cross-architecture wheelhouse created:[/green] {output_path}"
-        )
-        console.print("🌐 [cyan]Compatible across architectures (amd64, arm64)[/cyan]")
-        console.print(
-            "📦 [dim]Contains source distributions and multi-arch packages (Python + R)[/dim]"
-        )
-        console.print(
-            "💡 [dim]Install on any architecture without repository dependency[/dim]"
-        )
-    else:
-        console.print(f"✅ Environment exported: {output_path}")
+    console.print(f"Environment exported: {output_path}")
 
 
 def _list_environments():
@@ -483,11 +417,9 @@ def history(name: str):
         if i < len(exports):  # Don't add separator after last item
             console.print()
 
-    console.print(
-        f"\n💡 Use 'venvoy init --name {name}' to restore from any of these exports"
-    )
-    console.print(f"📂 Export files stored in: ~/venvoy-projects/{name}/")
-    console.print("🔄 New exports are created automatically when packages change")
+    console.print(f"\nUse 'venvoy init --name {name}' to restore from any of these exports")
+    console.print(f"Export files stored in: {env.projects_dir}")
+    console.print("New exports are created automatically when packages change")
 
 
 @main.command()
@@ -508,9 +440,9 @@ def configure(name: str):
 
     # Check current editor configuration
     current_editor_type, current_editor_available = env._get_editor_config()
-    docker_manager = DockerManager()
-    actual_vscode = docker_manager.platform._check_vscode_available()
-    actual_cursor = docker_manager.platform._check_cursor_available()
+    detector = PlatformDetector()
+    actual_vscode = detector._check_vscode_available()
+    actual_devin = detector._check_devin_available()
 
     console.print(
         f"Current editor: {current_editor_type.title() if current_editor_type != 'none' else 'None'}"
@@ -519,22 +451,22 @@ def configure(name: str):
         f"Current status: {'✅ Enabled' if current_editor_available else '❌ Disabled'}"
     )
     console.print(f"VSCode available: {'✅ Yes' if actual_vscode else '❌ No'}")
-    console.print(f"Cursor available: {'✅ Yes' if actual_cursor else '❌ No'}")
+    console.print(f"Devin available: {'✅ Yes' if actual_devin else '❌ No'}")
 
     # Check if configuration needs updating
     needs_update = False
     new_config = {}
 
-    if actual_cursor and actual_vscode:
+    if actual_devin and actual_vscode:
         if not current_editor_available or current_editor_type == "none":
             console.print("\n🎉 Both AI editors are available!")
             choice = click.prompt(
-                "Which would you prefer? (1=Cursor, 2=VSCode, 3=None)",
+                "Which would you prefer? (1=Devin, 2=VSCode, 3=None)",
                 type=click.Choice(["1", "2", "3"]),
             )
             if choice == "1":
-                new_config = {"editor_type": "cursor", "editor_available": True}
-                console.print("🧠 Cursor integration enabled!")
+                new_config = {"editor_type": "devin", "editor_available": True}
+                console.print("🧠 Devin integration enabled!")
             elif choice == "2":
                 new_config = {"editor_type": "vscode", "editor_available": True}
                 console.print("🔧 VSCode integration enabled!")
@@ -542,12 +474,12 @@ def configure(name: str):
                 new_config = {"editor_type": "none", "editor_available": False}
                 console.print("🐚 Interactive shell mode enabled!")
             needs_update = True
-    elif actual_cursor and (
-        current_editor_type != "cursor" or not current_editor_available
+    elif actual_devin and (
+        current_editor_type != "devin" or not current_editor_available
     ):
-        if click.confirm("Cursor is available. Enable Cursor integration?"):
-            new_config = {"editor_type": "cursor", "editor_available": True}
-            console.print("🧠 Cursor integration enabled!")
+        if click.confirm("Devin is available. Enable Devin integration?"):
+            new_config = {"editor_type": "devin", "editor_available": True}
+            console.print("🧠 Devin integration enabled!")
             needs_update = True
     elif actual_vscode and (
         current_editor_type != "vscode" or not current_editor_available
@@ -556,7 +488,7 @@ def configure(name: str):
             new_config = {"editor_type": "vscode", "editor_available": True}
             console.print("🔧 VSCode integration enabled!")
             needs_update = True
-    elif not actual_cursor and not actual_vscode and current_editor_available:
+    elif not actual_devin and not actual_vscode and current_editor_available:
         console.print(
             "⚠️  No AI editors are available. Switching to interactive shell mode."
         )
@@ -617,7 +549,7 @@ def package_managers():
 @click.option(
     "--keep-projects",
     is_flag=True,
-    help="Keep environment exports in ~/venvoy-projects",
+    help="Keep environment exports in ~/.venvoy/projects",
 )
 @click.option("--keep-images", is_flag=True, help="Keep Docker images")
 def uninstall(force: bool, keep_projects: bool, keep_images: bool):
@@ -636,7 +568,7 @@ def uninstall(force: bool, keep_projects: bool, keep_images: bool):
 
     install_dir = home_path / ".venvoy" / "bin"
     venvoy_dir = home_path / ".venvoy"
-    projects_dir = home_path / "venvoy-projects"
+    projects_dir = venvoy_dir / "projects"
 
     # Show what will be removed
     console.print("")
@@ -661,35 +593,30 @@ def uninstall(force: bool, keep_projects: bool, keep_images: bool):
     console.print("")
     console.print("🗑️  Removing venvoy...", style="bold red")
 
-    # Remove installation directory
-    if install_dir.exists():
-        shutil.rmtree(install_dir)
-        console.print("✅ Removed installation directory", style="green")
+    # Projects live inside ~/.venvoy/projects. Keep that directory by removing
+    # its siblings instead of deleting the parent first.
+    keep_project_tree = keep_projects
+    if projects_dir.exists() and not keep_projects and not force:
+        keep_project_tree = not click.confirm(
+            "Remove projects directory with environment exports?"
+        )
 
-    # Remove configuration directory
     if venvoy_dir.exists():
-        shutil.rmtree(venvoy_dir)
-        console.print("✅ Removed configuration directory", style="green")
-
-    # Handle projects directory
-    if projects_dir.exists():
-        if keep_projects:
-            console.print(f"📁 Kept projects directory: {projects_dir}", style="yellow")
-        else:
-            if not force:
-                remove_projects = click.confirm(
-                    "Remove projects directory with environment exports?"
-                )
-                if remove_projects:
-                    shutil.rmtree(projects_dir)
-                    console.print("✅ Removed projects directory", style="green")
+        if keep_project_tree and projects_dir.exists():
+            for child in list(venvoy_dir.iterdir()):
+                if child.resolve() == projects_dir.resolve():
+                    continue
+                if child.is_dir():
+                    shutil.rmtree(child)
                 else:
-                    console.print(
-                        f"📁 Kept projects directory: {projects_dir}", style="yellow"
-                    )
-            else:
-                shutil.rmtree(projects_dir)
-                console.print("✅ Removed projects directory", style="green")
+                    child.unlink()
+            console.print(
+                f"Removed configuration directory and kept {projects_dir}",
+                style="green",
+            )
+        else:
+            shutil.rmtree(venvoy_dir)
+            console.print("Removed configuration directory", style="green")
 
     # Remove PATH entries from shell configuration files
     if system in ["linux", "darwin"]:  # Linux and macOS
@@ -1032,10 +959,10 @@ def setup():
         progress.update(task, description="Checking AI editor installation...")
         # Try to detect editors (may not work if running inside container)
         vscode_available = container_manager.platform._check_vscode_available()
-        cursor_available = container_manager.platform._check_cursor_available()
+        devin_available = container_manager.platform._check_devin_available()
 
-        if cursor_available:
-            editor_type, editor_available = "cursor", True
+        if devin_available:
+            editor_type, editor_available = "devin", True
         elif vscode_available:
             editor_type, editor_available = "vscode", True
         else:
@@ -1053,15 +980,15 @@ def setup():
     console.print("✅ Venvoy setup completed!")
 
     if editor_available:
-        if editor_type == "cursor":
-            console.print("🧠 Cursor detected and configured")
+        if editor_type == "devin":
+            console.print("🧠 Devin detected and configured")
         elif editor_type == "vscode":
             console.print("🔧 VSCode detected and configured")
     else:
         console.print("🐚 No AI editor detected in this environment")
         console.print("   💡 Editor detection will happen when you run 'venvoy run'")
         console.print(
-            "   💡 If you have Cursor or VSCode installed, 'venvoy run' will automatically launch it"
+            "   💡 If you have Devin or VSCode installed, 'venvoy run' will automatically launch it"
         )
 
     console.print("\n📋 Next steps:")
@@ -1069,7 +996,7 @@ def setup():
         "   1. Run: venvoy init --python-version <version> --name <environment-name>"
     )
     console.print("   2. Run: venvoy run --name <environment-name>")
-    console.print("      (This will automatically launch Cursor/VSCode if available)")
+    console.print("      (This will automatically launch Devin/VSCode if available)")
     console.print("   3. Start coding with AI-powered environments!")
 
 
@@ -1118,196 +1045,54 @@ def restore(name: str):
     "--format",
     default=None,
     type=click.Choice(["yaml", "dockerfile", "tarball", "archive", "wheelhouse"]),
-    help="Import format (auto-detected if not specified)",
+    help="Import format. yaml is supported. Other choices are retired.",
 )
 @click.option("--force", is_flag=True, help="Overwrite existing environment")
 def import_cmd(file_path: str, format: str, force: bool):
-    """Import environment from exported file
+    """Import an environment from a YAML snapshot.
 
-    Formats:
-    - yaml: Environment specification (requirements.txt style)
-    - dockerfile: Standalone Dockerfile for custom builds
-    - tarball: Complete offline package with dependencies
-    - archive: Comprehensive binary archive (architecture-specific, includes Docker image)
-    - wheelhouse: Cross-architecture package cache (works on amd64 and arm64)
-
-    The format is auto-detected from the file extension and contents if not specified.
+    dockerfile, tarball, archive, and wheelhouse are retired.
     """
-    # Auto-detect format from filename if not specified
     if format is None:
-        file_lower = file_path.lower()
-
-        # Check by extension first
         if file_path.endswith(".yaml") or file_path.endswith(".yml"):
             format = "yaml"
-        elif "dockerfile" in file_lower or file_path.endswith("Dockerfile"):
-            format = "dockerfile"
-        elif "archive" in file_lower or file_path.endswith("-archive.tar.gz"):
-            format = "archive"
-        elif "wheelhouse" in file_lower or file_path.endswith("-wheelhouse.tar.gz"):
-            format = "wheelhouse"
-        elif file_path.endswith(".tar.gz") or file_path.endswith(".tgz"):
-            # Try to detect by examining the archive structure
-            try:
-                import tarfile
-
-                with tarfile.open(file_path, "r:gz") as tar:
-                    members = tar.getnames()
-                    # Check for archive metadata
-                    if any("archive-metadata.json" in m for m in members):
-                        format = "archive"
-                    elif any("manifest.json" in m for m in members):
-                        format = "wheelhouse"
-                    else:
-                        format = "tarball"
-            except Exception:
-                # Default to tarball if we can't determine
-                format = "tarball"
         else:
             console.print(
-                "❌ [red]Could not auto-detect format. Please specify --format[/red]"
+                "Only YAML import is supported. dockerfile, tarball, archive, and wheelhouse are retired."
             )
+            console.print("Export a YAML snapshot with: venvoy export --format yaml")
             return
 
-    # Display appropriate message based on format
-    if format == "yaml":
+    if format != "yaml":
         console.print(
-            Panel.fit("📦 Importing Environment from YAML", style="bold green")
+            f"{format} import is retired. YAML is the environment snapshot format."
         )
-        console.print(f"📁 YAML: {file_path}")
-        if not force:
-            console.print(
-                "⚠️  [yellow]This will create environment configuration from YAML export[/yellow]"
-            )
-            if not click.confirm("Continue with import?"):
-                console.print("🚫 Import cancelled")
-                return
-    elif format == "dockerfile":
-        console.print(
-            Panel.fit("📦 Importing Environment from Dockerfile", style="bold blue")
-        )
-        console.print(f"📁 Dockerfile: {file_path}")
-        if not force:
-            console.print(
-                "⚠️  [yellow]This will create environment configuration from Dockerfile[/yellow]"
-            )
-            if not click.confirm("Continue with import?"):
-                console.print("🚫 Import cancelled")
-                return
-    elif format == "archive":
-        console.print(Panel.fit("📦 Importing Binary Archive", style="bold red"))
-        console.print(f"📁 Archive: {file_path}")
-        if not force:
-            console.print(
-                "⚠️  [yellow]This will load Docker images and restore environment configuration[/yellow]"
-            )
-            if not click.confirm("Continue with import?"):
-                console.print("🚫 Import cancelled")
-                return
-    elif format == "wheelhouse":
-        console.print(
-            Panel.fit("📦 Importing Cross-Architecture Wheelhouse", style="bold cyan")
-        )
-        console.print(f"📁 Wheelhouse: {file_path}")
-        if not force:
-            console.print(
-                "🌐 [cyan]This will restore packages for cross-architecture compatibility[/cyan]"
-            )
-            if not click.confirm("Continue with import?"):
-                console.print("🚫 Import cancelled")
-                return
-    elif format == "tarball":
-        console.print(Panel.fit("📦 Importing Tarball", style="bold yellow"))
-        console.print(f"📁 Tarball: {file_path}")
-        if not force:
-            console.print(
-                "⚠️  [yellow]This will restore environment from tarball[/yellow]"
-            )
-            if not click.confirm("Continue with import?"):
-                console.print("🚫 Import cancelled")
-                return
+        console.print("Use: venvoy import <file.yaml> --format yaml")
+        return
+
+    console.print(Panel.fit("Importing environment from YAML", style="bold green"))
+    console.print(f"YAML: {file_path}")
+    if not force and not click.confirm("Continue with import?"):
+        console.print("Import cancelled")
+        return
 
     try:
-        # Create temporary environment for import
         temp_env = VenvoyEnvironment()
-
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             console=console,
         ) as progress:
-            if format == "yaml":
-                task = progress.add_task("Importing YAML...", total=None)
-                progress.update(
-                    task, description="Reading YAML and extracting environment info..."
-                )
-                env_name = temp_env.import_yaml(file_path, force=force)
-            elif format == "dockerfile":
-                task = progress.add_task("Importing Dockerfile...", total=None)
-                progress.update(
-                    task,
-                    description="Reading Dockerfile and extracting environment info...",
-                )
-                env_name = temp_env.import_dockerfile(file_path, force=force)
-            elif format == "archive":
-                task = progress.add_task("Importing archive...", total=None)
-                progress.update(task, description="Extracting and analyzing archive...")
-                env_name = temp_env.import_archive(file_path, force=force)
-            elif format == "wheelhouse":
-                task = progress.add_task("Importing wheelhouse...", total=None)
-                progress.update(
-                    task, description="Extracting and analyzing wheelhouse..."
-                )
-                env_name = temp_env.import_wheelhouse(file_path, force=force)
-            elif format == "tarball":
-                task = progress.add_task("Importing tarball...", total=None)
-                progress.update(task, description="Extracting and analyzing tarball...")
-                # TODO: Implement import_tarball method in core.py
-                console.print("❌ [red]Tarball import not yet implemented[/red]")
-                return
-            else:
-                console.print(f"❌ [red]Unsupported format: {format}[/red]")
-                return
-
+            task = progress.add_task("Importing YAML...", total=None)
+            env_name = temp_env.import_yaml(file_path, force=force)
             progress.remove_task(task)
 
-        # Display success message based on format
-        if format == "yaml":
-            console.print("✅ [green]YAML imported successfully![/green]")
-            console.print(f"📦 Environment: {env_name}")
-            console.print(
-                f"🚀 To build and use: [cyan]venvoy init --name {env_name} --force[/cyan]"
-            )
-        elif format == "dockerfile":
-            console.print("✅ [green]Dockerfile imported successfully![/green]")
-            console.print(f"📦 Environment: {env_name}")
-            console.print(
-                f"🚀 To build and use: [cyan]venvoy init --name {env_name} --force[/cyan]"
-            )
-        elif format == "archive":
-            console.print("✅ [green]Archive imported successfully![/green]")
-            console.print(f"📦 Environment: {env_name}")
-            console.print(f"🚀 Run with: [cyan]venvoy run --name {env_name}[/cyan]")
-            console.print(
-                f"📋 View history: [cyan]venvoy history --name {env_name}[/cyan]"
-            )
-        elif format == "wheelhouse":
-            console.print("✅ [green]Wheelhouse imported successfully![/green]")
-            console.print(f"📦 Environment: {env_name}")
-            console.print(
-                "🌐 [cyan]Packages are cross-architecture compatible (amd64, arm64)[/cyan]"
-            )
-            console.print(
-                f"🚀 To build and use: [cyan]venvoy init --name {env_name} --force[/cyan]"
-            )
-            console.print(
-                "💡 [dim]Packages will be installed from local cache (no repository access needed)[/dim]"
-            )
-
+        console.print(f"YAML imported successfully: {env_name}")
+        console.print(f"To use it: venvoy init --name {env_name} --force")
     except Exception as e:
-        console.print(f"❌ [red]Import failed:[/red] {str(e)}")
+        console.print(f"Import failed: {e}")
         if "already exists" in str(e):
-            console.print("💡 Use --force to overwrite existing environment")
+            console.print("Use --force to overwrite the existing environment")
 
 
 @main.command()
@@ -1346,7 +1131,7 @@ def remote(
     mount: tuple,
     pubkey_file: tuple,
 ):
-    """Serve an environment over SSH for a remote Cursor to connect to.
+    """Serve an environment over SSH for a remote Devin to connect to.
 
     Run this ON A COMPUTE NODE inside a Slurm allocation. It starts an SSH
     server inside the venvoy container and prints a 'venvoy connect' command to
@@ -1406,9 +1191,9 @@ def remote(
 )
 @click.option(
     "--editor",
-    type=click.Choice(["cursor", "code"]),
-    default="cursor",
-    help="Editor to launch (default: cursor)",
+    type=click.Choice(["devin-desktop", "code"]),
+    default="devin-desktop",
+    help="Editor to launch (default: devin-desktop)",
 )
 @click.option("--no-open", is_flag=True, help="Only write the SSH config; do not launch the editor")
 @click.option("--print-config", is_flag=True, help="Print the SSH config block and exit")
@@ -1421,11 +1206,11 @@ def connect(
     no_open: bool,
     print_config: bool,
 ):
-    """Connect local Cursor to a remote venvoy environment.
+    """Connect local Devin to a remote venvoy environment.
 
     Run this ON YOUR LAPTOP using the token printed by 'venvoy remote' on the
     cluster. It writes an SSH config entry that tunnels through the login node
-    and launches Cursor Remote-SSH into the container.
+    and launches Devin Remote-SSH into the container.
 
     Example:
         venvoy connect eyJ2Ijox... --login-node login.hpc.example.edu

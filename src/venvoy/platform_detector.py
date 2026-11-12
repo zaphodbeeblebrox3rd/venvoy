@@ -8,6 +8,10 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
+# Rollback: set this to a Windows profile name if $USER does not match the
+# directory under /mnt/c/Users. Empty uses $USER, then $USERNAME.
+WSL_WINDOWS_USER = ""
+
 
 class PlatformDetector:
     """Detects platform information and capabilities"""
@@ -17,6 +21,21 @@ class PlatformDetector:
         self.machine = platform.machine().lower()
         self.architecture = self._normalize_architecture()
         self.is_wsl = self._detect_wsl()
+
+    def _wsl_windows_user(self) -> str:
+        """Windows profile name used to build /mnt/c/Users paths from WSL."""
+        if WSL_WINDOWS_USER:
+            return WSL_WINDOWS_USER
+        return os.environ.get("USER") or os.environ.get("USERNAME") or "user"
+
+    def _wsl_editor_candidates(self, user_relative: str, program_files_relative: str) -> list:
+        """Windows editor binaries, addressed from a WSL mount."""
+        user = self._wsl_windows_user()
+        return [
+            Path(f"/mnt/c/Users/{user}") / user_relative,
+            Path("/mnt/c/Program Files") / program_files_relative,
+            Path("/mnt/c/Program Files (x86)") / program_files_relative,
+        ]
 
     def _detect_wsl(self) -> bool:
         """Detect if running in WSL (Windows Subsystem for Linux)"""
@@ -59,7 +78,7 @@ class PlatformDetector:
             "home_directory": str(Path.home()),
             "docker_supported": self._check_docker_support(),
             "vscode_available": self._check_vscode_available(),
-            "cursor_available": self._check_cursor_available(),
+            "devin_available": self._check_devin_available(),
             "is_wsl": self.is_wsl,
         }
 
@@ -73,10 +92,10 @@ class PlatformDetector:
         vscode_paths = self._get_vscode_paths()
         return any(Path(path).exists() for path in vscode_paths)
 
-    def _check_cursor_available(self) -> bool:
-        """Check if Cursor is available on the system"""
-        cursor_paths = self._get_cursor_paths()
-        return any(Path(path).exists() for path in cursor_paths)
+    def _check_devin_available(self) -> bool:
+        """Check if Devin Desktop is available on the system"""
+        devin_paths = self._get_devin_paths()
+        return any(Path(path).exists() for path in devin_paths)
 
     def _get_vscode_paths(self) -> list:
         """Get potential VSCode installation paths for the current platform"""
@@ -104,49 +123,49 @@ class PlatformDetector:
 
             # If running in WSL, also check for Windows VSCode installations
             if self.is_wsl:
-                # Convert Windows paths to WSL paths
-                windows_paths = [
-                    "/mnt/c/Users/erich/AppData/Local/Programs/Microsoft VS Code/Code.exe",
-                    "/mnt/c/Program Files/Microsoft VS Code/Code.exe",
-                    "/mnt/c/Program Files (x86)/Microsoft VS Code/Code.exe",
-                ]
-                paths.extend([Path(path) for path in windows_paths])
+                paths.extend(
+                    self._wsl_editor_candidates(
+                        "AppData/Local/Programs/Microsoft VS Code/Code.exe",
+                        "Microsoft VS Code/Code.exe",
+                    )
+                )
 
             return paths
         return []
 
-    def _get_cursor_paths(self) -> list:
-        """Get potential Cursor installation paths for the current platform"""
+    def _get_devin_paths(self) -> list:
+        """Get potential Devin Desktop installation paths for the current platform"""
         if self.system == "windows":
             return [
-                Path.home() / "AppData/Local/Programs/cursor/Cursor.exe",
-                Path("C:/Program Files/Cursor/Cursor.exe"),
-                Path("C:/Program Files (x86)/Cursor/Cursor.exe"),
+                Path.home() / "AppData/Local/Programs/Devin/bin/devin-desktop.cmd",
+                Path.home() / "AppData/Local/Programs/Devin/Devin.exe",
+                Path("C:/Program Files/Devin/bin/devin-desktop.cmd"),
+                Path("C:/Program Files (x86)/Devin/bin/devin-desktop.cmd"),
             ]
         elif self.system == "darwin":
             return [
-                Path("/Applications/Cursor.app/Contents/Resources/app/bin/cursor"),
+                Path(
+                    "/Applications/Devin.app/Contents/Resources/app/bin/devin-desktop"
+                ),
                 Path.home()
-                / "Applications/Cursor.app/Contents/Resources/app/bin/cursor",
+                / "Applications/Devin.app/Contents/Resources/app/bin/devin-desktop",
             ]
         elif self.system == "linux":
             paths = [
-                Path("/usr/bin/cursor"),
-                Path("/usr/local/bin/cursor"),
-                Path("/snap/bin/cursor"),
-                Path.home() / ".local/bin/cursor",
-                Path.home() / ".cursor/cursor",
+                Path("/usr/bin/devin-desktop"),
+                Path("/usr/local/bin/devin-desktop"),
+                Path("/snap/bin/devin-desktop"),
+                Path.home() / ".local/bin/devin-desktop",
             ]
 
-            # If running in WSL, also check for Windows Cursor installations
+            # If running in WSL, also check for Windows Devin installations
             if self.is_wsl:
-                # Convert Windows paths to WSL paths
-                windows_paths = [
-                    "/mnt/c/Users/erich/AppData/Local/Programs/cursor/Cursor.exe",
-                    "/mnt/c/Program Files/Cursor/Cursor.exe",
-                    "/mnt/c/Program Files (x86)/Cursor/Cursor.exe",
-                ]
-                paths.extend([Path(path) for path in windows_paths])
+                paths.extend(
+                    self._wsl_editor_candidates(
+                        "AppData/Local/Programs/Devin/bin/devin-desktop.cmd",
+                        "Devin/bin/devin-desktop.cmd",
+                    )
+                )
 
             return paths
         return []

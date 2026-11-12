@@ -8,8 +8,8 @@ do not require root access.
 
 For SLURM clusters, see
 [README_HPC_SLURM_TERMINAL.md](README_HPC_SLURM_TERMINAL.md). To connect the
-Cursor IDE from your laptop, the same approach as the SLURM Cursor guide applies;
-see [README_HPC_SLURM_CURSOR_IDE.md](README_HPC_SLURM_CURSOR_IDE.md) and use your
+Devin IDE from your laptop, the same approach as the SLURM Devin guide applies;
+see [README_HPC_SLURM_DEVIN_IDE.md](README_HPC_SLURM_DEVIN_IDE.md) and use your
 PBS interactive allocation on the compute node.
 
 ## When to use this scenario
