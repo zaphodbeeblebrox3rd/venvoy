@@ -6,6 +6,9 @@
 # User-generated directory during use of venvoy
 .venvoy/
 
+# Local virtualenv used for testing venvoy itself
+venvoy-test/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
