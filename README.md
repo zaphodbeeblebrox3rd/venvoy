@@ -161,9 +161,11 @@ configuration, and execution.
   your own computer using an interactive shell only.
 - [HPC cluster with SLURM in the terminal](docs/README_HPC_SLURM_TERMINAL.md):
   interactive and batch jobs on a SLURM cluster.
-- [HPC cluster with SLURM connected to local Devin](docs/README_HPC_SLURM_DEVIN_IDE.md):
+- [HPC cluster with SLURM connected to local Devin via srun](docs/README_HPC_SLURM_DEVIN_SRUN.md):
   edit on a compute node from Devin on your laptop, tunneled through the login
-  node.
+  node, using an interactive allocation.
+- [HPC cluster with SLURM connected to local Devin via sbatch](docs/README_HPC_SLURM_DEVIN_SBATCH.md):
+  the same setup, but served as a batch job instead of an interactive allocation.
 - [HPC cluster with PBS or Torque in the terminal](docs/README_HPC_PBS_TORQUE_TERMINAL.md):
   interactive and batch jobs on a PBS or Torque cluster.
 
@@ -606,7 +608,9 @@ to it through the login node using an SSH ProxyJump and opens Devin Remote-SSH.
 
 For the complete walkthrough, including prerequisites, options, and
 troubleshooting, see
-[HPC cluster with SLURM connected to local Devin](docs/README_HPC_SLURM_DEVIN_IDE.md).
+[HPC cluster with SLURM connected to local Devin via srun](docs/README_HPC_SLURM_DEVIN_SRUN.md)
+or
+[via sbatch](docs/README_HPC_SLURM_DEVIN_SBATCH.md).
 
 #### 📋 Complete Scientific Reproducibility Workflows
 

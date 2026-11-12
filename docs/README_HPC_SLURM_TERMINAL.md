@@ -7,7 +7,8 @@ submission. On HPC, venvoy automatically prefers Apptainer or Singularity, which
 do not require root access.
 
 If you want to connect Devin on your laptop to a SLURM compute node,
-see [README_HPC_SLURM_DEVIN_IDE.md](README_HPC_SLURM_DEVIN_IDE.md). For PBS or
+see [README_HPC_SLURM_DEVIN_SRUN.md](README_HPC_SLURM_DEVIN_SRUN.md) or
+[README_HPC_SLURM_DEVIN_SBATCH.md](README_HPC_SLURM_DEVIN_SBATCH.md). For PBS or
 Torque clusters, see
 [README_HPC_PBS_TORQUE_TERMINAL.md](README_HPC_PBS_TORQUE_TERMINAL.md).
 

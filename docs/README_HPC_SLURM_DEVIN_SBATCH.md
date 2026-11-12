@@ -1,11 +1,13 @@
-# venvoy on an HPC cluster with SLURM, connected to local Devin
+# venvoy on an HPC cluster with SLURM, connected to local Devin via sbatch
 
-This guide walks through running a venvoy environment as a SLURM job on a compute
-node and connecting to it from Devin on your laptop. The connection
-tunnels through the cluster login node, so the compute node is never exposed
-directly.
+This guide walks through running a venvoy environment as a batch job submitted
+with `sbatch` on a compute node and connecting to it from Devin on your
+laptop. The connection tunnels through the cluster login node, so the compute
+node is never exposed directly.
 
-For a terminal-only SLURM workflow, see
+For the interactive-allocation variant of this workflow, see
+[README_HPC_SLURM_DEVIN_SRUN.md](README_HPC_SLURM_DEVIN_SRUN.md). For a
+terminal-only SLURM workflow, see
 [README_HPC_SLURM_TERMINAL.md](README_HPC_SLURM_TERMINAL.md). For PBS or Torque
 clusters, see
 [README_HPC_PBS_TORQUE_TERMINAL.md](README_HPC_PBS_TORQUE_TERMINAL.md).
@@ -14,6 +16,9 @@ clusters, see
 
 - Your cluster uses SLURM and you have SSH access to the login node.
 - You want to edit and run code on a compute node using Devin on your laptop.
+- You prefer submitting a batch job with `sbatch` rather than holding an
+  interactive `srun` allocation (for example, on clusters where interactive
+  jobs are limited or you want the session to run unattended).
 - Your cluster provides Apptainer or Singularity (also works with Docker or
   Podman where available).
 
@@ -40,7 +45,7 @@ flowchart LR
 
 On the cluster:
 
-- SLURM access and the ability to obtain an allocation with `srun` or `sbatch`.
+- SLURM access and the ability to submit jobs with `sbatch`.
 - Apptainer or Singularity available (module load if needed).
 - venvoy installed in your user account (see Installation below).
 - A venvoy environment image that includes an SSH server. The current venvoy
@@ -123,17 +128,38 @@ du -sh ~/.venvoy ~/.devin-server-insiders
 apptainer cache list      # or: singularity cache list
 ```
 
-## Step 1: start the remote environment on a compute node
+## Step 1: submit the remote environment as a batch job
 
-Request an allocation and start the SSH bridge. Provide the hostname you SSH into
-to reach the cluster with `--login-node`.
+Create a submission script, for example `serve_venvoy.sbatch`. Provide the
+hostname you SSH into to reach the cluster with `--login-node` (under `sbatch`,
+SLURM sets `SLURM_SUBMIT_HOST` automatically, so it can often be omitted).
 
 ```bash
-# Get an interactive allocation on a compute node
-srun --pty bash
+#!/bin/bash
+#SBATCH --job-name=venvoy-remote
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --time=08:00:00
+#SBATCH --output=venvoy-remote-%j.out
 
-# Serve the environment over SSH (keeps running until you stop it)
+# Load the container runtime if required on your cluster
+module load apptainer
+
+# Make sure venvoy is on PATH for the batch shell
+export PATH="$HOME/.local/bin:$PATH"
+
+# Optional: keep the Apptainer download cache off your home quota
+# export APPTAINER_CACHEDIR=/scratch/$USER/apptainer-cache
+
+# Serve the environment over SSH (runs until the job ends)
 venvoy remote --name my-research --login-node login.hpc.example.edu
+```
+
+Submit it, then read the `venvoy connect` command from the job output:
+
+```bash
+sbatch serve_venvoy.sbatch
+tail -f venvoy-remote-<job_id>.out
 ```
 
 `venvoy remote` runs preflight checks, starts sshd inside the container, and
@@ -143,7 +169,13 @@ prints a single command to run on your laptop, for example:
 venvoy connect eyJ2Ijox...long-token...
 ```
 
-Keep this job running while you work. Press Ctrl-C to stop it.
+`venvoy remote` stays in the foreground of the job, so the environment lives
+until the walltime expires or you run `scancel <job_id>`. The job starts in your
+submission directory, which is what gets mounted as `/workspace` inside the
+container.
+
+To use an interactive allocation instead, see
+[README_HPC_SLURM_DEVIN_SRUN.md](README_HPC_SLURM_DEVIN_SRUN.md).
 
 ### Useful venvoy remote options
 
@@ -207,9 +239,9 @@ Your cluster home directory is available and writable inside the session.
 
 ## Step 3: stop the session
 
-When finished, return to the compute node terminal running `venvoy remote` and
-press Ctrl-C. This stops the SSH server and cleans up the ephemeral host keys.
-Releasing or ending the SLURM allocation also stops the environment.
+When finished, cancel the job on the cluster (`scancel <job_id>`) or let it run
+out of walltime. This stops the SSH server and cleans up the ephemeral host
+keys.
 
 ## Security notes
 
@@ -220,6 +252,9 @@ Releasing or ending the SLURM allocation also stops the environment.
 
 ## Troubleshooting
 
+- Job stays pending (`squeue` shows `PD`): check your partition/time limits
+  with `scontrol show job <job_id>` and lower `--time` or pick another
+  partition if needed.
 - Image does not contain an SSH server: the preflight check reports this. Run
   `venvoy update` or re-pull the image so it includes `/usr/sbin/sshd`.
 - No SSH public keys found to authorize: add your laptop public key to

@@ -9,7 +9,7 @@ do not require root access.
 For SLURM clusters, see
 [README_HPC_SLURM_TERMINAL.md](README_HPC_SLURM_TERMINAL.md). To connect the
 Devin IDE from your laptop, the same approach as the SLURM Devin guide applies;
-see [README_HPC_SLURM_DEVIN_IDE.md](README_HPC_SLURM_DEVIN_IDE.md) and use your
+see [README_HPC_SLURM_DEVIN_SRUN.md](README_HPC_SLURM_DEVIN_SRUN.md) and use your
 PBS interactive allocation on the compute node.
 
 ## When to use this scenario
